@@ -1,6 +1,7 @@
 import java.io.BufferedInputStream
 import java.net.URI
 import java.net.URLConnection
+import org.gradle.api.GradleException
 
 plugins {
     id("com.android.application")
@@ -39,7 +40,7 @@ android {
     }
 
     androidResources {
-        noCompress += setOf("onnx", "task")
+        noCompress += setOf("onnx", "tflite")
     }
 
     buildFeatures {
@@ -109,46 +110,54 @@ dependencies {
 }
 
 
-// Pose Landmarker Heavy is intentionally kept out of source control because the bundle is
-// approximately 30 MB. Android builds download the pinned Google-hosted model once and then
-// reuse Gradle's output cache. The app never downloads the model at runtime.
-val poseHeavyModelUrl =
-    "https://storage.googleapis.com/mediapipe-models/pose_landmarker/" +
-        "pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task"
-val poseHeavyModelFile =
-    layout.projectDirectory.file("src/main/assets/models/pose_landmarker_heavy.task")
+// EfficientDet-Lite2 float16 is kept out of source control. Android builds download the
+// Google-hosted model once and then reuse Gradle's output cache. The app never downloads it at runtime.
+val personDetectorModelUrl =
+    "https://storage.googleapis.com/mediapipe-models/object_detector/" +
+        "efficientdet_lite2/float16/latest/efficientdet_lite2.tflite"
+val personDetectorModelFile =
+    layout.projectDirectory.file("src/main/assets/models/efficientdet_lite2_float16.tflite")
 
-val downloadPoseHeavyModel by tasks.registering {
+val downloadPersonDetectorModel by tasks.registering {
     group = "build setup"
-    description = "Downloads the pinned MediaPipe Pose Landmarker Heavy model bundle."
-    outputs.file(poseHeavyModelFile)
+    description = "Downloads the MediaPipe EfficientDet-Lite2 float16 object detector model."
+    outputs.file(personDetectorModelFile)
 
     doLast {
-        val destination = poseHeavyModelFile.asFile
-        if (destination.isFile && destination.length() >= 30_000_000L) return@doLast
+        val destination = personDetectorModelFile.asFile
+        if (destination.isFile && destination.length() >= 12_000_000L) return@doLast
 
         destination.parentFile.mkdirs()
         val temporary = destination.resolveSibling("${destination.name}.download")
         temporary.delete()
 
-        val connection: URLConnection = URI(poseHeavyModelUrl).toURL().openConnection()
+        val connection: URLConnection = URI(personDetectorModelUrl).toURL().openConnection()
         connection.connectTimeout = 30_000
         connection.readTimeout = 120_000
 
-        BufferedInputStream(connection.getInputStream()).use { input ->
-            temporary.outputStream().buffered().use { output ->
-                input.copyTo(output)
+        try {
+            BufferedInputStream(connection.getInputStream()).use { input ->
+                temporary.outputStream().buffered().use { output ->
+                    input.copyTo(output)
+                }
             }
+        } catch (error: Exception) {
+            temporary.delete()
+            throw GradleException(
+                "Could not download the official EfficientDet-Lite2 model from $personDetectorModelUrl. " +
+                    "Check the network connection, then run ./download_person_detector_model.command and rebuild.",
+                error
+            )
         }
 
-        check(temporary.length() >= 30_000_000L) {
-            "Pose Landmarker Heavy download is incomplete: ${temporary.length()} bytes"
+        check(temporary.length() >= 12_000_000L) {
+            "EfficientDet-Lite2 download is incomplete: ${temporary.length()} bytes"
         }
         if (destination.exists()) check(destination.delete()) {
             "Could not replace ${destination.absolutePath}"
         }
         check(temporary.renameTo(destination)) {
-            "Could not move the pose model into ${destination.absolutePath}"
+            "Could not move the object detector model into ${destination.absolutePath}"
         }
     }
 }
@@ -156,6 +165,6 @@ val downloadPoseHeavyModel by tasks.registering {
 // Ensure the model exists before Android packages any variant's assets.
 tasks.configureEach {
     if (name == "preBuild" || (name.startsWith("merge") && name.endsWith("Assets"))) {
-        dependsOn(downloadPoseHeavyModel)
+        dependsOn(downloadPersonDetectorModel)
     }
 }

@@ -6,7 +6,6 @@ import com.topout.cam.model.HoldMask
 
 /** TopOut hold-selection boundary. */
 interface HoldSegmenter : AutoCloseable {
-    suspend fun prepare(): Result<Unit>
     suspend fun warmUp(bitmap: Bitmap): Result<Unit> = Result.success(Unit)
     suspend fun segment(
         bitmap: Bitmap,

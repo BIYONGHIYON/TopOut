@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 
@@ -84,11 +83,6 @@ enum class RecordingAspectRatio(
         } else portrait
     }
 
-    fun adaptiveHorizontalBinCount(baseCount: Int, isLandscape: Boolean): Int {
-        val base = max(1, baseCount)
-        val ratio = widthOverHeight(isLandscape) / max(portraitWidthOverHeight, 0.0001f)
-        return max(base, ceil(base * ratio).toInt())
-    }
 }
 
 data class IntSize(val width: Int, val height: Int)
@@ -206,7 +200,6 @@ data class TopOutUiState(
     val saving: Boolean = false,
     val savingStatus: String? = null,
     val errorMessage: String? = null,
-    val modelReady: Boolean = false,
     val launchVisible: Boolean = true,
     val isLandscape: Boolean = false
 )
@@ -264,39 +257,31 @@ object TopOutConfig {
     const val MatLowerSampleMultiplier = 2f
     const val MatLocalRefineWindowRatio = 0.03f
 
-    const val MotionAnalysisCalibrationFps = 8.0
-    const val MotionAnalysisIdleFps = 6.0
-    const val MotionAnalysisBoostFps = 12.0
-    const val MotionAnalysisBoostSeconds = 1.2
+    /** Consecutive full frames are compared at 4 fps while person detection is asleep. */
+    const val FullFrameMotionFps = 4.0
     const val MotionFrameWidth = 160
     const val MotionPixelDifference = 20
+    const val FullFrameMotionChangedPixelRatio = 0.03f
     const val MotionCountdownSeconds = 3.0
-    const val MotionCalibrationMadFactor = 2.8f
-    const val MotionCalibrationMinOutlierDelta = 0.035f
-    const val MotionMatBandHeightRatio = 0.05f
-    const val MotionBinThreshold = 0.08f
-    const val MotionBaseDiffMargin = 0.025f
-    const val MotionBoundaryPrimaryMaxBins = 3
-    const val MotionBoundaryNoiseMaxBins = 2
-    const val MotionBoundaryNoiseEnergyRatio = 0.55f
-    const val MotionBoundaryDominanceRatio = 2.2f
-    const val MotionBoundaryDominanceMargin = 0.10f
 
-    const val PoseModelAssetPath = "models/pose_landmarker_heavy.task"
-    const val PoseStartVerificationIntervalSeconds = 0.5
-    const val PoseIntervalSeconds = 0.5
-    const val PoseInputMaxLongSide = 512
-    const val PoseNoPoseRetrySeconds = 5.0
+    const val PersonDetectorModelAssetPath = "models/efficientdet_lite2_float16.tflite"
+    const val PersonDetectorInputMaxLongSide = 512
+    const val PersonDetectorFps = 2.0
+    const val PersonSearchWindowSeconds = 1.0
+    const val PersonLostTimeoutSeconds = 5.0
+    const val PersonDetectorScoreThreshold = 0.25f
+    const val PersonDetectorMaxResults = 5
+    const val PersonDetectorMinimumBoxAreaRatio = 0.0015f
     const val ClipBoundaryPaddingSeconds = 3.0
-    const val PoseConfidence = 0.50f
-    const val PoseMinimumReliableLandmarks = 6
-    const val PoseMinimumCoreLandmarks = 3
-    /** Lowest reliable pose point must clear a line 5% of frame height above the mat. */
-    const val PoseMatClearanceRatio = 0.05f
-    /** Small landmark jitter allowance around the nominal 5% crossing line. */
-    const val PoseMatTolerance = 0.02f
-    const val MaxStoredClipRanges = 10
+    /** The person's bounding-box bottom must clear a line 5% of frame height above the mat. */
+    const val PersonMatClearanceRatio = 0.05f
+    /** Small detector-box jitter allowance around the nominal 5% crossing line. */
+    const val PersonMatTolerance = 0.02f
+    /** 3 seconds of useful detection plus the existing 3-second padding on both sides. */
     const val ShortClipMinimumTotalSeconds = 9.0
+    /** Allows for the half-second sampling interval of the 2 fps person detector. */
+    const val ShortClipDurationToleranceSeconds = 0.55
+    /** A short range is merged into the nearest neighbour only when the gap is at most 3 seconds. */
     const val ShortClipMergeGapSeconds = 3.0
 
     const val FineAdjustmentStep = 0.1

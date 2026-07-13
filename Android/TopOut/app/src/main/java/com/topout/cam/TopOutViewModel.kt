@@ -3,7 +3,6 @@ package com.topout.cam
 import android.app.Application
 import android.graphics.Bitmap
 import android.net.Uri
-import android.os.SystemClock
 import androidx.camera.view.PreviewView
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.AndroidViewModel
@@ -14,11 +13,13 @@ import com.topout.cam.data.SettingsRepository
 import com.topout.cam.detection.MatBoundaryDetector
 import com.topout.cam.detection.MotionEvent
 import com.topout.cam.detection.MotionFinishReference
-import com.topout.cam.detection.PoseClimbAnalyzer
+import com.topout.cam.detection.PersonClimbAnalyzer
 import com.topout.cam.media.VideoExporter
 import com.topout.cam.model.AppSettings
 import com.topout.cam.model.CameraStage
 import com.topout.cam.model.ClipRange
+import com.topout.cam.model.ClipRangeNormalizer
+import com.topout.cam.model.DetectedClipRangeStore
 import com.topout.cam.model.RecordedVideo
 import com.topout.cam.model.RecordingFrameRate
 import com.topout.cam.model.RecordingResolution
@@ -32,7 +33,6 @@ import com.topout.cam.sam.OnnxMobileSamSegmenter
 import com.topout.cam.util.StorageMonitor
 import com.topout.cam.util.createHoldOverlayBitmap
 import java.io.File
-import kotlin.math.abs
 import kotlin.math.max
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -48,8 +48,11 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private val settingsRepository = SettingsRepository(application)
     private val cameraEngine = CameraEngine(application)
     private val videoExporter = VideoExporter(application)
-    private val holdSegmenter: HoldSegmenter = OnnxMobileSamSegmenter(application)
-    private val poseAnalyzer = PoseClimbAnalyzer(application, onEvent = ::handleMotionEvent)
+    private val holdSegmenterDelegate = lazy(LazyThreadSafetyMode.NONE) {
+        OnnxMobileSamSegmenter(application)
+    }
+    private val holdSegmenter: HoldSegmenter get() = holdSegmenterDelegate.value
+    private val personAnalyzer = PersonClimbAnalyzer(application, onEvent = ::handleMotionEvent)
 
     private val _uiState = MutableStateFlow(TopOutUiState())
     val uiState: StateFlow<TopOutUiState> = _uiState.asStateFlow()
@@ -61,7 +64,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private var latestPreviewView: PreviewView? = null
     private var pendingRetakeRecording = false
     private var activeDetectedStart: Double? = null
-    private val completedRanges = mutableListOf<ClipRange>()
+    private val completedRanges = DetectedClipRangeStore()
     private var activeRecordingSettings: AppSettings? = null
     private var activeRecordingLandscape = false
     private var recordingAnalysisAvailable = true
@@ -71,7 +74,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         cameraEngine.onRecordingStarted = {
             val settings = activeRecordingSettings ?: _uiState.value.settings
             val canAnalyze = settings.autoClipDetectionEnabled && recordingAnalysisAvailable
-            if (canAnalyze) poseAnalyzer.markRecordingStarted() else poseAnalyzer.stop()
+            if (canAnalyze) personAnalyzer.markRecordingStarted() else personAnalyzer.stop()
             _uiState.update { state ->
                 state.copy(
                     recordingState = RecordingState.RECORDING,
@@ -105,7 +108,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         cameraEngine.onRecordingAnalysisUnavailable = {
             recordingAnalysisAvailable = false
             if (_uiState.value.recordingState in setOf(RecordingState.STARTING, RecordingState.RECORDING)) {
-                poseAnalyzer.stop()
+                personAnalyzer.stop()
             }
         }
 
@@ -120,23 +123,11 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
 
+        // Keep launch lightweight. MobileSAM sessions are created lazily only when top-hold
+        // selection is actually used; automatic person detection does not need the ONNX models.
         viewModelScope.launch {
-            val startedAt = SystemClock.elapsedRealtime()
-            holdSegmenter.prepare()
-                .onSuccess {
-                    val remaining = 550L - (SystemClock.elapsedRealtime() - startedAt)
-                    if (remaining > 0L) delay(remaining)
-                    _uiState.update { it.copy(modelReady = true, launchVisible = false) }
-                }
-                .onFailure { error ->
-                    _uiState.update {
-                        it.copy(
-                            modelReady = false,
-                            launchVisible = false,
-                            errorMessage = error.localizedMessage ?: "MobileSAM 모델을 준비하지 못했습니다."
-                        )
-                    }
-                }
+            delay(550L)
+            _uiState.update { it.copy(launchVisible = false) }
         }
     }
 
@@ -154,7 +145,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     frameRate = state.settings.frameRate,
                     aspectRatio = state.settings.aspectRatio,
                     isLandscape = state.isLandscape,
-                    analyzer = poseAnalyzer
+                    analyzer = personAnalyzer
                 )
             }.onSuccess { capabilities ->
                 recordingAnalysisAvailable = cameraEngine.isAnalysisAvailable()
@@ -242,7 +233,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             // iOS freezes the current camera sample buffer, not a screenshot of the preview layer.
             // Prefer the shared ImageAnalysis frame for the same behavior; PreviewView remains a
             // fallback for devices that cannot expose a third analysis stream.
-            val analysisSnapshot = poseAnalyzer.captureNextFrame(TopOutConfig.CaptureMaxLongSide)
+            val analysisSnapshot = personAnalyzer.captureNextFrame(TopOutConfig.CaptureMaxLongSide)
             val previewSnapshot = runCatching {
                 frameProvider()?.copy(Bitmap.Config.ARGB_8888, false)
             }.getOrNull()
@@ -284,10 +275,6 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     fun onHoldTapped(normalizedPoint: Offset, selectionZoom: Float) {
         val state = _uiState.value
         if (state.stage != CameraStage.SELECT || state.isBusy || !state.settings.requiresTopHoldSelection) return
-        if (!state.modelReady) {
-            setError("MobileSAM 모델이 아직 준비되지 않았습니다.")
-            return
-        }
         val frame = state.frozenFrame ?: return
         val requestId = ++selectionRequestId
         _uiState.update { it.copy(isBusy = true, statusText = "탑홀드 분석 중...") }
@@ -386,23 +373,19 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
 
         if (settings.autoClipDetectionEnabled) {
             val hold = state.holdMask
-            poseAnalyzer.configure(
+            personAnalyzer.configure(
                 matLine = state.matLine,
                 topBox = hold?.normalizedBounds,
                 finishReference = if (settings.topHoldMaskingEnabled) {
                     MotionFinishReference.CLOSEST_TOP_HOLD
                 } else {
-                    MotionFinishReference.HIGHEST_POSE_POINT
+                    MotionFinishReference.HIGHEST_PERSON_POINT
                 },
-                referenceImage = state.frozenFrame,
-                horizontalBinCount = settings.aspectRatio.adaptiveHorizontalBinCount(
-                    TopOutConfig.MatBoundaryBins,
-                    state.isLandscape
-                )
+                referenceImage = state.frozenFrame
             )
-            poseAnalyzer.resetForRecording()
+            personAnalyzer.resetForRecording()
         } else {
-            poseAnalyzer.stop()
+            personAnalyzer.stop()
         }
 
         _uiState.update {
@@ -447,7 +430,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         storageJob?.cancel()
 
         if (recordingState == RecordingState.STARTING) {
-            poseAnalyzer.stop()
+            personAnalyzer.stop()
             cameraEngine.setPreviewRenderingEnabled(true)
             _uiState.update { state ->
                 val returnStage = if (state.settings.requiresTopHoldSelection && state.holdMask != null) {
@@ -466,7 +449,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
-        poseAnalyzer.stop()?.let(::appendDetectedRange)
+        personAnalyzer.stop()?.let(::appendDetectedRange)
         _uiState.update {
             it.copy(
                 recordingState = RecordingState.FINALIZING,
@@ -583,7 +566,6 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             TopOutUiState(
                 settings = state.settings,
                 capabilities = state.capabilities,
-                modelReady = state.modelReady,
                 launchVisible = false,
                 zoomFactor = state.zoomFactor,
                 isLandscape = state.isLandscape,
@@ -619,7 +601,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun finishRecording(result: Result<CameraEngine.FinalizedRecording>) {
         storageJob?.cancel()
         // stopRecording() already closes the open detected range before encoder finalization.
-        poseAnalyzer.stop()
+        personAnalyzer.stop()
         cameraEngine.setPreviewRenderingEnabled(true)
         cameraEngine.unbind()
 
@@ -640,11 +622,12 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             val readyFile = finalized.file
             val duration = max(0.1, videoExporter.durationSeconds(readyFile))
             val ranges = normalizeDetectedClipRanges(
-                completedRanges.mapNotNull { range ->
+                input = completedRanges.snapshot().mapNotNull { range ->
                     val startSeconds = range.startSeconds.coerceIn(0.0, duration)
                     val endSeconds = range.endSeconds.coerceIn(0.0, duration)
                     if (endSeconds > startSeconds) ClipRange(startSeconds, endSeconds) else null
-                }
+                },
+                recordingDurationSeconds = duration
             )
             val defaultRange = ranges.lastOrNull() ?: ClipRange(0.0, duration)
             val encodedSize = videoExporter.videoDimensions(readyFile)
@@ -703,7 +686,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     activeDetectedStart = null
                     _uiState.update {
                         it.copy(
-                            detectedRanges = completedRanges.toList(),
+                            detectedRanges = completedRanges.snapshot(),
                             statusText = "구간 저장됨 · 다음 등반 대기"
                         )
                     }
@@ -718,54 +701,18 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun appendDetectedRange(range: ClipRange) {
-        if (range.endSeconds <= range.startSeconds) return
-        val last = completedRanges.lastOrNull()
-        if (last != null && abs(last.startSeconds - range.startSeconds) < 0.05 &&
-            abs(last.endSeconds - range.endSeconds) < 0.05
-        ) return
-        completedRanges += range
-        while (completedRanges.size > TopOutConfig.MaxStoredClipRanges) completedRanges.removeAt(0)
+        // Keep every detected range. Finalization removes short or overlapping ranges, but valid
+        // climbs are never discarded merely because the recording contains many sections.
+        completedRanges.append(range)
     }
 
-    /** Exact short-range removal/nearest-neighbour merge policy from HoldVC+Recording.swift. */
-    private fun normalizeDetectedClipRanges(input: List<ClipRange>): List<ClipRange> {
-        val working = input.filter { it.endSeconds > it.startSeconds }
-            .sortedWith(compareBy<ClipRange> { it.startSeconds }.thenBy { it.endSeconds })
-            .toMutableList()
-
-        while (true) {
-            val shortIndex = working.indexOfFirst { it.durationSeconds < TopOutConfig.ShortClipMinimumTotalSeconds }
-            if (shortIndex < 0) break
-            val short = working[shortIndex]
-            val previous = (shortIndex - 1).takeIf { shortIndex > 0 }
-            val next = (shortIndex + 1).takeIf { it < working.size }
-            val previousGap = previous?.let { max(0.0, short.startSeconds - working[it].endSeconds) }
-            val nextGap = next?.let { max(0.0, working[it].startSeconds - short.endSeconds) }
-            val canPrevious = previousGap != null && previousGap <= TopOutConfig.ShortClipMergeGapSeconds
-            val canNext = nextGap != null && nextGap <= TopOutConfig.ShortClipMergeGapSeconds
-
-            if (canPrevious || canNext) {
-                val mergePrevious = if (canPrevious && canNext) {
-                    requireNotNull(previousGap) <= requireNotNull(nextGap)
-                } else canPrevious
-                if (mergePrevious) {
-                    val index = requireNotNull(previous)
-                    working[index] = ClipRange(
-                        working[index].startSeconds,
-                        max(working[index].endSeconds, short.endSeconds)
-                    )
-                    working.removeAt(shortIndex)
-                } else {
-                    val index = requireNotNull(next)
-                    working[shortIndex] = ClipRange(short.startSeconds, max(short.endSeconds, working[index].endSeconds))
-                    working.removeAt(index)
-                }
-            } else {
-                working.removeAt(shortIndex)
-            }
-        }
-        return working.filter { it.endSeconds > it.startSeconds }.takeLast(TopOutConfig.MaxStoredClipRanges)
-    }
+    private fun normalizeDetectedClipRanges(
+        input: List<ClipRange>,
+        recordingDurationSeconds: Double
+    ): List<ClipRange> = ClipRangeNormalizer.normalize(
+        input = input,
+        recordingDurationSeconds = recordingDurationSeconds
+    )
 
     private fun startStorageMonitoring() {
         storageJob?.cancel()
@@ -836,10 +783,10 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         storageJob?.cancel()
         countdownJob?.cancel()
         cameraBindingJob?.cancel()
-        poseAnalyzer.stop()
-        cameraEngine.executeOnAnalysisThread { poseAnalyzer.close() }
+        personAnalyzer.stop()
+        cameraEngine.executeOnAnalysisThread { personAnalyzer.close() }
         cameraEngine.release()
-        holdSegmenter.close()
+        if (holdSegmenterDelegate.isInitialized()) holdSegmenter.close()
         super.onCleared()
     }
 }

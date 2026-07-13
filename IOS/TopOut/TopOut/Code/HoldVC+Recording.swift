@@ -392,11 +392,9 @@ extension HoldVC {
             didChange = true
         }
 
-        let validRanges = working.filter { $0.endSeconds > $0.startSeconds }
-        if validRanges.count > Cfg.motionMaxStoredClipRanges {
-            return Array(validRanges.suffix(Cfg.motionMaxStoredClipRanges))
-        }
-        return validRanges
+        // Preserve every valid range after the existing short-range cleanup/merge pass.
+        // ReviewVC already navigates using detectedRanges.count, so it supports any count.
+        return working.filter { $0.endSeconds > $0.startSeconds }
     }
 
     private func clampedSeconds(_ value: TimeInterval, min lower: TimeInterval, max upper: TimeInterval) -> TimeInterval {

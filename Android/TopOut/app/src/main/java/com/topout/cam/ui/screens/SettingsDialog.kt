@@ -232,7 +232,7 @@ fun SettingsDialog(
 
                         SettingsSection("녹화중 실시간 영상 표시") {
                             SettingSwitch(
-                                text = "비활성화 시 녹화·포즈 분석은 유지하고 미리보기 스트림을 중지",
+                                text = "비활성화 시 녹화·사람 위치 분석은 유지하고 미리보기 스트림을 중지",
                                 checked = draft.livePreviewDuringRecordingEnabled,
                                 onChecked = {
                                     draft = draft.copy(livePreviewDuringRecordingEnabled = it)
@@ -324,7 +324,7 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "카메라와 마이크는 영상 및 음성 녹화에 사용되며, 포즈 분석과 촬영 데이터 처리는 사용자의 기기 내에서 이루어집니다.",
+                    "카메라와 마이크는 영상 및 음성 녹화에 사용되며, 사람 위치 분석과 촬영 데이터 처리는 사용자의 기기 내에서 이루어집니다.",
                     color = TopOutColors.SecondaryText,
                     fontSize = 13.sp,
                     lineHeight = 19.sp
@@ -349,12 +349,12 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
                 )
             }
 
-            PrivacyPolicySection("3. 포즈 및 움직임 분석") {
+            PrivacyPolicySection("3. 사람 위치 및 움직임 분석") {
                 PrivacyParagraph(
-                    "TopOut은 클라이밍 시작과 종료 시점을 감지하고 자동 촬영 기능을 제공하기 위해 카메라 영상에서 사용자의 자세와 움직임을 분석할 수 있습니다."
+                    "TopOut은 클라이밍 시작과 종료 시점을 감지하고 자동 촬영 기능을 제공하기 위해 카메라 영상에서 사람의 위치와 화면 변화를 분석할 수 있습니다."
                 )
                 PrivacyParagraph(
-                    "포즈 분석은 MediaPipe 기반 기술을 이용해 기기 내에서 수행됩니다. 분석 과정에서 생성되는 관절 좌표, 포즈 정보 및 중간 분석 결과는 외부 서버로 전송되지 않으며 사용자를 식별하는 프로필로 저장되지 않습니다."
+                    "사람 위치 분석은 MediaPipe 기반 객체 탐지 기술을 이용해 기기 내에서 수행됩니다. 분석 과정에서 생성되는 사람 영역 좌표와 중간 분석 결과는 외부 서버로 전송되지 않으며 사용자를 식별하는 프로필로 저장되지 않습니다."
                 )
             }
 
@@ -497,7 +497,7 @@ private fun OpenSourceLicensesScreen(onBack: () -> Unit) {
                 lineHeight = 18.sp
             )
 
-            SettingsSection("MobileSAM") {
+            SettingsSection("제3자 구성요소") {
                 Text(
                     notices,
                     color = TopOutColors.SecondaryText,

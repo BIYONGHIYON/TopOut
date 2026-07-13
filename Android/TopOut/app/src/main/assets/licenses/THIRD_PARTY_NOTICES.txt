@@ -16,3 +16,14 @@ were converted to ONNX format and integrated into TopOut for on-device image
 segmentation. These conversion and integration changes were made for TopOut.
 
 The full Apache License 2.0 text is provided below.
+
+EfficientDet-Lite2
+
+TopOut uses the Google MediaPipe EfficientDet-Lite2 float16 object detection model
+for on-device person location detection.
+
+Model source:
+https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/latest/efficientdet_lite2.tflite
+
+The model is used only on device and is downloaded during the Gradle build.
+

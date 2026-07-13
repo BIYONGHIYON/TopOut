@@ -221,7 +221,7 @@ fun TopOutApp(viewModel: TopOutViewModel) {
                     showTip = state.settings.helpEnabled,
                     isLandscape = isLandscape,
                     readyTitle = TopOutCopy.readyButtonTitle(state.settings),
-                    enabled = !state.isBusy && state.modelReady,
+                    enabled = !state.isBusy,
                     onReady = {
                         viewModel.onReady(
                             frameProvider = { previewView?.bitmap },

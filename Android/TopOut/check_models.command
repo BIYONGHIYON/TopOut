@@ -4,10 +4,10 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 MODEL_DIR="$ROOT/app/src/main/assets/models"
 ENCODER="$MODEL_DIR/mobile_sam_encoder.onnx"
 DECODER="$MODEL_DIR/mobile_sam_decoder.onnx"
-POSE="$MODEL_DIR/pose_landmarker_heavy.task"
+DETECTOR="$MODEL_DIR/efficientdet_lite2_float16.tflite"
 
 missing=0
-for file in "$ENCODER" "$DECODER" "$POSE"; do
+for file in "$ENCODER" "$DECODER" "$DETECTOR"; do
   if [[ -f "$file" && -s "$file" ]]; then
     size=$(du -h "$file" | awk '{print $1}')
     echo "✓ $(basename "$file") ($size)"
@@ -19,7 +19,7 @@ done
 
 if [[ $missing -ne 0 ]]; then
   echo ""
-  echo "누락된 모델을 준비해 주세요. Pose 모델은 ./download_pose_model.command 로 받을 수 있습니다."
+  echo "사람 탐지 모델이 없다면 ./download_person_detector_model.command 를 실행하세요."
   exit 1
 fi
 

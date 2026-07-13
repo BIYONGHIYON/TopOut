@@ -50,14 +50,6 @@ class OnnxMobileSamSegmenter(
     @Volatile private var closed = false
     private var cachedEmbedding: CachedEmbedding? = null
 
-    override suspend fun prepare(): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            ensureSessions()
-            Unit
-        }
-    }
-
-
     override suspend fun warmUp(bitmap: Bitmap): Result<Unit> = withContext(Dispatchers.Default) {
         runCatching {
             require(!bitmap.isRecycled) { "선택할 카메라 이미지가 이미 해제되었습니다." }
@@ -103,8 +95,6 @@ class OnnxMobileSamSegmenter(
         decoderSession = null
         sessionOptions = null
     }
-
-    private suspend fun ensureSessions(): Sessions = sessionMutex.withLock { ensureSessionsLocked() }
 
     private fun ensureSessionsLocked(): Sessions {
         check(!closed) { "MobileSAM 실행기가 이미 종료되었습니다." }

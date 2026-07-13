@@ -53,10 +53,9 @@ extension HoldVC {
             if sameStart && sameEnd { return }
         }
 
+        // Keep every raw detected range until recording finalization. Short or overlapping
+        // false positives are cleaned up later, so valid early climbs are never discarded.
         clipTimes.completedRanges.append(range)
-        if clipTimes.completedRanges.count > Cfg.motionMaxStoredClipRanges {
-            clipTimes.completedRanges = Array(clipTimes.completedRanges.suffix(Cfg.motionMaxStoredClipRanges))
-        }
     }
 
     func normalizedMaskBox(_ box: CGRect, image: UIImage) -> CGRect {
