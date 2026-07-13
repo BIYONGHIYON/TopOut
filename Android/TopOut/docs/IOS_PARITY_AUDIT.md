@@ -11,7 +11,7 @@
 | 선택 조건 | 마스킹일 때만 탑홀드 필요 | `requiresTopHoldSelection = topHoldMaskingEnabled` |
 | 자동만 사용 | 매트만 보정, 탑홀드 불필요 | SELECT 단계에서 mat-only 녹화 허용 |
 | 종료 기준 | 마스크 ON 최근접 / OFF 최고점 | `MotionFinishReference` 두 전략 추가 |
-| Pose 입력 | 긴 변 384 | Android 벽 오탐 대응으로 `PoseInputMaxLongSide = 512` 적용 |
+| Pose 입력 | 긴 변 512 | Android 정확도 우선 설정으로 `PoseInputMaxLongSide = 512` 적용 |
 | SAM mask | 256 | 후처리 최대 긴 변 256 |
 | 둥근 외곽선 | 10% padding, corner 0.48 | outline 전용 padded bounds 적용 |
 | 외곽선 선폭 | min side 1.6%/0.6%, 최소 8/2.5px | 선택·프리뷰·export overlay 공통 상수화 |

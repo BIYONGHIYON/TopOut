@@ -6,3 +6,5 @@
 - 상세 감사표: `docs/IOS_PARITY_AUDIT.md`
 
 이 전달본은 소스 프로젝트이며 `.gradle`, `.idea`, `app/build`, `local.properties` 등 로컬/생성 파일을 제거했습니다. Android Studio에서 프로젝트를 열고 Gradle Sync 및 Rebuild를 실행하세요.
+
+- 배포 전 Android 조정: Pose 최저점의 매트 통과 기준은 5%로 유지하며, 앱 자체 Camera/Pose 런타임 로그를 제거했습니다.

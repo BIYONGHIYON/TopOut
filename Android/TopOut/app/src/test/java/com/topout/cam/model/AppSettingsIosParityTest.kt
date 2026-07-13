@@ -55,6 +55,7 @@ class AppSettingsIosParityTest {
         assertEquals(5f, TopOutConfig.SelectionMaxZoom, 0.0001f)
         assertEquals(8f, TopOutConfig.CameraMaxZoom, 0.0001f)
         assertEquals(512, TopOutConfig.PoseInputMaxLongSide)
+        assertEquals(10, TopOutConfig.MaxStoredClipRanges)
         assertEquals(256, TopOutConfig.MaskSize)
         assertEquals(0.48f, TopOutConfig.RoundedCornerRatio, 0.0001f)
         assertEquals(0.016f, TopOutConfig.RedLineRatio, 0.0001f)

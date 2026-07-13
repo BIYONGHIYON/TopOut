@@ -1,9 +1,6 @@
 package com.topout.cam.ui.screens
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -65,12 +62,15 @@ fun SettingsDialog(
     onDismiss: () -> Unit,
     onSave: (AppSettings) -> Unit
 ) {
-    val context = LocalContext.current
     var draft by remember(initial) { mutableStateOf(initial.normalized()) }
+    var showPrivacyPolicy by remember { mutableStateOf(false) }
     var showOpenSourceLicenses by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = showOpenSourceLicenses) {
-        showOpenSourceLicenses = false
+    BackHandler(enabled = showPrivacyPolicy || showOpenSourceLicenses) {
+        when {
+            showPrivacyPolicy -> showPrivacyPolicy = false
+            showOpenSourceLicenses -> showOpenSourceLicenses = false
+        }
     }
 
     fun preferredFrameRate(resolution: RecordingResolution, current: RecordingFrameRate): RecordingFrameRate {
@@ -98,12 +98,18 @@ fun SettingsDialog(
 
     Dialog(
         onDismissRequest = {
-            if (showOpenSourceLicenses) showOpenSourceLicenses = false else onDismiss()
+            when {
+                showPrivacyPolicy -> showPrivacyPolicy = false
+                showOpenSourceLicenses -> showOpenSourceLicenses = false
+                else -> onDismiss()
+            }
         },
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Box(Modifier.fillMaxSize().background(TopOutColors.SettingsBackground)) {
-            if (showOpenSourceLicenses) {
+            if (showPrivacyPolicy) {
+                PrivacyPolicyScreen(onBack = { showPrivacyPolicy = false })
+            } else if (showOpenSourceLicenses) {
                 OpenSourceLicensesScreen(onBack = { showOpenSourceLicenses = false })
             } else {
                 Column(Modifier.fillMaxSize()) {
@@ -226,7 +232,7 @@ fun SettingsDialog(
 
                         SettingsSection("녹화중 실시간 영상 표시") {
                             SettingSwitch(
-                                text = "비활성화 시 배터리 절약을 위해 녹화 중 검은 화면 출력",
+                                text = "비활성화 시 녹화·포즈 분석은 유지하고 미리보기 스트림을 중지",
                                 checked = draft.livePreviewDuringRecordingEnabled,
                                 onChecked = {
                                     draft = draft.copy(livePreviewDuringRecordingEnabled = it)
@@ -237,12 +243,7 @@ fun SettingsDialog(
                         SettingsSection("앱 정보") {
                             SettingsNavigationRow(
                                 title = "개인정보 처리방침",
-                                onClick = {
-                                    openExternalUrl(
-                                        context = context,
-                                        url = BuildConfig.PRIVACY_POLICY_URL
-                                    )
-                                }
+                                onClick = { showPrivacyPolicy = true }
                             )
                             HorizontalDivider(color = Color(0xFFE5E5EA))
                             SettingsNavigationRow(
@@ -271,6 +272,183 @@ fun SettingsDialog(
             }
         }
     }
+}
+
+@Composable
+private fun PrivacyPolicyScreen(onBack: () -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().background(Color.White)
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "뒤로",
+                    tint = TopOutColors.Blue
+                )
+            }
+            Text(
+                "개인정보 처리방침",
+                modifier = Modifier.weight(1f),
+                color = Color.Black,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.width(48.dp))
+        }
+
+        Column(
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                "시행일: 2026년 7월 13일",
+                color = TopOutColors.SecondaryText,
+                fontSize = 12.sp
+            )
+
+            Column(
+                modifier = Modifier.fillMaxWidth()
+                    .background(Color.White, RoundedCornerShape(13.dp))
+                    .padding(14.dp)
+            ) {
+                Text(
+                    "TopOut은 별도의 회원가입 기능을 제공하지 않으며, 사용자의 이름, 이메일 주소, 위치정보, 기기 식별자 등의 개인정보를 수집하거나 외부 서버로 전송하지 않습니다.",
+                    color = Color.Black,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "카메라와 마이크는 영상 및 음성 녹화에 사용되며, 포즈 분석과 촬영 데이터 처리는 사용자의 기기 내에서 이루어집니다.",
+                    color = TopOutColors.SecondaryText,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+            }
+
+            PrivacyPolicySection("1. 수집하는 개인정보") {
+                PrivacyParagraph(
+                    "TopOut은 이름, 이메일 주소, 전화번호, 주소, 위치정보, 연락처, 기기 식별자, 광고 식별자 또는 앱 이용 기록 등 사용자를 직접 식별하기 위한 개인정보를 수집하지 않습니다."
+                )
+                PrivacyParagraph(
+                    "또한 회원가입, 로그인, 사용자 계정 또는 클라우드 저장 기능을 제공하지 않습니다."
+                )
+            }
+
+            PrivacyPolicySection("2. 카메라 및 마이크 사용") {
+                PrivacyParagraph(
+                    "카메라 권한은 영상 촬영과 자동 촬영 구간 감지에 사용되며, 마이크 권한은 촬영 영상에 포함되는 음성과 주변 소리를 녹음하기 위해 사용됩니다."
+                )
+                PrivacyParagraph(
+                    "카메라와 마이크는 사용자가 권한을 허용하고 촬영 기능을 사용하는 동안에만 접근합니다. 촬영된 영상과 음성은 사용자의 기기에서 처리되며 개발자 또는 외부 서버로 전송되지 않습니다."
+                )
+            }
+
+            PrivacyPolicySection("3. 포즈 및 움직임 분석") {
+                PrivacyParagraph(
+                    "TopOut은 클라이밍 시작과 종료 시점을 감지하고 자동 촬영 기능을 제공하기 위해 카메라 영상에서 사용자의 자세와 움직임을 분석할 수 있습니다."
+                )
+                PrivacyParagraph(
+                    "포즈 분석은 MediaPipe 기반 기술을 이용해 기기 내에서 수행됩니다. 분석 과정에서 생성되는 관절 좌표, 포즈 정보 및 중간 분석 결과는 외부 서버로 전송되지 않으며 사용자를 식별하는 프로필로 저장되지 않습니다."
+                )
+            }
+
+            PrivacyPolicySection("4. 영상 저장 및 사진 앱 접근") {
+                PrivacyParagraph(
+                    "TopOut은 앱에서 새로 촬영한 영상을 사용자의 기기 사진 앱 또는 미디어 저장소에 저장합니다."
+                )
+                PrivacyParagraph(
+                    "TopOut은 사용자의 기존 사진이나 영상을 임의로 열람, 수집, 분석 또는 외부로 전송하지 않습니다. 운영체제 버전에 따라 영상 저장을 위한 권한 요청 방식이 달라질 수 있습니다."
+                )
+            }
+
+            PrivacyPolicySection("5. 제3자 제공 및 외부 전송") {
+                PrivacyParagraph(
+                    "TopOut은 사용자의 개인정보나 촬영 데이터를 제3자에게 판매, 제공 또는 공유하지 않습니다. 사용자 데이터를 광고 사업자, 데이터 분석 서비스 또는 외부 서버에 전송하지 않으며 국외로 이전하지 않습니다."
+                )
+            }
+
+            PrivacyPolicySection("6. 광고 및 분석 도구") {
+                PrivacyParagraph(
+                    "TopOut은 현재 맞춤형 광고, 광고 식별자 기반 추적 또는 사용자 행동 분석을 위한 외부 광고·분석 서비스를 사용하지 않습니다."
+                )
+                PrivacyParagraph(
+                    "향후 광고 또는 분석 서비스가 추가되어 개인정보 처리 방식이 변경되는 경우, 본 개인정보 처리방침을 수정하고 필요한 내용을 안내합니다."
+                )
+            }
+
+            PrivacyPolicySection("7. 데이터 보관 및 삭제") {
+                PrivacyParagraph(
+                    "촬영된 영상과 음성은 사용자의 기기에만 저장되며 TopOut은 별도의 서버에 촬영 콘텐츠를 보관하지 않습니다. 사용자는 기기의 사진 앱 또는 파일 관리 앱에서 촬영 콘텐츠를 직접 확인하고 삭제할 수 있습니다."
+                )
+                PrivacyParagraph(
+                    "앱을 삭제하면 앱 내부 설정과 임시 데이터는 운영체제의 앱 삭제 절차에 따라 제거됩니다. 기기의 사진 앱이나 미디어 저장소에 저장된 영상은 앱 삭제 후에도 남을 수 있으므로 사용자가 직접 삭제해야 합니다."
+                )
+            }
+
+            PrivacyPolicySection("8. 개인정보의 안전한 처리") {
+                PrivacyParagraph(
+                    "TopOut은 운영체제가 제공하는 권한 관리 기능과 앱 샌드박스 환경을 사용합니다. 카메라와 마이크는 사용자가 권한을 허용한 경우에만 이용할 수 있습니다."
+                )
+            }
+
+            PrivacyPolicySection("9. 권한 변경 및 철회") {
+                PrivacyParagraph(
+                    "사용자는 기기의 설정 → 애플리케이션 → TopOut → 권한에서 카메라와 마이크 권한을 언제든지 변경하거나 철회할 수 있습니다."
+                )
+                PrivacyParagraph(
+                    "카메라 또는 마이크 권한을 철회하면 영상 촬영이나 음성 녹음 등 일부 기능이 정상적으로 작동하지 않을 수 있습니다."
+                )
+            }
+
+            PrivacyPolicySection("10. 아동의 개인정보") {
+                PrivacyParagraph(
+                    "TopOut은 아동을 포함한 사용자로부터 개인정보를 의도적으로 수집하지 않습니다. 개인정보가 의도하지 않게 수집되었다고 판단되는 경우 아래 문의 이메일로 연락해 주세요."
+                )
+            }
+
+            PrivacyPolicySection("11. 개인정보 처리방침의 변경") {
+                PrivacyParagraph(
+                    "앱 기능, 적용 기술 또는 관련 법령과 정책의 변경에 따라 본 개인정보 처리방침이 수정될 수 있습니다. 내용이 변경되는 경우 시행일을 갱신하고 앱에서 변경된 내용을 안내합니다."
+                )
+            }
+
+            PrivacyPolicySection("12. 문의") {
+                PrivacyParagraph("이메일: byeonghyeon383@gmail.com")
+            }
+
+            Text(
+                "© 2026 TopOut. All rights reserved.",
+                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                color = TopOutColors.SecondaryText,
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
+private fun PrivacyPolicySection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    SettingsSection(title = title, content = content)
+}
+
+@Composable
+private fun PrivacyParagraph(text: String) {
+    Text(
+        text,
+        color = TopOutColors.SecondaryText,
+        fontSize = 12.sp,
+        lineHeight = 18.sp
+    )
 }
 
 @Composable
@@ -340,20 +518,6 @@ private fun OpenSourceLicensesScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(12.dp))
         }
     }
-}
-
-private fun openExternalUrl(context: Context, url: String) {
-    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-        addCategory(Intent.CATEGORY_BROWSABLE)
-    }
-    runCatching { context.startActivity(intent) }
-        .onFailure {
-            Toast.makeText(
-                context,
-                "웹 브라우저를 열 수 없습니다.",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
 }
 
 private fun readAssetText(context: Context, path: String): String = runCatching {

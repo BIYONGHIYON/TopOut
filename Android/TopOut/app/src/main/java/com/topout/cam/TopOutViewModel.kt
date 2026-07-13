@@ -483,7 +483,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /** Shows or hides the live camera layer; the recording session and Preview surface never change. */
+    /** Stops or resumes CameraX's preview stream while recording and analysis continue. */
     fun toggleLivePreview() {
         if (_uiState.value.recordingState != RecordingState.RECORDING) return
         val enabled = !_uiState.value.livePreviewEnabled
@@ -837,7 +837,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         countdownJob?.cancel()
         cameraBindingJob?.cancel()
         poseAnalyzer.stop()
-        poseAnalyzer.close()
+        cameraEngine.executeOnAnalysisThread { poseAnalyzer.close() }
         cameraEngine.release()
         holdSegmenter.close()
         super.onCleared()

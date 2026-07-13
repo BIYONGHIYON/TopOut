@@ -291,6 +291,9 @@ object TopOutConfig {
     const val PoseConfidence = 0.50f
     const val PoseMinimumReliableLandmarks = 6
     const val PoseMinimumCoreLandmarks = 3
+    /** Lowest reliable pose point must clear a line 5% of frame height above the mat. */
+    const val PoseMatClearanceRatio = 0.05f
+    /** Small landmark jitter allowance around the nominal 5% crossing line. */
     const val PoseMatTolerance = 0.02f
     const val MaxStoredClipRanges = 10
     const val ShortClipMinimumTotalSeconds = 9.0

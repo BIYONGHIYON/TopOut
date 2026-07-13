@@ -8,6 +8,7 @@ import androidx.camera.core.ImageProxy
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import com.google.mediapipe.framework.image.BitmapImageBuilder
+import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.core.Delegate
@@ -46,8 +47,8 @@ enum class MotionFinishReference {
  * 2) MediaPipe Pose Landmarker Heavy every 0.5 s to determine start/end and either the closest
  *    top-hold moment or the highest pose point, matching iOS MotionDetector.FinishReference.
  *
- * Only the pose model/backend is changed. Start/end rules, confidence filtering, timing,
- * motion gating, and clip behavior remain the same as the original implementation.
+ * The pose model/backend and the Android-specific 5% mat-clearance threshold are applied here.
+ * Confidence filtering, timing, motion gating, and clip behavior otherwise remain unchanged.
  */
 class PoseClimbAnalyzer(
     context: Context,
@@ -68,13 +69,30 @@ class PoseClimbAnalyzer(
     )
 
     private val frameCaptureRequest = AtomicReference<FrameCaptureRequest?>(null)
+    private val appContext = context.applicationContext
 
-    private fun poseOptions(runningMode: RunningMode): PoseLandmarker.PoseLandmarkerOptions =
+    private data class PoseDetectorPair(
+        val startVerification: PoseLandmarker,
+        val climbingTracking: PoseLandmarker,
+        val delegate: Delegate
+    )
+
+    /**
+     * MediaPipe's GPU delegate must be created and used on the same thread. The landmarker pair is
+     * therefore initialized lazily from analyze(), which CameraX invokes on its single analysis
+     * executor. GPU is preferred; unsupported devices automatically fall back to CPU.
+     */
+    private var poseDetectors: PoseDetectorPair? = null
+
+    private fun poseOptions(
+        runningMode: RunningMode,
+        delegate: Delegate
+    ): PoseLandmarker.PoseLandmarkerOptions =
         PoseLandmarker.PoseLandmarkerOptions.builder()
             .setBaseOptions(
                 BaseOptions.builder()
                     .setModelAssetPath(TopOutConfig.PoseModelAssetPath)
-                    .setDelegate(Delegate.CPU)
+                    .setDelegate(delegate)
                     .build()
             )
             .setRunningMode(runningMode)
@@ -85,14 +103,49 @@ class PoseClimbAnalyzer(
      * This preserves the original detector split: independent inference while checking a start,
      * then temporal tracking while a climb is active.
      */
-    private val startVerificationDetector: PoseLandmarker = PoseLandmarker.createFromOptions(
-        context.applicationContext,
-        poseOptions(RunningMode.IMAGE)
-    )
-    private val climbingTrackingDetector: PoseLandmarker = PoseLandmarker.createFromOptions(
-        context.applicationContext,
-        poseOptions(RunningMode.VIDEO)
-    )
+    private fun createPoseDetectorPair(delegate: Delegate): PoseDetectorPair {
+        val start = PoseLandmarker.createFromOptions(
+            appContext,
+            poseOptions(RunningMode.IMAGE, delegate)
+        )
+        return try {
+            val tracking = PoseLandmarker.createFromOptions(
+                appContext,
+                poseOptions(RunningMode.VIDEO, delegate)
+            )
+            PoseDetectorPair(start, tracking, delegate)
+        } catch (error: RuntimeException) {
+            start.close()
+            throw error
+        }
+    }
+
+    private fun requirePoseDetectors(): PoseDetectorPair {
+        poseDetectors?.let { return it }
+
+        val selected = try {
+            createPoseDetectorPair(Delegate.GPU)
+        } catch (_: RuntimeException) {
+            createPoseDetectorPair(Delegate.CPU)
+        }
+        poseDetectors = selected
+        return selected
+    }
+
+    private fun closePoseDetectors() {
+        poseDetectors?.let { pair ->
+            runCatching { pair.startVerification.close() }
+            runCatching { pair.climbingTracking.close() }
+        }
+        poseDetectors = null
+    }
+
+    private fun switchToCpuAfterGpuFailure(): PoseDetectorPair {
+        closePoseDetectors()
+        lastMediaPipeVideoTimestampMs = -1L
+        return createPoseDetectorPair(Delegate.CPU).also { poseDetectors = it }
+    }
+
     private var lastMediaPipeVideoTimestampMs = -1L
 
     private val motionLandmarkTypes = intArrayOf(
@@ -380,13 +433,13 @@ class PoseClimbAnalyzer(
         val useStartVerification = synchronized(this) { state == State.TRACKING }
         val mpImage = BitmapImageBuilder(poseBitmap).build()
         try {
-            val result = if (useStartVerification) {
-                startVerificationDetector.detect(mpImage)
-            } else {
-                climbingTrackingDetector.detectForVideo(
-                    mpImage,
-                    nextMediaPipeVideoTimestampMs(timestampNanos)
-                )
+            var detectors = requirePoseDetectors()
+            val result = try {
+                detectPose(detectors, useStartVerification, mpImage, timestampNanos)
+            } catch (gpuError: RuntimeException) {
+                if (detectors.delegate != Delegate.GPU) throw gpuError
+                detectors = switchToCpuAfterGpuFailure()
+                detectPose(detectors, useStartVerification, mpImage, timestampNanos)
             }
             handlePose(result, seconds)
         } catch (_: RuntimeException) {
@@ -396,6 +449,20 @@ class PoseClimbAnalyzer(
             poseBitmap.recycle()
             processingPose = false
         }
+    }
+
+    private fun detectPose(
+        detectors: PoseDetectorPair,
+        useStartVerification: Boolean,
+        image: MPImage,
+        timestampNanos: Long
+    ): PoseLandmarkerResult = if (useStartVerification) {
+        detectors.startVerification.detect(image)
+    } else {
+        detectors.climbingTracking.detectForVideo(
+            image,
+            nextMediaPipeVideoTimestampMs(timestampNanos)
+        )
     }
 
     @Synchronized
@@ -536,11 +603,11 @@ class PoseClimbAnalyzer(
     }
 
     private fun isAboveMatLine(point: Offset): Boolean {
-        val stricterBoundary = max(
+        val crossingBoundary = max(
             0f,
-            lineY(point.x) - max(0.02f, TopOutConfig.MotionMatBandHeightRatio)
+            lineY(point.x) - max(0.02f, TopOutConfig.PoseMatClearanceRatio)
         )
-        return point.y <= stricterBoundary + TopOutConfig.PoseMatTolerance
+        return point.y <= crossingBoundary + TopOutConfig.PoseMatTolerance
     }
 
     private fun updateFinishReferenceMoment(points: List<Offset>, seconds: Double) {
@@ -931,7 +998,7 @@ class PoseClimbAnalyzer(
 
     fun close() {
         frameCaptureRequest.getAndSet(null)?.result?.complete(null)
-        startVerificationDetector.close()
-        climbingTrackingDetector.close()
+        closePoseDetectors()
     }
+
 }

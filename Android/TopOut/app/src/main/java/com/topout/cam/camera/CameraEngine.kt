@@ -8,7 +8,6 @@ import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
 import android.os.Build
 import android.media.MediaRecorder
-import android.util.Log
 import android.util.Range
 import android.util.Rational
 import android.util.Size
@@ -73,6 +72,7 @@ class CameraEngine(private val context: Context) {
     private var provider: ProcessCameraProvider? = null
     private var camera: Camera? = null
     private var previewUseCase: Preview? = null
+    private var previewRenderingEnabled = true
     private var analysisUseCase: ImageAnalysis? = null
     private var videoCapture: VideoCapture<Recorder>? = null
     private var activeRecording: Recording? = null
@@ -220,11 +220,13 @@ class CameraEngine(private val context: Context) {
             }
         }
         val capture = captureBuilder.build()
-        // The Preview surface stays attached for the lifetime of the session. The Compose layer
-        // decides whether it is visible, so toggling live preview cannot interrupt the camera feed.
+        // Keep Preview as part of the unified CameraX session, but allow its SurfaceProvider to
+        // be detached during recording. VideoCapture and ImageAnalysis stay bound and continue
+        // working while CameraX stops producing the display-only preview stream.
         val preview = previewBuilder.build().also { useCase ->
             useCase.setSurfaceProvider(config.previewView.surfaceProvider)
         }
+        previewRenderingEnabled = true
 
         fun newAnalysis(targetSize: Size): ImageAnalysis {
             val selector = ResolutionSelector.Builder()
@@ -372,14 +374,6 @@ class CameraEngine(private val context: Context) {
             activeLensProfile = profileForDisplayZoom(requestedZoom)
             lensDiscoveryComplete = true
 
-            Log.i(
-                ZOOM_LOG_TAG,
-                "physicalLensMode anchors=$effectiveLensZoomRatios " +
-                    "range=$effectiveMinZoom..$effectiveMaxZoom profiles=" +
-                    rearLensProfiles.joinToString {
-                        "${it.cameraId}:${it.anchorRatio}x(${it.equivalentFocalLength}mm)"
-                    }
-            )
         } else {
             activeLensProfile = profileForDisplayZoom(requestedZoom)
         }
@@ -493,6 +487,7 @@ class CameraEngine(private val context: Context) {
         provider?.unbindAll()
         camera = null
         previewUseCase = null
+        previewRenderingEnabled = true
         videoCapture = null
         analysisUseCase = null
         sessionConfig = null
@@ -505,11 +500,28 @@ class CameraEngine(private val context: Context) {
     }
 
     /**
-     * Changes only the UI-visible live-preview state. The Preview surface remains attached to the
-     * same recording session, preventing black frames or a stale surface when it is shown again.
+     * Starts or stops only CameraX's display-preview output. VideoCapture and ImageAnalysis remain
+     * bound to the same camera session, so video/audio recording and pose detection continue.
+     *
+     * Passing a null SurfaceProvider is CameraX's supported way to stop producing Preview data
+     * without rebinding the session. Reattaching PreviewView's provider resumes the live image.
      */
-    fun setPreviewRenderingEnabled(enabled: Boolean): Boolean =
-        !enabled || previewUseCase != null || activeRecording == null
+    fun setPreviewRenderingEnabled(enabled: Boolean): Boolean {
+        val preview = previewUseCase
+        val config = sessionConfig
+        if (preview == null || config == null) {
+            return !enabled || activeRecording == null
+        }
+        if (previewRenderingEnabled == enabled) return true
+
+        return runCatching {
+            preview.setSurfaceProvider(
+                if (enabled) config.previewView.surfaceProvider else null
+            )
+            previewRenderingEnabled = enabled
+            true
+        }.getOrDefault(false)
+    }
 
     fun updateTargetRotation(rotation: Int) {
         previewUseCase?.targetRotation = rotation
@@ -582,11 +594,6 @@ class CameraEngine(private val context: Context) {
             // A separately bindable camera has its own native 1.0x coordinate.
             activeCamera.cameraControl.setZoomRatio(nativeTarget)
         }
-        Log.d(
-            ZOOM_LOG_TAG,
-            "display=${target}x camera=${profile.cameraId} anchor=${profile.anchorRatio}x " +
-                "native=${nativeTarget}x physical=${profile.physicalCameraId}"
-        )
         return request
     }
 
@@ -643,24 +650,19 @@ class CameraEngine(private val context: Context) {
                 config.previewView.previewStreamState.value != PreviewView.StreamState.STREAMING
             var streamObserver: Observer<PreviewView.StreamState>? = null
 
-            fun finishSwitch(reason: String) {
+            fun finishSwitch() {
                 if (switchFinished || generation != lensSwitchGeneration) return
                 switchFinished = true
                 streamObserver?.let { config.previewView.previewStreamState.removeObserver(it) }
                 lensSwitchInProgress = false
                 onLensSwitchingChanged?.invoke(false)
-                Log.i(
-                    ZOOM_LOG_TAG,
-                    "lensSwitchReady zoom=${requestedZoom}x reason=$reason " +
-                        "camera=${activeLensProfile?.cameraId}"
-                )
             }
 
             val observer = Observer<PreviewView.StreamState> { streamState ->
                 when (streamState) {
                     PreviewView.StreamState.IDLE -> sawIdleAfterSwitchRequest = true
                     PreviewView.StreamState.STREAMING -> {
-                        if (sawIdleAfterSwitchRequest) finishSwitch("preview-streaming")
+                        if (sawIdleAfterSwitchRequest) finishSwitch()
                     }
                 }
             }
@@ -670,7 +672,7 @@ class CameraEngine(private val context: Context) {
                 observer
             )
             config.previewView.postDelayed(
-                { finishSwitch("stream-timeout") },
+                { finishSwitch() },
                 LENS_SWITCH_READY_TIMEOUT_MS
             )
 
@@ -688,17 +690,7 @@ class CameraEngine(private val context: Context) {
                 requestedZoom = transitionZoom
                 submitZoomImmediately()
                 onZoomCorrected?.invoke(requestedZoom)
-                Log.i(
-                    ZOOM_LOG_TAG,
-                    "lensSwitch ${previousProfile?.anchorRatio}x -> ${targetProfile.anchorRatio}x " +
-                        "boundary=${transitionZoom}x camera=${targetProfile.cameraId}"
-                )
-            } catch (error: Throwable) {
-                Log.e(
-                    ZOOM_LOG_TAG,
-                    "Failed to bind ${targetProfile.anchorRatio}x camera ${targetProfile.cameraId}",
-                    error
-                )
+            } catch (_: Throwable) {
                 if (previousProfile != null) {
                     val restored = runCatching {
                         bindProfile(previousProfile)
@@ -717,9 +709,9 @@ class CameraEngine(private val context: Context) {
                         submitZoomImmediately()
                         onZoomCorrected?.invoke(requestedZoom)
                     }.isSuccess
-                    if (!restored) finishSwitch("restore-failed")
+                    if (!restored) finishSwitch()
                 } else {
-                    finishSwitch("bind-failed")
+                    finishSwitch()
                 }
             }
         }
@@ -908,7 +900,6 @@ class CameraEngine(private val context: Context) {
             .build()
 
     private companion object {
-        const val ZOOM_LOG_TAG = "TopOutZoom"
         const val ZOOM_SUBMIT_EPSILON = 0.0005f
         const val LENS_BOUNDARY_EPSILON = 0.001f
         const val LENS_SWITCH_GAP = 0.1f
@@ -1097,6 +1088,11 @@ class CameraEngine(private val context: Context) {
                 continuation.resumeWithException(error)
             }
         }, mainExecutor)
+    }
+
+    /** Runs cleanup on the same serial thread used by ImageAnalysis and GPU MediaPipe tasks. */
+    fun executeOnAnalysisThread(block: () -> Unit) {
+        if (!analysisExecutor.isShutdown) analysisExecutor.execute(block)
     }
 
     fun release() {
