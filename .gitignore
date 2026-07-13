@@ -1,0 +1,24 @@
+# --- Android Ignore ---
+**/Android/TopOut/.gradle/
+**/Android/TopOut/build/
+**/Android/TopOut/captures/
+**/Android/TopOut/*.iml
+**/Android/TopOut/.idea/
+local.properties
+*.apk
+**/build/
+**/Android/TopOut/app/build/
+
+# --- iOS Ignore ---
+**/xcuserdata/
+**/.xcuserdata/
+**/DerivedData/
+**/build/
+.DS_Store
+
+# --- Ignore ---
+**/TopOut.zip
+**/test.mov
+**/test.MOV
+**/testRecord.mov
+**/testRecord.MOV
