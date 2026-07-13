@@ -1,6 +1,9 @@
 package com.topout.cam.ui.screens
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -62,6 +65,7 @@ fun SettingsDialog(
     onDismiss: () -> Unit,
     onSave: (AppSettings) -> Unit
 ) {
+    val context = LocalContext.current
     var draft by remember(initial) { mutableStateOf(initial.normalized()) }
     var showOpenSourceLicenses by remember { mutableStateOf(false) }
 
@@ -232,6 +236,16 @@ fun SettingsDialog(
 
                         SettingsSection("앱 정보") {
                             SettingsNavigationRow(
+                                title = "개인정보 처리방침",
+                                onClick = {
+                                    openExternalUrl(
+                                        context = context,
+                                        url = BuildConfig.PRIVACY_POLICY_URL
+                                    )
+                                }
+                            )
+                            HorizontalDivider(color = Color(0xFFE5E5EA))
+                            SettingsNavigationRow(
                                 title = "오픈소스 라이선스",
                                 onClick = { showOpenSourceLicenses = true }
                             )
@@ -242,6 +256,13 @@ fun SettingsDialog(
                                 color = TopOutColors.SecondaryText,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                "카메라와 마이크는 영상·음성 녹화에만 사용되며, 촬영 데이터는 외부 서버로 전송되지 않습니다.",
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp),
+                                color = TopOutColors.SecondaryText,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
                             )
                         }
                         Spacer(Modifier.height(6.dp))
@@ -319,6 +340,20 @@ private fun OpenSourceLicensesScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(12.dp))
         }
     }
+}
+
+private fun openExternalUrl(context: Context, url: String) {
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+        addCategory(Intent.CATEGORY_BROWSABLE)
+    }
+    runCatching { context.startActivity(intent) }
+        .onFailure {
+            Toast.makeText(
+                context,
+                "웹 브라우저를 열 수 없습니다.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
 }
 
 private fun readAssetText(context: Context, path: String): String = runCatching {

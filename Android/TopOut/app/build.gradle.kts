@@ -13,11 +13,16 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.topout.com.topout.cam"
+        applicationId = "com.topout.cam"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+        buildConfigField(
+            "String",
+            "PRIVACY_POLICY_URL",
+            "\"https://topoutprivacy.vercel.app/\""
+        )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
