@@ -1,3 +1,7 @@
+import java.io.BufferedInputStream
+import java.net.URI
+import java.net.URLConnection
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -35,7 +39,7 @@ android {
     }
 
     androidResources {
-        noCompress += "onnx"
+        noCompress += setOf("onnx", "task")
     }
 
     buildFeatures {
@@ -92,7 +96,7 @@ dependencies {
     implementation("androidx.media3:media3-transformer:$media3")
     implementation("androidx.media3:media3-effect:$media3")
 
-    implementation("com.google.mlkit:pose-detection-accurate:18.0.0-beta5")
+    implementation("com.google.mediapipe:tasks-vision:0.10.29")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.27.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
@@ -102,4 +106,56 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+
+// Pose Landmarker Heavy is intentionally kept out of source control because the bundle is
+// approximately 30 MB. Android builds download the pinned Google-hosted model once and then
+// reuse Gradle's output cache. The app never downloads the model at runtime.
+val poseHeavyModelUrl =
+    "https://storage.googleapis.com/mediapipe-models/pose_landmarker/" +
+        "pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task"
+val poseHeavyModelFile =
+    layout.projectDirectory.file("src/main/assets/models/pose_landmarker_heavy.task")
+
+val downloadPoseHeavyModel by tasks.registering {
+    group = "build setup"
+    description = "Downloads the pinned MediaPipe Pose Landmarker Heavy model bundle."
+    outputs.file(poseHeavyModelFile)
+
+    doLast {
+        val destination = poseHeavyModelFile.asFile
+        if (destination.isFile && destination.length() >= 30_000_000L) return@doLast
+
+        destination.parentFile.mkdirs()
+        val temporary = destination.resolveSibling("${destination.name}.download")
+        temporary.delete()
+
+        val connection: URLConnection = URI(poseHeavyModelUrl).toURL().openConnection()
+        connection.connectTimeout = 30_000
+        connection.readTimeout = 120_000
+
+        BufferedInputStream(connection.getInputStream()).use { input ->
+            temporary.outputStream().buffered().use { output ->
+                input.copyTo(output)
+            }
+        }
+
+        check(temporary.length() >= 30_000_000L) {
+            "Pose Landmarker Heavy download is incomplete: ${temporary.length()} bytes"
+        }
+        if (destination.exists()) check(destination.delete()) {
+            "Could not replace ${destination.absolutePath}"
+        }
+        check(temporary.renameTo(destination)) {
+            "Could not move the pose model into ${destination.absolutePath}"
+        }
+    }
+}
+
+// Ensure the model exists before Android packages any variant's assets.
+tasks.configureEach {
+    if (name == "preBuild" || (name.startsWith("merge") && name.endsWith("Assets"))) {
+        dependsOn(downloadPoseHeavyModel)
+    }
 }

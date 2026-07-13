@@ -1,6 +1,6 @@
 # TopOut Android — iOS 완성본 동작 정합 수정본
 
-완성된 iOS TopOut의 실제 Swift 실행 로직을 기준으로 Kotlin/Android 구현을 다시 맞춘 프로젝트입니다. Android에서는 Jetpack Compose, CameraX, ML Kit Accurate Pose, ONNX Runtime MobileSAM, Media3를 사용합니다.
+완성된 iOS TopOut의 실제 Swift 실행 로직을 기준으로 Kotlin/Android 구현을 다시 맞춘 프로젝트입니다. Android에서는 Jetpack Compose, CameraX, MediaPipe Pose Landmarker Heavy, ONNX Runtime MobileSAM, Media3를 사용합니다.
 
 ## 프로젝트 열기
 
@@ -15,6 +15,9 @@ MobileSAM 모델은 다음 경로에 포함되어 있습니다.
 app/src/main/assets/models/mobile_sam_encoder.onnx
 app/src/main/assets/models/mobile_sam_decoder.onnx
 ```
+
+MediaPipe Heavy 모델은 첫 Gradle build 때 자동으로 다운로드됩니다. 네트워크가 차단된 환경에서는
+프로젝트 루트의 `./download_pose_model.command`를 먼저 실행하세요.
 
 ## iOS 기준으로 맞춘 핵심 동작
 
@@ -45,9 +48,11 @@ app/src/main/assets/models/mobile_sam_decoder.onnx
 
 - 마스킹 ON: 신뢰 가능한 관절과 탑홀드 박스의 거리가 가장 가까웠던 시점을 종료 기준으로 사용합니다.
 - 마스킹 OFF: 등반 중 신체의 가장 높은 관절점이 화면에서 가장 높았던 시점을 종료 기준으로 사용합니다.
-- 시작·종료 3초 패딩, Pose 0.50 confidence 및 최소 6개 관절·어깨/골반 중심 관절 검증, 0.5초 분석 간격, 5초 재시도, 9초 미만 구간 처리, 3초 이내 구간 병합, 최근 10개 구간 보관을 iOS 수치에 맞췄습니다.
-- Android Pose 입력 긴 변은 벽 오탐 감소를 위해 512px로 사용합니다.
-- 시작 검증은 프레임별 독립 판정인 `SINGLE_IMAGE_MODE`, 등반 시작 후 추적은 `STREAM_MODE`를 사용합니다.
+- Pose 모델만 ML Kit Accurate Pose에서 MediaPipe Pose Landmarker Heavy로 교체했습니다.
+- 기존의 Pose 0.50 confidence, 최소 6개 관절, 어깨·골반 중심 관절 검증 조건을 그대로 유지합니다.
+- 기존처럼 첫 시작 검증은 프레임별 독립 판정(`IMAGE`), 등반 시작 후에는 영상 추적(`VIDEO`)을 사용합니다.
+- 기존의 1프레임 시작 판정, 매트 움직임 진입 조건, 시작·종료 3초 패딩, 0.5초 분석 간격, 5초 재시도 및 구간 병합 로직을 유지합니다.
+- Android Pose 입력 긴 변은 기존과 동일하게 512px로 사용합니다.
 
 ### 매트와 MobileSAM
 
@@ -96,7 +101,7 @@ app/src/main/assets/models/mobile_sam_decoder.onnx
 
 동작 조건과 수치는 iOS를 기준으로 맞췄지만 다음은 플랫폼 프레임워크가 달라 완전히 같은 바이너리 결과를 보장할 수 없습니다.
 
-- Apple Vision Pose와 ML Kit Accurate Pose의 관절 좌표
+- Apple Vision Pose와 MediaPipe Pose Landmarker Heavy의 관절 좌표
 - Core ML과 ONNX Runtime의 추론·부동소수점 결과
 - AVFoundation 논리 멀티카메라와 Android 제조사별 Camera2/CameraX 렌즈 전환
 - MOV/AVAssetWriter와 MP4/CameraX Recorder의 codec profile, GOP, 오디오 세부 사양
@@ -112,4 +117,4 @@ app/src/main/assets/models/mobile_sam_decoder.onnx
 - Android 의존성이 필요 없는 모델 계층을 별도 Kotlin 컴파일·실행하여 통과 확인
 - 전체 Kotlin 파일의 구문 형태 정적 검사
 
-현재 실행 환경에는 Android SDK와 Gradle 8.13 배포본 캐시가 없고 외부 Gradle 배포 서버 DNS가 차단되어 전체 Android Gradle 빌드를 실행하지 못했습니다. Android Studio에서 Sync/Rebuild 후 실제 기기의 카메라·Pose·SAM·Media3 저장 흐름을 확인해야 합니다.
+현재 실행 환경에는 Android SDK와 Gradle 8.14.5 배포본 캐시가 없고 외부 Gradle 배포 서버 DNS가 차단되어 전체 Android Gradle 빌드를 실행하지 못했습니다. Android Studio에서 Sync/Rebuild 후 실제 기기의 카메라·Pose·SAM·Media3 저장 흐름을 확인해야 합니다.

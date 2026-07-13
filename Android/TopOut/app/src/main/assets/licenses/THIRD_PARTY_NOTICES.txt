@@ -1,0 +1,18 @@
+THIRD-PARTY SOFTWARE NOTICES
+
+MobileSAM
+
+TopOut includes ONNX model components derived from MobileSAM.
+
+Original project:
+https://github.com/ChaoningZhang/MobileSAM
+
+Upstream license:
+Apache License 2.0
+
+Modification notice:
+The MobileSAM model components obtained from the official MobileSAM repository
+were converted to ONNX format and integrated into TopOut for on-device image
+segmentation. These conversion and integration changes were made for TopOut.
+
+The full Apache License 2.0 text is provided below.

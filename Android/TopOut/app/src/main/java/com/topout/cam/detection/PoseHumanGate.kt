@@ -1,27 +1,21 @@
 package com.topout.cam.detection
 
-import com.google.mlkit.vision.pose.PoseLandmark
 import com.topout.cam.model.TopOutConfig
 
 /**
  * Rejects sparse landmark hallucinations before they can start or continue a climb.
  *
- * A frame is considered a human pose only when:
- * 1) enough reliable landmarks survive the confidence threshold; and
- * 2) the torso is represented by at least three shoulder/hip landmarks, including
- *    at least one shoulder and at least one hip.
- *
- * The gate intentionally does not enforce upright geometry because a climber can be
- * sideways or inverted on the wall.
+ * This keeps the original validation rule unchanged: enough reliable landmarks must survive,
+ * and the torso must include at least one shoulder, one hip, and three core points in total.
  */
 internal object PoseHumanGate {
     private val shoulderTypes = setOf(
-        PoseLandmark.LEFT_SHOULDER,
-        PoseLandmark.RIGHT_SHOULDER
+        PoseLandmarkIds.LEFT_SHOULDER,
+        PoseLandmarkIds.RIGHT_SHOULDER
     )
     private val hipTypes = setOf(
-        PoseLandmark.LEFT_HIP,
-        PoseLandmark.RIGHT_HIP
+        PoseLandmarkIds.LEFT_HIP,
+        PoseLandmarkIds.RIGHT_HIP
     )
 
     fun isValid(landmarkTypes: Set<Int>): Boolean {

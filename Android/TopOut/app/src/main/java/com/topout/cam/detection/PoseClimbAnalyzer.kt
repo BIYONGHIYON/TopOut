@@ -1,17 +1,19 @@
 package com.topout.cam.detection
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.pose.Pose
-import com.google.mlkit.vision.pose.PoseDetection
-import com.google.mlkit.vision.pose.PoseDetector
-import com.google.mlkit.vision.pose.PoseLandmark
-import com.google.mlkit.vision.pose.accurate.AccuratePoseDetectorOptions
+import com.google.mediapipe.framework.image.BitmapImageBuilder
+import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
+import com.google.mediapipe.tasks.core.BaseOptions
+import com.google.mediapipe.tasks.core.Delegate
+import com.google.mediapipe.tasks.vision.core.RunningMode
+import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
+import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 import com.topout.cam.model.ClipRange
 import com.topout.cam.model.TopOutConfig
 import kotlin.math.abs
@@ -41,10 +43,14 @@ enum class MotionFinishReference {
  *
  * The detector intentionally uses two stages, matching iOS:
  * 1) luma difference around the edited mat line to cheaply wake pose tracking;
- * 2) ML Kit pose tracking every 0.5 s to determine start/end and either the closest
+ * 2) MediaPipe Pose Landmarker Heavy every 0.5 s to determine start/end and either the closest
  *    top-hold moment or the highest pose point, matching iOS MotionDetector.FinishReference.
+ *
+ * Only the pose model/backend is changed. Start/end rules, confidence filtering, timing,
+ * motion gating, and clip behavior remain the same as the original implementation.
  */
 class PoseClimbAnalyzer(
+    context: Context,
     private val onEvent: (MotionEvent) -> Unit
 ) : ImageAnalysis.Analyzer {
     private enum class State { IDLE, CALIBRATING, WAITING, TRACKING, CLIMBING }
@@ -62,29 +68,41 @@ class PoseClimbAnalyzer(
     )
 
     private val frameCaptureRequest = AtomicReference<FrameCaptureRequest?>(null)
+
+    private fun poseOptions(runningMode: RunningMode): PoseLandmarker.PoseLandmarkerOptions =
+        PoseLandmarker.PoseLandmarkerOptions.builder()
+            .setBaseOptions(
+                BaseOptions.builder()
+                    .setModelAssetPath(TopOutConfig.PoseModelAssetPath)
+                    .setDelegate(Delegate.CPU)
+                    .build()
+            )
+            .setRunningMode(runningMode)
+            .setNumPoses(1)
+            .build()
+
     /**
-     * Start verification uses independent inference so a false pose from the wall is not carried
-     * into the next frame. Once climbing starts, stream mode keeps landmark tracking stable.
+     * This preserves the original detector split: independent inference while checking a start,
+     * then temporal tracking while a climb is active.
      */
-    private val startVerificationDetector: PoseDetector = PoseDetection.getClient(
-        AccuratePoseDetectorOptions.Builder()
-            .setDetectorMode(AccuratePoseDetectorOptions.SINGLE_IMAGE_MODE)
-            .build()
+    private val startVerificationDetector: PoseLandmarker = PoseLandmarker.createFromOptions(
+        context.applicationContext,
+        poseOptions(RunningMode.IMAGE)
     )
-    private val climbingTrackingDetector: PoseDetector = PoseDetection.getClient(
-        AccuratePoseDetectorOptions.Builder()
-            .setDetectorMode(AccuratePoseDetectorOptions.STREAM_MODE)
-            .build()
+    private val climbingTrackingDetector: PoseLandmarker = PoseLandmarker.createFromOptions(
+        context.applicationContext,
+        poseOptions(RunningMode.VIDEO)
     )
+    private var lastMediaPipeVideoTimestampMs = -1L
 
     private val motionLandmarkTypes = intArrayOf(
-        PoseLandmark.NOSE,
-        PoseLandmark.LEFT_SHOULDER, PoseLandmark.RIGHT_SHOULDER,
-        PoseLandmark.LEFT_ELBOW, PoseLandmark.RIGHT_ELBOW,
-        PoseLandmark.LEFT_WRIST, PoseLandmark.RIGHT_WRIST,
-        PoseLandmark.LEFT_HIP, PoseLandmark.RIGHT_HIP,
-        PoseLandmark.LEFT_KNEE, PoseLandmark.RIGHT_KNEE,
-        PoseLandmark.LEFT_ANKLE, PoseLandmark.RIGHT_ANKLE
+        PoseLandmarkIds.NOSE,
+        PoseLandmarkIds.LEFT_SHOULDER, PoseLandmarkIds.RIGHT_SHOULDER,
+        PoseLandmarkIds.LEFT_ELBOW, PoseLandmarkIds.RIGHT_ELBOW,
+        PoseLandmarkIds.LEFT_WRIST, PoseLandmarkIds.RIGHT_WRIST,
+        PoseLandmarkIds.LEFT_HIP, PoseLandmarkIds.RIGHT_HIP,
+        PoseLandmarkIds.LEFT_KNEE, PoseLandmarkIds.RIGHT_KNEE,
+        PoseLandmarkIds.LEFT_ANKLE, PoseLandmarkIds.RIGHT_ANKLE
     )
 
 
@@ -207,7 +225,7 @@ class PoseClimbAnalyzer(
 
         if (state == State.TRACKING || state == State.CLIMBING) {
             if (canAnalyzePose(timestamp, TopOutConfig.PoseIntervalSeconds)) {
-                runPose(image, recordingSeconds(timestamp))
+                runPose(image, recordingSeconds(timestamp), timestamp)
             } else {
                 image.close()
             }
@@ -255,7 +273,7 @@ class PoseClimbAnalyzer(
                             (TopOutConfig.MotionAnalysisBoostSeconds * 1_000_000_000L).toLong()
                         enterPoseTracking(timestamp)
                         if (canAnalyzePose(timestamp, TopOutConfig.PoseStartVerificationIntervalSeconds)) {
-                            runPose(image, recordingSeconds(timestamp))
+                            runPose(image, recordingSeconds(timestamp), timestamp)
                             return
                         }
                     }
@@ -339,7 +357,8 @@ class PoseClimbAnalyzer(
 
     private fun runPose(
         image: ImageProxy,
-        seconds: Double
+        seconds: Double,
+        timestampNanos: Long
     ) {
         if (processingPose) {
             image.close()
@@ -358,43 +377,47 @@ class PoseClimbAnalyzer(
             return
         }
 
-        val input = InputImage.fromBitmap(poseBitmap, 0)
-        val poseCrop = Rect(0f, 0f, 1f, 1f)
-
-        val activeDetector = synchronized(this) {
-            if (state == State.TRACKING) startVerificationDetector else climbingTrackingDetector
-        }
-
-        activeDetector.process(input)
-            .addOnSuccessListener { pose ->
-                handlePose(
-                    pose = pose,
-                    fullDisplayWidth = poseBitmap.width,
-                    fullDisplayHeight = poseBitmap.height,
-                    cropInDisplay = poseCrop,
-                    seconds = seconds
+        val useStartVerification = synchronized(this) { state == State.TRACKING }
+        val mpImage = BitmapImageBuilder(poseBitmap).build()
+        try {
+            val result = if (useStartVerification) {
+                startVerificationDetector.detect(mpImage)
+            } else {
+                climbingTrackingDetector.detectForVideo(
+                    mpImage,
+                    nextMediaPipeVideoTimestampMs(timestampNanos)
                 )
             }
-            .addOnFailureListener { handlePoseMissing(seconds) }
-            .addOnCompleteListener {
-                poseBitmap.recycle()
-                processingPose = false
-            }
+            handlePose(result, seconds)
+        } catch (_: RuntimeException) {
+            handlePoseMissing(seconds)
+        } finally {
+            mpImage.close()
+            poseBitmap.recycle()
+            processingPose = false
+        }
+    }
+
+    @Synchronized
+    private fun nextMediaPipeVideoTimestampMs(timestampNanos: Long): Long {
+        val sourceTimestampMs = timestampNanos / 1_000_000L
+        val nextTimestampMs = max(sourceTimestampMs, lastMediaPipeVideoTimestampMs + 1L)
+        lastMediaPipeVideoTimestampMs = nextTimestampMs
+        return nextTimestampMs
     }
 
     @Synchronized
     private fun handlePose(
-        pose: Pose,
-        fullDisplayWidth: Int,
-        fullDisplayHeight: Int,
-        cropInDisplay: Rect,
+        result: PoseLandmarkerResult,
         seconds: Double
     ) {
+        val pose = result.landmarks().firstOrNull()
+        if (pose == null) {
+            handlePoseMissing(seconds)
+            return
+        }
         val landmarks = reliableLandmarks(
             pose = pose,
-            fullDisplayWidth = fullDisplayWidth,
-            fullDisplayHeight = fullDisplayHeight,
-            crop = cropInDisplay,
             landmarkTypes = motionLandmarkTypes
         )
         if (!PoseHumanGate.isValid(landmarks.keys)) {
@@ -494,35 +517,20 @@ class PoseClimbAnalyzer(
     }
 
     private fun reliableLandmarks(
-        pose: Pose,
-        fullDisplayWidth: Int,
-        fullDisplayHeight: Int,
-        crop: Rect,
+        pose: List<NormalizedLandmark>,
         landmarkTypes: IntArray
     ): Map<Int, Offset> {
-        val cropWidth = max(0.0001f, crop.width)
-        val cropHeight = max(0.0001f, crop.height)
         val points = LinkedHashMap<Int, Offset>(landmarkTypes.size)
 
-        // Use an explicit loop rather than mapNotNull. Primitive arrays such as IntArray do not
-        // expose the same collection operators on every Kotlin/IDE combination, and an explicit
-        // loop also makes the skip conditions match Swift's guard/continue flow exactly.
         for (type: Int in landmarkTypes) {
-            val landmark = pose.getPoseLandmark(type) ?: continue
-            if (landmark.inFrameLikelihood < TopOutConfig.PoseConfidence) continue
+            if (type !in pose.indices) continue
+            val landmark = pose[type]
+            if (landmark.visibility().orElse(0f) < TopOutConfig.PoseConfidence) continue
 
-            val full = Offset(
-                landmark.position.x / max(1, fullDisplayWidth),
-                landmark.position.y / max(1, fullDisplayHeight)
-            )
-            if (full.x < crop.left || full.x > crop.right || full.y < crop.top || full.y > crop.bottom) {
-                continue
-            }
-
-            points[type] = Offset(
-                ((full.x - crop.left) / cropWidth).coerceIn(0f, 1f),
-                ((full.y - crop.top) / cropHeight).coerceIn(0f, 1f)
-            )
+            val x = landmark.x()
+            val y = landmark.y()
+            if (!x.isFinite() || !y.isFinite() || x !in 0f..1f || y !in 0f..1f) continue
+            points[type] = Offset(x, y)
         }
         return points
     }

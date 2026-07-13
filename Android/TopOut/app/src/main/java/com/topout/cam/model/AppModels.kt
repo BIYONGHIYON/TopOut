@@ -282,6 +282,7 @@ object TopOutConfig {
     const val MotionBoundaryDominanceRatio = 2.2f
     const val MotionBoundaryDominanceMargin = 0.10f
 
+    const val PoseModelAssetPath = "models/pose_landmarker_heavy.task"
     const val PoseStartVerificationIntervalSeconds = 0.5
     const val PoseIntervalSeconds = 0.5
     const val PoseInputMaxLongSide = 512

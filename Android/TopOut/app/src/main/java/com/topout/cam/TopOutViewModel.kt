@@ -49,7 +49,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private val cameraEngine = CameraEngine(application)
     private val videoExporter = VideoExporter(application)
     private val holdSegmenter: HoldSegmenter = OnnxMobileSamSegmenter(application)
-    private val poseAnalyzer = PoseClimbAnalyzer(onEvent = ::handleMotionEvent)
+    private val poseAnalyzer = PoseClimbAnalyzer(application, onEvent = ::handleMotionEvent)
 
     private val _uiState = MutableStateFlow(TopOutUiState())
     val uiState: StateFlow<TopOutUiState> = _uiState.asStateFlow()

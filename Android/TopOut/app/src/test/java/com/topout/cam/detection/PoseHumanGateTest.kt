@@ -1,6 +1,5 @@
 package com.topout.cam.detection
 
-import com.google.mlkit.vision.pose.PoseLandmark
 import com.topout.cam.model.TopOutConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -9,7 +8,7 @@ import org.junit.Test
 
 class PoseHumanGateTest {
     @Test
-    fun confidenceThresholdIsRaisedToPointFive() {
+    fun confidenceThresholdRemainsPointFive() {
         assertEquals(0.50f, TopOutConfig.PoseConfidence, 0.0001f)
     }
 
@@ -18,11 +17,11 @@ class PoseHumanGateTest {
         assertFalse(
             PoseHumanGate.isValid(
                 setOf(
-                    PoseLandmark.NOSE,
-                    PoseLandmark.LEFT_WRIST,
-                    PoseLandmark.RIGHT_WRIST,
-                    PoseLandmark.LEFT_ANKLE,
-                    PoseLandmark.RIGHT_ANKLE
+                    PoseLandmarkIds.NOSE,
+                    PoseLandmarkIds.LEFT_WRIST,
+                    PoseLandmarkIds.RIGHT_WRIST,
+                    PoseLandmarkIds.LEFT_ANKLE,
+                    PoseLandmarkIds.RIGHT_ANKLE
                 )
             )
         )
@@ -33,13 +32,13 @@ class PoseHumanGateTest {
         assertFalse(
             PoseHumanGate.isValid(
                 setOf(
-                    PoseLandmark.NOSE,
-                    PoseLandmark.LEFT_SHOULDER,
-                    PoseLandmark.RIGHT_SHOULDER,
-                    PoseLandmark.LEFT_ELBOW,
-                    PoseLandmark.RIGHT_ELBOW,
-                    PoseLandmark.LEFT_WRIST,
-                    PoseLandmark.RIGHT_WRIST
+                    PoseLandmarkIds.NOSE,
+                    PoseLandmarkIds.LEFT_SHOULDER,
+                    PoseLandmarkIds.RIGHT_SHOULDER,
+                    PoseLandmarkIds.LEFT_ELBOW,
+                    PoseLandmarkIds.RIGHT_ELBOW,
+                    PoseLandmarkIds.LEFT_WRIST,
+                    PoseLandmarkIds.RIGHT_WRIST
                 )
             )
         )
@@ -50,31 +49,29 @@ class PoseHumanGateTest {
         assertTrue(
             PoseHumanGate.isValid(
                 setOf(
-                    PoseLandmark.LEFT_SHOULDER,
-                    PoseLandmark.RIGHT_SHOULDER,
-                    PoseLandmark.LEFT_HIP,
-                    PoseLandmark.LEFT_ELBOW,
-                    PoseLandmark.LEFT_KNEE,
-                    PoseLandmark.LEFT_ANKLE
+                    PoseLandmarkIds.LEFT_SHOULDER,
+                    PoseLandmarkIds.RIGHT_SHOULDER,
+                    PoseLandmarkIds.LEFT_HIP,
+                    PoseLandmarkIds.LEFT_ELBOW,
+                    PoseLandmarkIds.LEFT_KNEE,
+                    PoseLandmarkIds.LEFT_ANKLE
                 )
             )
         )
     }
 
     @Test
-    fun rejectsThreeTorsoPointsIfAllAreFromOnlyOneBodyRegion() {
-        // There are only two shoulder IDs and two hip IDs, so this verifies the explicit
-        // requirement that both a shoulder and a hip must be represented.
+    fun rejectsCorePointsFromOnlyOneBodyRegion() {
         assertFalse(
             PoseHumanGate.isValid(
                 setOf(
-                    PoseLandmark.LEFT_SHOULDER,
-                    PoseLandmark.RIGHT_SHOULDER,
-                    PoseLandmark.NOSE,
-                    PoseLandmark.LEFT_ELBOW,
-                    PoseLandmark.RIGHT_ELBOW,
-                    PoseLandmark.LEFT_WRIST,
-                    PoseLandmark.RIGHT_WRIST
+                    PoseLandmarkIds.LEFT_SHOULDER,
+                    PoseLandmarkIds.RIGHT_SHOULDER,
+                    PoseLandmarkIds.NOSE,
+                    PoseLandmarkIds.LEFT_ELBOW,
+                    PoseLandmarkIds.RIGHT_ELBOW,
+                    PoseLandmarkIds.LEFT_WRIST,
+                    PoseLandmarkIds.RIGHT_WRIST
                 )
             )
         )
