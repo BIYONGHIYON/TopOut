@@ -35,7 +35,8 @@ extension HoldVC {
 
         case .finish(let pts):
             clipTimes.endPTS = pts
-            if let startPTS = clipTimes.startPTS {
+            if let startPTS = clipTimes.startPTS, CMTimeCompare(pts, startPTS) > 0 {
+                // Store only the original detection boundaries. Padding is added after cleanup.
                 appendDetectedClipRange(ClipRange(startPTS: startPTS, endPTS: pts))
             }
             clipTimes.startPTS = nil
@@ -53,8 +54,8 @@ extension HoldVC {
             if sameStart && sameEnd { return }
         }
 
-        // Keep every raw detected range until recording finalization. Short or overlapping
-        // false positives are cleaned up later, so valid early climbs are never discarded.
+        // Keep every detected range until recording finalization. Isolated short false positives
+        // are cleaned up later, so valid early climbs are never discarded.
         clipTimes.completedRanges.append(range)
     }
 

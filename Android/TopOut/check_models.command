@@ -4,10 +4,9 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 MODEL_DIR="$ROOT/app/src/main/assets/models"
 ENCODER="$MODEL_DIR/mobile_sam_encoder.onnx"
 DECODER="$MODEL_DIR/mobile_sam_decoder.onnx"
-DETECTOR="$MODEL_DIR/efficientdet_lite2_float16.tflite"
 
 missing=0
-for file in "$ENCODER" "$DECODER" "$DETECTOR"; do
+for file in "$ENCODER" "$DECODER"; do
   if [[ -f "$file" && -s "$file" ]]; then
     size=$(du -h "$file" | awk '{print $1}')
     echo "✓ $(basename "$file") ($size)"
@@ -19,7 +18,7 @@ done
 
 if [[ $missing -ne 0 ]]; then
   echo ""
-  echo "사람 탐지 모델이 없다면 ./download_person_detector_model.command 를 실행하세요."
+  echo "두 ONNX 파일을 app/src/main/assets/models/ 폴더에 넣어주세요."
   exit 1
 fi
 

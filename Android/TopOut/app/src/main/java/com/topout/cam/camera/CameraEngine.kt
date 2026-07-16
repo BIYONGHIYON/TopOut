@@ -501,7 +501,7 @@ class CameraEngine(private val context: Context) {
 
     /**
      * Starts or stops only CameraX's display-preview output. VideoCapture and ImageAnalysis remain
-     * bound to the same camera session, so video/audio recording and person detection continue.
+     * bound to the same camera session, so video/audio recording and pose detection continue.
      *
      * Passing a null SurfaceProvider is CameraX's supported way to stop producing Preview data
      * without rebinding the session. Reattaching PreviewView's provider resumes the live image.
@@ -1088,11 +1088,6 @@ class CameraEngine(private val context: Context) {
                 continuation.resumeWithException(error)
             }
         }, mainExecutor)
-    }
-
-    /** Runs cleanup on the same serial thread used by ImageAnalysis and MediaPipe tasks. */
-    fun executeOnAnalysisThread(block: () -> Unit) {
-        if (!analysisExecutor.isShutdown) analysisExecutor.execute(block)
     }
 
     fun release() {

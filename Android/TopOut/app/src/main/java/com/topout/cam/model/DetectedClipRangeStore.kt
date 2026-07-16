@@ -34,31 +34,41 @@ internal class DetectedClipRangeStore {
     }
 }
 
-/** Finalizes raw ranges only after the full recording duration is known. */
+/**
+ * Finalizes raw pose-detected ranges only after the full recording duration is known.
+ *
+ * Order is intentional and shared with iOS:
+ * 1) keep raw start/end times while recording;
+ * 2) remove or merge raw ranges shorter than two seconds using raw gaps of at most three seconds;
+ * 3) after cleanup is complete, add three seconds of review padding to both sides.
+ */
 internal object ClipRangeNormalizer {
     fun normalize(
         input: List<ClipRange>,
         recordingDurationSeconds: Double? = null,
-        minimumTotalDurationSeconds: Double = TopOutConfig.ShortClipMinimumTotalSeconds,
-        durationToleranceSeconds: Double = TopOutConfig.ShortClipDurationToleranceSeconds,
+        minimumDetectionDurationSeconds: Double = TopOutConfig.ShortClipMinimumDetectionSeconds,
         boundaryPaddingSeconds: Double = TopOutConfig.ClipBoundaryPaddingSeconds,
         shortRangeMergeGapSeconds: Double = TopOutConfig.ShortClipMergeGapSeconds
     ): List<ClipRange> {
-
-        var working = mergeOverlappingRanges(
-            input.filter { it.endSeconds > it.startSeconds }
-                .sortedWith(compareBy<ClipRange> { it.startSeconds }.thenBy { it.endSeconds })
-        ).toMutableList()
+        val durationLimit = recordingDurationSeconds?.coerceAtLeast(0.0)
+        val working = input.mapNotNull { range ->
+            val rawStart = if (durationLimit == null) {
+                range.unpaddedStartSeconds.coerceAtLeast(0.0)
+            } else {
+                range.unpaddedStartSeconds.coerceIn(0.0, durationLimit)
+            }
+            val rawEnd = if (durationLimit == null) {
+                range.unpaddedEndSeconds.coerceAtLeast(0.0)
+            } else {
+                range.unpaddedEndSeconds.coerceIn(0.0, durationLimit)
+            }
+            if (rawEnd > rawStart) RawRange(rawStart, rawEnd) else null
+        }.sortedWith(compareBy<RawRange> { it.startSeconds }.thenBy { it.endSeconds })
+            .toMutableList()
 
         while (true) {
-            val shortIndex = working.indexOfFirst { range ->
-                isShortRange(
-                    range = range,
-                    recordingDurationSeconds = recordingDurationSeconds,
-                    minimumTotalDurationSeconds = minimumTotalDurationSeconds,
-                    durationToleranceSeconds = durationToleranceSeconds,
-                    boundaryPaddingSeconds = boundaryPaddingSeconds
-                )
+            val shortIndex = working.indexOfFirst {
+                it.durationSeconds < minimumDetectionDurationSeconds
             }
             if (shortIndex < 0) break
 
@@ -71,8 +81,7 @@ internal object ClipRangeNormalizer {
             val nextGap = nextIndex?.let {
                 max(0.0, working[it].startSeconds - short.endSeconds)
             }
-            val canMergePrevious = previousGap != null &&
-                previousGap <= shortRangeMergeGapSeconds
+            val canMergePrevious = previousGap != null && previousGap <= shortRangeMergeGapSeconds
             val canMergeNext = nextGap != null && nextGap <= shortRangeMergeGapSeconds
 
             when {
@@ -87,73 +96,43 @@ internal object ClipRangeNormalizer {
                         working.removeAt(next)
                     }
                 }
-
                 canMergePrevious -> {
                     val previous = requireNotNull(previousIndex)
                     working[previous] = union(working[previous], short)
                     working.removeAt(shortIndex)
                 }
-
                 canMergeNext -> {
                     val next = requireNotNull(nextIndex)
                     working[shortIndex] = union(short, working[next])
                     working.removeAt(next)
                 }
-
                 else -> working.removeAt(shortIndex)
             }
-
-            // A short-range merge can bridge two padded ranges. Coalesce them before the next pass
-            // so duplicate or overlapping clips do not remain as separate review ranges.
-            working = mergeOverlappingRanges(working).toMutableList()
         }
 
-        return mergeOverlappingRanges(working)
+        return working.mapNotNull { raw ->
+            val paddedStart = max(0.0, raw.startSeconds - boundaryPaddingSeconds)
+            val paddedEndUnclamped = raw.endSeconds + boundaryPaddingSeconds
+            val paddedEnd = durationLimit?.let { min(it, paddedEndUnclamped) } ?: paddedEndUnclamped
+            if (paddedEnd > paddedStart) {
+                ClipRange(
+                    startSeconds = paddedStart,
+                    endSeconds = paddedEnd,
+                    unpaddedStartSeconds = raw.startSeconds,
+                    unpaddedEndSeconds = raw.endSeconds
+                )
+            } else null
+        }
     }
 
-
-    private fun isShortRange(
-        range: ClipRange,
-        recordingDurationSeconds: Double?,
-        minimumTotalDurationSeconds: Double,
-        durationToleranceSeconds: Double,
-        boundaryPaddingSeconds: Double
-    ): Boolean {
-        var requiredDuration = minimumTotalDurationSeconds
-
-        // Padding is clamped at the beginning/end of the recording. Do not classify a valid climb
-        // as short merely because up to three seconds of requested context could not exist there.
-        if (range.startSeconds <= BOUNDARY_EPSILON_SECONDS) {
-            requiredDuration -= boundaryPaddingSeconds
-        }
-        if (recordingDurationSeconds != null &&
-            recordingDurationSeconds - range.endSeconds <= BOUNDARY_EPSILON_SECONDS
-        ) {
-            requiredDuration -= boundaryPaddingSeconds
-        }
-
-        requiredDuration = max(0.0, requiredDuration - durationToleranceSeconds)
-        return range.durationSeconds < requiredDuration
+    private data class RawRange(
+        val startSeconds: Double,
+        val endSeconds: Double
+    ) {
+        val durationSeconds: Double get() = (endSeconds - startSeconds).coerceAtLeast(0.0)
     }
 
-    private fun mergeOverlappingRanges(sortedInput: List<ClipRange>): List<ClipRange> {
-        if (sortedInput.isEmpty()) return emptyList()
-
-        val result = ArrayList<ClipRange>(sortedInput.size)
-        for (range in sortedInput.sortedBy { it.startSeconds }) {
-            val previous = result.lastOrNull()
-            if (previous == null || range.startSeconds > previous.endSeconds) {
-                result += range
-            } else {
-                result[result.lastIndex] = union(previous, range)
-            }
-        }
-        return result
-    }
-
-    private const val BOUNDARY_EPSILON_SECONDS = 0.10
-
-    private fun union(first: ClipRange, second: ClipRange): ClipRange = ClipRange(
+    private fun union(first: RawRange, second: RawRange): RawRange = RawRange(
         startSeconds = min(first.startSeconds, second.startSeconds),
         endSeconds = max(first.endSeconds, second.endSeconds)
     )

@@ -9,8 +9,8 @@ import CoreImage
 // MARK: - Motion Events
 
 enum MotionEvent {
-    case start(CMTime)
-    case finish(CMTime)
+    case start(pts: CMTime)
+    case finish(pts: CMTime)
     case retry
 }
 
@@ -29,7 +29,7 @@ enum MotionFinishReference: String {
 /// - 가장 낮은 pose 점이 매트 기준선 위로 올라가면 START, 다시 아래로 내려오면 FINISH로 봅니다.
 /// - 탑홀드 마스킹 사용 시 FINISH는 탑홀드와 가장 가까웠던 pose 시점을 사용합니다.
 /// - 탑홀드 마스킹 미사용 시에는 신체의 가장 높은 점이 화면상 가장 높았던 시점을 사용합니다.
-/// - 선택된 FINISH 기준 시점에 3초 여백을 더해 저장합니다.
+/// - 녹화 중에는 원본 START/FINISH 시각만 저장하고, 정리 완료 후 3초 여백을 더합니다.
 /// - 한 번 pose tracking에 들어가면 다음 START도 pose로 계속 찾고, 5초 이상 pose가 없으면 CV 탐색으로 복귀합니다.
 final class MotionDetector {
     private enum State: String {
@@ -439,13 +439,12 @@ final class MotionDetector {
             lastLowestAboveMat = lowestAboveMat
             guard crossedUp else { return }
 
-            // 첫 pose가 이미 매트 위인 경우와 아래→위 crossing인 경우 모두 동일하게
-            // 판정 시점보다 3초 앞선 시점부터 클립에 포함합니다.
-            let adjustedStart = clipStartPTSIncludingPreRoll(for: pts)
+            // Store only the original crossing time. Review padding is added after all short-range
+            // cleanup and merging when the recording is finalized.
             let startReason = firstValidPose
-                ? "first pose already above mat; include pre-roll"
-                : "lowest pose point crossed above mat; include pre-roll"
-            emitStart(adjustedStart, reason: startReason)
+                ? "first pose already above mat"
+                : "lowest pose point crossed above mat"
+            emitStart(pts, reason: startReason)
             updateFinishReferenceMoment(snapshot: snapshot, pts: pts)
 
         case .climbing:
@@ -456,10 +455,9 @@ final class MotionDetector {
             guard !lowestAboveMat else { return }
 
             let finishBasePTS = bestFinishReferencePTS() ?? pts
-            let adjustedEnd = finishBasePTS + CMTime(seconds: Cfg.motionClipBoundaryPaddingSeconds, preferredTimescale: 600)
             emitFinish(
-                adjustedEnd,
-                reason: "lowest pose point returned below mat; end from \(finishReferenceDescription()) + padding"
+                finishBasePTS,
+                reason: "lowest pose point returned below mat; raw end from \(finishReferenceDescription())"
             )
 
         default:
@@ -467,16 +465,6 @@ final class MotionDetector {
         }
     }
 
-    /// 모든 START 경로에 동일한 pre-roll을 적용합니다.
-    /// 탐지 시점이 녹화 시작 후 3초 이내라면 존재하지 않는 음수 구간 대신 0초부터 저장합니다.
-    private func clipStartPTSIncludingPreRoll(for detectionPTS: CMTime) -> CMTime {
-        let preRoll = CMTime(
-            seconds: Swift.max(0, Cfg.motionClipBoundaryPaddingSeconds),
-            preferredTimescale: 600
-        )
-        let candidate = detectionPTS - preRoll
-        return CMTimeCompare(candidate, .zero) < 0 ? .zero : candidate
-    }
 
     private func handlePoseMissing(at pts: CMTime) {
         if lastPoseSeenPTS == nil, poseTrackingStartedPTS == nil {
@@ -492,7 +480,7 @@ final class MotionDetector {
             if let range = openClipRangeLocked(reason: String(format: "pose missing for %.1fs", missingAge)) {
                 emitFinish(
                     range.endPTS,
-                    reason: String(format: "pose missing for %.1fs; close from %@ + padding", missingAge, finishReferenceDescription())
+                    reason: String(format: "pose missing for %.1fs; raw close from %@", missingAge, finishReferenceDescription())
                 )
             } else {
                 emitRetry(reason: String(format: "pose missing for %.1fs and no finish reference", missingAge))
@@ -517,24 +505,20 @@ final class MotionDetector {
         guard state == .climbing else { return nil }
         guard let startPTS = activeStartPTS else { return nil }
 
-        // 정상 finish 조건이 아직 오지 않았더라도, 선택된 종료 기준으로 가장 적절했던
-        // pose 시점을 사용해 구간을 살립니다. 기준 갱신이 없으면 마지막 pose를 fallback으로 사용합니다.
+        // Keep the best raw finish-reference time. Padding is deferred to finalization.
         let finishBasePTS = bestFinishReferencePTS() ?? lastPoseSeenPTS
-        guard let finishBasePTS else { return nil }
+        guard let finishBasePTS, CMTimeCompare(finishBasePTS, startPTS) > 0 else { return nil }
 
-        let endPTS = finishBasePTS + CMTime(seconds: Cfg.motionClipBoundaryPaddingSeconds, preferredTimescale: 600)
-        guard CMTimeCompare(endPTS, startPTS) > 0 else { return nil }
-
-        debug("📌 open clip range salvaged: \(reason)")
-        return ClipRange(startPTS: startPTS, endPTS: endPTS)
+        debug("📌 raw open clip range salvaged: \(reason)")
+        return ClipRange(startPTS: startPTS, endPTS: finishBasePTS)
     }
 
     private func emitStart(_ pts: CMTime, reason: String) {
         state = .climbing
         activeStartPTS = pts
         resetFinishReferenceTracking()
-        debug("🚀 start detected: \(reason)")
-        onEvent?(.start(pts))
+        debug("🚀 raw start detected: \(reason)")
+        onEvent?(.start(pts: pts))
     }
 
     private func emitRetry(reason: String) {
@@ -556,8 +540,8 @@ final class MotionDetector {
             debug("⚠️ ignored invalid finish before start")
             return
         }
-        debug("🏁 finish detected: \(reason)")
-        onEvent?(.finish(pts))
+        debug("🏁 raw finish detected: \(reason)")
+        onEvent?(.finish(pts: pts))
         resetForNextStartSearchLocked()
     }
 

@@ -117,6 +117,42 @@ final class ReviewVC: UIViewController {
         return slider
     }()
 
+    private let selectedRangeZoomLabel: UILabel = {
+        let label = UILabel()
+        label.text = "선택된 구간 확대"
+        label.textColor = UIColor.white.withAlphaComponent(0.90)
+        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        return label
+    }()
+
+    private let selectedRangeZoomValueLabel: UILabel = {
+        let label = UILabel()
+        label.text = "1.0×"
+        label.textColor = UIColor.white.withAlphaComponent(0.78)
+        label.textAlignment = .right
+        label.font = .monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
+        return label
+    }()
+
+    private let selectedRangeZoomSlider: UISlider = {
+        let slider = UISlider()
+        slider.minimumValue = 1
+        slider.maximumValue = 1.0001
+        slider.value = 1
+        slider.minimumTrackTintColor = .systemBlue
+        slider.maximumTrackTintColor = UIColor.systemGray.withAlphaComponent(0.52)
+        let compactThumb = UIImage(
+            systemName: "circle.fill",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        )
+        slider.setThumbImage(compactThumb, for: .normal)
+        slider.setThumbImage(compactThumb, for: .highlighted)
+        slider.thumbTintColor = .white
+        slider.accessibilityLabel = "선택된 구간 확대"
+        slider.accessibilityHint = "오른쪽으로 이동하면 선택된 시작과 끝을 화면 안에 유지한 채 확대합니다"
+        return slider
+    }()
+
     private let playPauseBtn: UIButton = {
         var config = UIButton.Configuration.gray()
         config.cornerStyle = .capsule
@@ -242,6 +278,9 @@ final class ReviewVC: UIViewController {
         view.addSubview(topHoldOverlayView)
         view.addSubview(detectedRangeLabel)
         view.addSubview(rangeLabel)
+        view.addSubview(selectedRangeZoomLabel)
+        view.addSubview(selectedRangeZoomValueLabel)
+        view.addSubview(selectedRangeZoomSlider)
         view.addSubview(trimSlider)
         view.addSubview(playPauseBtn)
         view.addSubview(overlayToggleBtn)
@@ -261,8 +300,16 @@ final class ReviewVC: UIViewController {
             self?.handlePlayheadChanged(value)
         }
         trimSlider.onTrackingEnded = { [weak self] in
+            self?.refreshSelectedRangeZoomControl(recenter: true)
             self?.scheduleHideSliderTimeBubble(after: 0.55)
         }
+        selectedRangeZoomSlider.addTarget(self, action: #selector(onSelectedRangeZoomTouchDown), for: .touchDown)
+        selectedRangeZoomSlider.addTarget(self, action: #selector(onSelectedRangeZoomChanged), for: .valueChanged)
+        selectedRangeZoomSlider.addTarget(
+            self,
+            action: #selector(onSelectedRangeZoomTouchEnded),
+            for: [.touchUpInside, .touchUpOutside, .touchCancel]
+        )
 
         previousRangeBtn.addTarget(self, action: #selector(onTapPreviousRange), for: .touchUpInside)
         nextRangeBtn.addTarget(self, action: #selector(onTapNextRange), for: .touchUpInside)
@@ -273,6 +320,7 @@ final class ReviewVC: UIViewController {
         closeBtn.addTarget(self, action: #selector(onTapClose), for: .touchUpInside)
 
         updateDetectedRangeNavigationUI()
+        refreshSelectedRangeZoomControl(recenter: true)
         topHoldOverlayView.image = topHoldOverlayImage
 
         let playerItem = AVPlayerItem(url: recordingURL)
@@ -405,7 +453,6 @@ final class ReviewVC: UIViewController {
     private func layoutPortraitReviewControls(panelX: CGFloat, panelWidth: CGFloat, panelBottom: CGFloat) {
         let buttonHeight: CGFloat = 42
         let buttonGap: CGFloat = 8
-        let sliderHeight: CGFloat = 38
         let playWidth: CGFloat = 58
         rangeLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
         applyReviewButtonInsets(isLandscape: false)
@@ -446,7 +493,23 @@ final class ReviewVC: UIViewController {
             height: buttonHeight
         )
 
-        trimSlider.frame = CGRect(x: panelX, y: firstRowY - buttonGap - sliderHeight, width: panelWidth, height: sliderHeight)
+        let zoomSliderHeight: CGFloat = 18
+        let zoomLabelHeight: CGFloat = 13
+        let zoomSliderWidth = panelWidth * 0.72
+        let zoomSliderX = panelX + (panelWidth - zoomSliderWidth) * 0.5
+        let zoomSliderY = firstRowY - buttonGap - zoomSliderHeight
+        selectedRangeZoomSlider.frame = CGRect(x: zoomSliderX, y: zoomSliderY, width: zoomSliderWidth, height: zoomSliderHeight)
+        selectedRangeZoomLabel.frame = CGRect(x: panelX, y: zoomSliderY - zoomLabelHeight, width: panelWidth * 0.72, height: zoomLabelHeight)
+        selectedRangeZoomValueLabel.frame = CGRect(x: panelX + panelWidth * 0.72, y: zoomSliderY - zoomLabelHeight, width: panelWidth * 0.28, height: zoomLabelHeight)
+
+        let trimToZoomGap: CGFloat = 7
+        let primarySliderHeight: CGFloat = 60
+        trimSlider.frame = CGRect(
+            x: panelX,
+            y: selectedRangeZoomLabel.frame.minY - trimToZoomGap - primarySliderHeight,
+            width: panelWidth,
+            height: primarySliderHeight
+        )
         layoutDetectedRangeNavigation(above: trimSlider.frame, panelX: panelX, panelWidth: panelWidth, isLandscape: false)
         positionSliderTimeBubbleIfVisible()
         normalizeReviewButtonContentLayout()
@@ -474,8 +537,23 @@ final class ReviewVC: UIViewController {
         retakeBtn.frame = CGRect(x: saveBtn.frame.maxX + gap, y: buttonY, width: retakeWidth, height: buttonHeight)
         closeBtn.frame = CGRect(x: retakeBtn.frame.maxX + gap, y: buttonY, width: closeWidth, height: buttonHeight)
 
-        let sliderHeight: CGFloat = 42
-        trimSlider.frame = CGRect(x: panelX, y: buttonY - gap - sliderHeight, width: panelWidth, height: sliderHeight)
+        let zoomSliderHeight: CGFloat = 16
+        let zoomLabelHeight: CGFloat = 12
+        let zoomSliderWidth = panelWidth * 0.68
+        let zoomSliderX = panelX + (panelWidth - zoomSliderWidth) * 0.5
+        let zoomSliderY = buttonY - gap - zoomSliderHeight
+        selectedRangeZoomSlider.frame = CGRect(x: zoomSliderX, y: zoomSliderY, width: zoomSliderWidth, height: zoomSliderHeight)
+        selectedRangeZoomLabel.frame = CGRect(x: panelX, y: zoomSliderY - zoomLabelHeight, width: panelWidth * 0.72, height: zoomLabelHeight)
+        selectedRangeZoomValueLabel.frame = CGRect(x: panelX + panelWidth * 0.72, y: zoomSliderY - zoomLabelHeight, width: panelWidth * 0.28, height: zoomLabelHeight)
+
+        let trimToZoomGap: CGFloat = 6
+        let primarySliderHeight: CGFloat = 58
+        trimSlider.frame = CGRect(
+            x: panelX,
+            y: selectedRangeZoomLabel.frame.minY - trimToZoomGap - primarySliderHeight,
+            width: panelWidth,
+            height: primarySliderHeight
+        )
         rangeLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
         layoutDetectedRangeNavigation(above: trimSlider.frame, panelX: panelX, panelWidth: panelWidth, isLandscape: true)
         positionSliderTimeBubbleIfVisible()
@@ -567,6 +645,9 @@ final class ReviewVC: UIViewController {
         playPauseBtn.isEnabled = !saving
         overlayToggleBtn.isEnabled = !saving && topHoldOverlayImage != nil && !topHoldOverlayToggleLocked
         trimSlider.isEnabled = !saving
+        selectedRangeZoomSlider.isEnabled = !saving && trimSlider.maximumAllowedSelectedRangeZoomFactor > 1.01
+        selectedRangeZoomLabel.alpha = saving ? 0.45 : 1.0
+        selectedRangeZoomValueLabel.alpha = saving ? 0.45 : 1.0
         retakeBtn.isEnabled = !saving
         closeBtn.isEnabled = !saving
         if !saving {
@@ -575,6 +656,44 @@ final class ReviewVC: UIViewController {
             previousRangeBtn.isEnabled = false
             nextRangeBtn.isEnabled = false
         }
+    }
+
+    private func refreshSelectedRangeZoomControl(recenter: Bool) {
+        let currentZoom = trimSlider.currentSelectedRangeZoomFactor
+        let selectionMaximumZoom = trimSlider.maximumAllowedSelectedRangeZoomFactor
+        let sliderMaximumZoom = Swift.max(currentZoom, selectionMaximumZoom)
+        selectedRangeZoomSlider.minimumValue = 1
+        selectedRangeZoomSlider.maximumValue = Float(Swift.max(1.0001, sliderMaximumZoom))
+
+        let appliedZoom: Double
+        if recenter {
+            appliedZoom = trimSlider.recenterSelectedRangePreservingCurrentZoom()
+        } else {
+            appliedZoom = currentZoom
+        }
+
+        selectedRangeZoomSlider.value = Float(appliedZoom)
+        selectedRangeZoomSlider.isEnabled = trimSlider.isEnabled && sliderMaximumZoom > 1.01
+        selectedRangeZoomValueLabel.text = String(format: "%.1f×", appliedZoom)
+        selectedRangeZoomSlider.accessibilityValue = selectedRangeZoomValueLabel.text
+        if recenter { positionSliderTimeBubbleIfVisible() }
+    }
+
+    @objc private func onSelectedRangeZoomTouchDown() {
+        pausePlayback()
+    }
+
+    @objc private func onSelectedRangeZoomChanged() {
+        pausePlayback()
+        let appliedZoom = trimSlider.setSelectedRangeZoomFactor(Double(selectedRangeZoomSlider.value))
+        selectedRangeZoomSlider.value = Float(appliedZoom)
+        selectedRangeZoomValueLabel.text = String(format: "%.1f×", appliedZoom)
+        selectedRangeZoomSlider.accessibilityValue = selectedRangeZoomValueLabel.text
+        positionSliderTimeBubbleIfVisible()
+    }
+
+    @objc private func onSelectedRangeZoomTouchEnded() {
+        refreshSelectedRangeZoomControl(recenter: true)
     }
 
     private func handleRangeChanged(lower: TimeInterval, upper: TimeInterval, activeHandle: TrimRangeSlider.ActiveHandle) {
@@ -589,6 +708,7 @@ final class ReviewVC: UIViewController {
         }
 
         trimSlider.playheadValue = playhead
+        refreshSelectedRangeZoomControl(recenter: false)
         showSliderTimeBubble(for: playhead)
         pausePlayback()
         seek(to: playhead)
@@ -672,6 +792,7 @@ final class ReviewVC: UIViewController {
         trimSlider.lowerValue = selectedStart
         trimSlider.upperValue = selectedEnd
         trimSlider.playheadValue = playhead
+        refreshSelectedRangeZoomControl(recenter: true)
         updateDetectedRangeNavigationUI()
         showSliderTimeBubble(for: playhead)
         playFromCurrentPlayhead()
@@ -920,6 +1041,7 @@ final class ReviewVC: UIViewController {
         let safeEnd = clamped(endSeconds, min: selectedStart, max: selectedEnd)
         playhead = safeEnd
         trimSlider.playheadValue = playhead
+        trimSlider.ensureValueVisible(playhead)
         pausePlayback()
         seek(to: safeEnd)
     }
@@ -965,6 +1087,7 @@ final class ReviewVC: UIViewController {
 
         playhead = clamped(current, min: selectedStart, max: selectedEnd)
         trimSlider.playheadValue = playhead
+        trimSlider.ensureValueVisible(playhead)
     }
 
     private func updatePlayButton() {
@@ -1053,11 +1176,23 @@ private final class TrimRangeSlider: UIControl {
     }
 
     var minimumValue: TimeInterval = 0 {
-        didSet { normalizeValues() }
+        didSet {
+            normalizeValues()
+            visibleMinimumValue = minimumValue
+            visibleMaximumValue = maximumValue
+            setNeedsDisplay()
+        }
     }
 
     var maximumValue: TimeInterval = 1 {
-        didSet { normalizeValues() }
+        didSet {
+            normalizeValues()
+            // The duration is configured once during ReviewVC setup. Start with the
+            // entire timeline visible rather than an accidentally zoomed initial window.
+            visibleMinimumValue = minimumValue
+            visibleMaximumValue = maximumValue
+            setNeedsDisplay()
+        }
     }
 
     var lowerValue: TimeInterval = 0 {
@@ -1092,6 +1227,7 @@ private final class TrimRangeSlider: UIControl {
 
     private var dragTarget: DragTarget?
     private var isNormalizing = false
+    private var isNormalizingViewport = false
     private var lastTrackingX: CGFloat?
     private var lastTrackingTimestamp: TimeInterval?
     private var rawDragValue: TimeInterval?
@@ -1099,22 +1235,30 @@ private final class TrimRangeSlider: UIControl {
     private var slowDragDuration: TimeInterval = 0
     private var isFineAdjustment = false
 
+    private var visibleMinimumValue: TimeInterval = 0
+    private var visibleMaximumValue: TimeInterval = 1
+
     private let fineAdjustmentFeedback = UIImpactFeedbackGenerator(style: .light)
     private let fineAdjustmentStep: TimeInterval = 0.1
     private let fineAdjustmentEnterSpeed: CGFloat = 35
     private let fineAdjustmentExitSpeed: CGFloat = 55
     private let fineAdjustmentActivationDuration: TimeInterval = 0.14
+    private let maximumZoomFactor: Double = 12
+    private let minimumZoomWindowSeconds: TimeInterval = 2
     // 시각적 크기는 줄이되 터치 판정 영역은 넉넉하게 유지합니다.
-    private let thumbRadius: CGFloat = 10
-    private let playheadWidth: CGFloat = 3
-    private let playheadHeight: CGFloat = 25
-    private let trackHeight: CGFloat = 5
-    private let hitRadius: CGFloat = 30
+    private let thumbRadius: CGFloat = 13
+    private let playheadWidth: CGFloat = 3.5
+    private let playheadHeight: CGFloat = 30
+    private let trackHeight: CGFloat = 6
+    private let hitRadius: CGFloat = 34
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .clear
         isMultipleTouchEnabled = false
+        isAccessibilityElement = true
+        accessibilityLabel = "영상 구간 타임라인"
+        accessibilityHint = "시작점, 종료점 또는 재생 위치를 한 손가락으로 조정합니다"
     }
 
     required init?(coder: NSCoder) {
@@ -1125,44 +1269,67 @@ private final class TrimRangeSlider: UIControl {
         guard maximumValue > minimumValue else { return }
 
         let track = trackRect()
-        let lowerX = xPosition(for: lowerValue)
-        let upperX = xPosition(for: upperValue)
-        let playheadX = xPosition(for: playheadValue)
-        let centerY = bounds.midY
+        let centerY = track.midY
+
+        drawTimelineTicks(track: track, centerY: centerY)
 
         UIColor.systemGray.withAlphaComponent(0.65).setFill()
         UIBezierPath(roundedRect: track, cornerRadius: track.height / 2).fill()
 
-        let selectedTrack = CGRect(
-            x: lowerX,
-            y: track.minY,
-            width: Swift.max(CGFloat(0), upperX - lowerX),
-            height: track.height
-        )
-        UIColor.systemBlue.setFill()
-        UIBezierPath(roundedRect: selectedTrack, cornerRadius: track.height / 2).fill()
+        let selectedVisibleStart = Swift.max(lowerValue, visibleMinimumValue)
+        let selectedVisibleEnd = Swift.min(upperValue, visibleMaximumValue)
+        if selectedVisibleEnd >= selectedVisibleStart {
+            let lowerX = xPosition(for: selectedVisibleStart)
+            let upperX = xPosition(for: selectedVisibleEnd)
+            let selectedTrack = CGRect(
+                x: lowerX,
+                y: track.minY,
+                width: Swift.max(CGFloat(0), upperX - lowerX),
+                height: track.height
+            )
+            UIColor.systemBlue.setFill()
+            UIBezierPath(roundedRect: selectedTrack, cornerRadius: track.height / 2).fill()
+        }
 
-        drawPlayhead(x: playheadX, centerY: centerY)
-        drawThumb(center: CGPoint(x: lowerX, y: centerY))
-        drawThumb(center: CGPoint(x: upperX, y: centerY))
+        if isValueVisible(playheadValue) {
+            drawPlayhead(x: xPosition(for: playheadValue), centerY: centerY)
+        }
+
+        if isValueVisible(lowerValue) {
+            drawThumb(center: CGPoint(x: xPosition(for: lowerValue), y: centerY))
+        } else if lowerValue < visibleMinimumValue {
+            drawOffscreenMarker(x: track.minX, centerY: centerY)
+        }
+
+        if isValueVisible(upperValue) {
+            drawThumb(center: CGPoint(x: xPosition(for: upperValue), y: centerY))
+        } else if upperValue > visibleMaximumValue {
+            drawOffscreenMarker(x: track.maxX, centerY: centerY)
+        }
+
     }
 
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         guard isEnabled else { return false }
 
         let point = touch.location(in: self)
+
+        let lowerVisible = isValueVisible(lowerValue)
+        let upperVisible = isValueVisible(upperValue)
+        let playheadVisible = isValueVisible(playheadValue)
         let lowerX = xPosition(for: lowerValue)
         let upperX = xPosition(for: upperValue)
         let playheadX = xPosition(for: playheadValue)
 
-        let lowerDistance = abs(point.x - lowerX)
-        let upperDistance = abs(point.x - upperX)
-        let playheadDistance = abs(point.x - playheadX)
+        let lowerDistance = lowerVisible ? abs(point.x - lowerX) : .greatestFiniteMagnitude
+        let upperDistance = upperVisible ? abs(point.x - upperX) : .greatestFiniteMagnitude
+        let playheadDistance = playheadVisible ? abs(point.x - playheadX) : .greatestFiniteMagnitude
         let isTouchNearExistingControl =
             lowerDistance <= hitRadius ||
             upperDistance <= hitRadius ||
             playheadDistance <= hitRadius
 
+        let touchedValue = value(for: point.x)
         if isTouchNearExistingControl {
             let nearestDistance = min(lowerDistance, upperDistance, playheadDistance)
             if nearestDistance == lowerDistance {
@@ -1172,9 +1339,9 @@ private final class TrimRangeSlider: UIControl {
             } else {
                 dragTarget = .playhead
             }
-        } else if point.x > lowerX, point.x < upperX {
+        } else if touchedValue > lowerValue, touchedValue < upperValue {
             dragTarget = .playhead
-        } else if point.x <= lowerX {
+        } else if touchedValue <= lowerValue {
             dragTarget = .lower
         } else {
             dragTarget = .upper
@@ -1190,8 +1357,8 @@ private final class TrimRangeSlider: UIControl {
         if isTouchNearExistingControl {
             rawDragValue = currentDragValue()
         } else {
-            // 트랙의 빈 영역을 누른 경우에는 기존처럼 해당 위치로 즉시 이동합니다.
-            let absoluteValue = clampedValueForCurrentTarget(value(for: point.x))
+            // 트랙의 빈 영역을 누른 경우에는 해당 위치로 즉시 이동합니다.
+            let absoluteValue = clampedValueForCurrentTarget(touchedValue)
             rawDragValue = absoluteValue
             applyDragValue(absoluteValue)
         }
@@ -1230,18 +1397,15 @@ private final class TrimRangeSlider: UIControl {
 
         let fineAdjustment: Bool
         if isFineAdjustment {
-            // 미세 조정 중에는 약간 빨라져도 바로 해제되지 않도록 히스테리시스를 둡니다.
             fineAdjustment = smoothedDragSpeed <= fineAdjustmentExitSpeed
         } else {
-            // 드래그 시작 순간의 작은 움직임을 오인하지 않도록 낮은 속도가 잠시 지속될 때만 진입합니다.
             fineAdjustment = slowDragDuration >= fineAdjustmentActivationDuration
         }
         setFineAdjustment(fineAdjustment)
 
         let sensitivity = dragSensitivity(for: smoothedDragSpeed)
-
         let trackWidth = Swift.max(CGFloat(1), trackRect().width)
-        let secondsPerPoint = (maximumValue - minimumValue) / Double(trackWidth)
+        let secondsPerPoint = visibleSpan / Double(trackWidth)
         let deltaValue = Double(deltaX) * secondsPerPoint * Double(sensitivity)
         let baseValue = rawDragValue ?? currentDragValue()
         let unclampedRawValue = baseValue + deltaValue
@@ -1263,12 +1427,61 @@ private final class TrimRangeSlider: UIControl {
 
     override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
         resetTrackingState()
+        _ = recenterSelectedRangePreservingCurrentZoom()
         onTrackingEnded?()
     }
 
     override func cancelTracking(with event: UIEvent?) {
         resetTrackingState()
+        _ = recenterSelectedRangePreservingCurrentZoom()
         onTrackingEnded?()
+    }
+
+    var currentSelectedRangeZoomFactor: Double {
+        zoomFactor
+    }
+
+    var maximumAllowedSelectedRangeZoomFactor: Double {
+        totalSpan / minimumSelectedRangeViewportSpan
+    }
+
+    @discardableResult
+    func recenterSelectedRangePreservingCurrentZoom() -> Double {
+        let currentSpan = visibleSpan
+        let selectedSpan = Swift.max(minimumDistance, upperValue - lowerValue)
+        guard selectedSpan <= currentSpan + 0.0001 else {
+            return setSelectedRangeZoomFactor(zoomFactor)
+        }
+        let selectedCenter = (lowerValue + upperValue) * 0.5
+        setVisibleWindow(start: selectedCenter - currentSpan * 0.5, span: currentSpan)
+        return zoomFactor
+    }
+
+    @discardableResult
+    func setSelectedRangeZoomFactor(_ requestedZoom: Double) -> Double {
+        let maximumZoom = Swift.max(1.0, maximumAllowedSelectedRangeZoomFactor)
+        let safeZoom = Swift.max(1.0, Swift.min(requestedZoom, maximumZoom))
+        let span = Swift.max(minimumSelectedRangeViewportSpan, totalSpan / safeZoom)
+        let selectedCenter = (lowerValue + upperValue) * 0.5
+        setVisibleWindow(start: selectedCenter - span * 0.5, span: span)
+        return totalSpan / visibleSpan
+    }
+
+    func revealRange(lower: TimeInterval, upper: TimeInterval) {
+        _ = setSelectedRangeZoomFactor(zoomFactor)
+    }
+
+    func ensureValueVisible(_ value: TimeInterval) {
+        guard zoomFactor > 1.01 else { return }
+        if value < visibleMinimumValue {
+            setVisibleWindow(start: value - visibleSpan * 0.20, span: visibleSpan)
+        } else if value > visibleMaximumValue {
+            setVisibleWindow(start: value - visibleSpan * 0.80, span: visibleSpan)
+        }
+    }
+
+    func resetZoom() {
+        _ = setSelectedRangeZoomFactor(1.0)
     }
 
     private func applyDragValue(_ value: TimeInterval) {
@@ -1328,7 +1541,6 @@ private final class TrimRangeSlider: UIControl {
     private func dragSensitivity(for speed: CGFloat) -> CGFloat {
         let minimumGain = minimumFineAdjustmentGain()
 
-        // 미세 조정 영역을 좁게 유지하고, 일반적인 속도에서는 빠르게 1배 감도로 복귀합니다.
         if speed <= 18 {
             return minimumGain
         }
@@ -1373,10 +1585,9 @@ private final class TrimRangeSlider: UIControl {
 
     private func minimumFineAdjustmentGain() -> CGFloat {
         let trackWidth = Swift.max(CGFloat(1), trackRect().width)
-        let secondsPerPoint = (maximumValue - minimumValue) / Double(trackWidth)
+        let secondsPerPoint = visibleSpan / Double(trackWidth)
         guard secondsPerPoint > 0 else { return 0.03 }
 
-        // 영상 길이가 길어져도 약 1pt 이동이 0.1초 안팎이 되도록 최소 감도를 동적으로 계산합니다.
         let gainForOneTenthSecond = fineAdjustmentStep / secondsPerPoint
         return CGFloat(Swift.max(0.008, Swift.min(0.08, gainForOneTenthSecond)))
     }
@@ -1398,7 +1609,6 @@ private final class TrimRangeSlider: UIControl {
         isFineAdjustment = enabled
 
         if enabled {
-            // 미세 조정에 진입하는 순간에만 한 번 진동해 모드 전환을 알립니다.
             fineAdjustmentFeedback.impactOccurred(intensity: 0.65)
             fineAdjustmentFeedback.prepare()
         }
@@ -1412,6 +1622,28 @@ private final class TrimRangeSlider: UIControl {
         smoothedDragSpeed = 0
         slowDragDuration = 0
         setFineAdjustment(false)
+    }
+
+    private var totalSpan: TimeInterval {
+        Swift.max(0.01, maximumValue - minimumValue)
+    }
+
+    private var visibleSpan: TimeInterval {
+        Swift.max(0.01, visibleMaximumValue - visibleMinimumValue)
+    }
+
+    private var minimumVisibleSpan: TimeInterval {
+        Swift.min(totalSpan, Swift.max(minimumZoomWindowSeconds, totalSpan / maximumZoomFactor))
+    }
+
+    private var minimumSelectedRangeViewportSpan: TimeInterval {
+        let selectedSpan = Swift.max(minimumDistance, upperValue - lowerValue)
+        let handleMargin = Swift.max(0.35, selectedSpan * 0.16)
+        return Swift.min(totalSpan, Swift.max(minimumVisibleSpan, selectedSpan + handleMargin * 2.0))
+    }
+
+    private var zoomFactor: Double {
+        totalSpan / visibleSpan
     }
 
     private func normalizeValues() {
@@ -1428,13 +1660,40 @@ private final class TrimRangeSlider: UIControl {
         playheadValue = Swift.max(lowerValue, Swift.min(playheadValue, upperValue))
 
         isNormalizing = false
+        normalizeViewport()
         setNeedsDisplay()
+    }
+
+    private func normalizeViewport() {
+        guard !isNormalizingViewport else { return }
+        isNormalizingViewport = true
+
+        let span = Swift.max(minimumVisibleSpan, Swift.min(totalSpan, visibleSpan))
+        let maximumStart = maximumValue - span
+        visibleMinimumValue = Swift.max(minimumValue, Swift.min(visibleMinimumValue, maximumStart))
+        visibleMaximumValue = visibleMinimumValue + span
+
+        isNormalizingViewport = false
+        setNeedsDisplay()
+    }
+
+    private func setVisibleWindow(start: TimeInterval, span: TimeInterval) {
+        let safeSpan = Swift.max(minimumVisibleSpan, Swift.min(totalSpan, span))
+        let maximumStart = maximumValue - safeSpan
+        visibleMinimumValue = Swift.max(minimumValue, Swift.min(start, maximumStart))
+        visibleMaximumValue = visibleMinimumValue + safeSpan
+        setNeedsDisplay()
+    }
+
+    private func isValueVisible(_ value: TimeInterval) -> Bool {
+        value >= visibleMinimumValue && value <= visibleMaximumValue
     }
 
     private func trackRect() -> CGRect {
         let x = thumbRadius
         let width = Swift.max(1, bounds.width - thumbRadius * 2)
-        return CGRect(x: x, y: bounds.midY - trackHeight / 2, width: width, height: trackHeight)
+        let centerY = bounds.midY + 2
+        return CGRect(x: x, y: centerY - trackHeight / 2, width: width, height: trackHeight)
     }
 
     func xPositionForValue(_ value: TimeInterval) -> CGFloat {
@@ -1443,14 +1702,81 @@ private final class TrimRangeSlider: UIControl {
 
     private func xPosition(for value: TimeInterval) -> CGFloat {
         let track = trackRect()
-        let ratio = CGFloat((value - minimumValue) / (maximumValue - minimumValue))
+        let ratio = CGFloat((value - visibleMinimumValue) / visibleSpan)
         return track.minX + Swift.max(CGFloat(0), Swift.min(CGFloat(1), ratio)) * track.width
     }
 
     private func value(for x: CGFloat) -> TimeInterval {
         let track = trackRect()
         let ratio = Swift.max(CGFloat(0), Swift.min(CGFloat(1), (x - track.minX) / track.width))
-        return minimumValue + Double(ratio) * (maximumValue - minimumValue)
+        return visibleMinimumValue + Double(ratio) * visibleSpan
+    }
+
+    private func drawTimelineTicks(track: CGRect, centerY: CGFloat) {
+        let baseMajorStep = niceTimelineStep(totalSpan / 8.0)
+        let majorSpacing = CGFloat(baseMajorStep / visibleSpan) * track.width
+        let subdivisions: Int
+        if majorSpacing >= 180 {
+            subdivisions = 10
+        } else if majorSpacing >= 90 {
+            subdivisions = 5
+        } else if majorSpacing >= 48 {
+            subdivisions = 2
+        } else {
+            subdivisions = 1
+        }
+
+        let tickStep = baseMajorStep / Double(subdivisions)
+        guard tickStep > 0 else { return }
+        var tick = ceil(Swift.max(minimumValue, visibleMinimumValue) / tickStep) * tickStep
+        let tickEnd = Swift.min(maximumValue, visibleMaximumValue)
+        var guardCount = 0
+
+        while tick <= tickEnd + tickStep * 0.001, guardCount < 500 {
+            let majorIndex = tick / baseMajorStep
+            let isMajor = abs(majorIndex - majorIndex.rounded()) < 0.001
+            let tickHeight: CGFloat = isMajor ? 7 : 3
+            let tickWidth: CGFloat = isMajor ? 1.2 : 0.8
+            let tickColor = UIColor.white.withAlphaComponent(isMajor ? 0.32 : 0.16)
+            tickColor.setStroke()
+            let path = UIBezierPath()
+            path.lineWidth = tickWidth
+            path.lineCapStyle = .round
+            let x = xPosition(for: tick)
+            path.move(to: CGPoint(x: x, y: centerY - tickHeight))
+            path.addLine(to: CGPoint(x: x, y: centerY + tickHeight))
+            path.stroke()
+            tick += tickStep
+            guardCount += 1
+        }
+    }
+
+    private func niceTimelineStep(_ raw: Double) -> Double {
+        guard raw > 0 else { return 1 }
+        let magnitude = pow(10.0, floor(log10(raw)))
+        let normalized = raw / magnitude
+        let rounded: Double
+        if normalized <= 1 {
+            rounded = 1
+        } else if normalized <= 2 {
+            rounded = 2
+        } else if normalized <= 5 {
+            rounded = 5
+        } else {
+            rounded = 10
+        }
+        return rounded * magnitude
+    }
+
+    private func formatTimelineTime(_ seconds: TimeInterval) -> String {
+        let totalTenths = Int((Swift.max(0, seconds) * 10).rounded())
+        let minutes = totalTenths / 600
+        let wholeSeconds = (totalTenths / 10) % 60
+        let tenths = totalTenths % 10
+        if minutes > 0 {
+            return String(format: "%d:%02d.%d", minutes, wholeSeconds, tenths)
+        }
+        return String(format: "%d.%d초", wholeSeconds, tenths)
     }
 
     private func drawThumb(center: CGPoint) {
@@ -1468,6 +1794,16 @@ private final class TrimRangeSlider: UIControl {
         let border = UIBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5))
         border.lineWidth = 1
         border.stroke()
+    }
+
+    private func drawOffscreenMarker(x: CGFloat, centerY: CGFloat) {
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: x, y: centerY - 8))
+        path.addLine(to: CGPoint(x: x, y: centerY + 8))
+        path.lineWidth = 2
+        path.lineCapStyle = .round
+        UIColor.white.setStroke()
+        path.stroke()
     }
 
     private func drawPlayhead(x: CGFloat, centerY: CGFloat) {

@@ -7,111 +7,105 @@ class DetectedClipRangeStoreTest {
     @Test
     fun rawRangesAreNotCappedBeforeFinalCleanup() {
         val store = DetectedClipRangeStore()
-
         repeat(14) { index ->
             val start = index * 10.0
             store.append(ClipRange(start, start + 1.0))
         }
-
         assertEquals(14, store.snapshot().size)
     }
 
     @Test
-    fun longRecordingKeepsEarlyValidRangesAfterLateNoiseIsRemoved() {
-        val store = DetectedClipRangeStore()
-        store.append(ClipRange(0.0, 12.0))
-        store.append(ClipRange(20.0, 32.0))
-
-        // These late one-second false positives make the raw count exceed ten, but each is isolated
-        // by more than the three-second merge gap and must be removed during finalization.
-        repeat(12) { index ->
-            val start = 40.0 + index * 5.0
-            store.append(ClipRange(start, start + 1.0))
-        }
-
-        val result = ClipRangeNormalizer.normalize(store.snapshot())
-
-        assertEquals(
-            listOf(ClipRange(0.0, 12.0), ClipRange(20.0, 32.0)),
-            result
-        )
-    }
-
-    @Test
-    fun overlappingPaddedRangesAreCoalesced() {
+    fun shortRawRangeMergesUsingRawThreeSecondGapThenPaddingIsAdded() {
         val result = ClipRangeNormalizer.normalize(
+            input = listOf(
+                ClipRange(10.0, 15.0),
+                ClipRange(18.0, 19.0),
+                ClipRange(40.0, 45.0)
+            ),
+            recordingDurationSeconds = 60.0
+        )
+        assertEquals(
             listOf(
-                ClipRange(0.0, 12.0),
-                ClipRange(10.0, 22.0),
-                ClipRange(30.0, 42.0)
-            )
-        )
-
-        assertEquals(
-            listOf(ClipRange(0.0, 22.0), ClipRange(30.0, 42.0)),
+                ClipRange(7.0, 22.0, 10.0, 19.0),
+                ClipRange(37.0, 48.0, 40.0, 45.0)
+            ),
             result
         )
     }
 
     @Test
-    fun shortRangeStillMergesWithNearestRangeWithinThreeSeconds() {
+    fun isolatedRawRangeShorterThanTwoSecondsIsDiscardedBeforePadding() {
         val result = ClipRangeNormalizer.normalize(
+            input = listOf(ClipRange(10.0, 11.99)),
+            recordingDurationSeconds = 30.0
+        )
+        assertEquals(emptyList<ClipRange>(), result)
+    }
+
+    @Test
+    fun exactlyTwoSecondRawRangeIsKeptAndThenPadded() {
+        val result = ClipRangeNormalizer.normalize(
+            input = listOf(ClipRange(10.0, 12.0)),
+            recordingDurationSeconds = 30.0
+        )
+        assertEquals(listOf(ClipRange(7.0, 15.0, 10.0, 12.0)), result)
+    }
+
+    @Test
+    fun shortRawRangeBeyondThreeSecondGapIsDiscardedEvenIfFinalPaddingWouldOverlap() {
+        val result = ClipRangeNormalizer.normalize(
+            input = listOf(
+                ClipRange(10.0, 15.0),
+                ClipRange(18.01, 19.0)
+            ),
+            recordingDurationSeconds = 30.0
+        )
+        assertEquals(listOf(ClipRange(7.0, 18.0, 10.0, 15.0)), result)
+    }
+
+    @Test
+    fun normalRawRangesStaySeparateEvenWhenTheirFinalPaddingOverlaps() {
+        val result = ClipRangeNormalizer.normalize(
+            input = listOf(
+                ClipRange(10.0, 15.0),
+                ClipRange(16.0, 21.0)
+            ),
+            recordingDurationSeconds = 30.0
+        )
+        assertEquals(
             listOf(
-                ClipRange(0.0, 12.0),
-                ClipRange(14.0, 16.0),
-                ClipRange(30.0, 42.0)
-            )
-        )
-
-        assertEquals(
-            listOf(ClipRange(0.0, 16.0), ClipRange(30.0, 42.0)),
+                ClipRange(7.0, 18.0, 10.0, 15.0),
+                ClipRange(13.0, 24.0, 16.0, 21.0)
+            ),
             result
         )
     }
 
     @Test
-    fun validEarlyRangeIsNotRemovedWhenLeadingPaddingWasClamped() {
+    fun paddingIsClampedOnlyAfterCleanup() {
         val result = ClipRangeNormalizer.normalize(
-            input = listOf(ClipRange(0.0, 6.1)),
-            recordingDurationSeconds = 120.0
+            input = listOf(
+                ClipRange(0.5, 3.0),
+                ClipRange(27.0, 29.5)
+            ),
+            recordingDurationSeconds = 30.0
         )
-
-        assertEquals(listOf(ClipRange(0.0, 6.1)), result)
-    }
-
-    @Test
-    fun twoFpsSamplingToleranceKeepsAnApproximatelyThreeSecondDetection() {
-        val result = ClipRangeNormalizer.normalize(
-            input = listOf(ClipRange(10.0, 18.5)),
-            recordingDurationSeconds = 120.0
+        assertEquals(
+            listOf(
+                ClipRange(0.0, 6.0, 0.5, 3.0),
+                ClipRange(24.0, 30.0, 27.0, 29.5)
+            ),
+            result
         )
-
-        assertEquals(listOf(ClipRange(10.0, 18.5)), result)
     }
-
 
     @Test
     fun moreThanTenValidRangesAreAllPreserved() {
         val input = List(12) { index ->
-            val start = index * 15.0
-            ClipRange(start, start + 12.0)
+            val start = index * 10.0
+            ClipRange(start, start + 4.0)
         }
-
-        val result = ClipRangeNormalizer.normalize(
-            input = input,
-            recordingDurationSeconds = 200.0
-        )
-
-        assertEquals(input, result)
-    }
-
-    @Test
-    fun genuinelyShortIsolatedMiddleRangeIsStillRemoved() {
-        val result = ClipRangeNormalizer.normalize(
-            input = listOf(ClipRange(10.0, 18.0)),
-            recordingDurationSeconds = 120.0
-        )
-
-        assertEquals(emptyList<ClipRange>(), result)
+        val result = ClipRangeNormalizer.normalize(input, recordingDurationSeconds = 120.0)
+        assertEquals(12, result.size)
     }
 }

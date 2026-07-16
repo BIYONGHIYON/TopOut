@@ -36,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -52,9 +53,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.DialogProperties
+import kotlin.math.roundToLong
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -66,7 +69,9 @@ import com.topout.cam.ui.components.TopOutCapsuleButton
 import com.topout.cam.ui.components.TopStatusBanner
 import com.topout.cam.ui.theme.TopOutColors
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
+@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun ReviewScreen(
     video: RecordedVideo,
@@ -93,6 +98,9 @@ fun ReviewScreen(
     var playhead by remember(video.uri) { mutableDoubleStateOf(video.defaultStartSeconds) }
     var isPlaying by remember { mutableStateOf(true) }
     var isTrimTracking by remember(video.uri) { mutableStateOf(false) }
+    var pendingSeekPositionMs by remember(video.uri) {
+        mutableLongStateOf((video.defaultStartSeconds * 1000.0).roundToLong())
+    }
     // ReviewVC is created with includeTopHoldOverlayByDefault = false.
     var includeOverlay by remember(video.uri) { mutableStateOf(false) }
     var selectedRangeIndex by remember(video.uri) {
@@ -142,10 +150,31 @@ fun ReviewScreen(
         }
     }
 
+    LaunchedEffect(player, isTrimTracking) {
+        if (!isTrimTracking) return@LaunchedEffect
+
+        // Coalesce pointer events to at most one seek per display frame. This prevents
+        // stale seek requests from building up behind the user's finger. Media3's
+        // scrubbing mode keeps the decoder warm for these frequent paused seeks.
+        var lastIssuedPositionMs = Long.MIN_VALUE
+        while (isActive) {
+            val requestedPositionMs = pendingSeekPositionMs
+            if (requestedPositionMs != lastIssuedPositionMs) {
+                player.seekTo(requestedPositionMs)
+                lastIssuedPositionMs = requestedPositionMs
+            }
+            delay(16)
+        }
+    }
+
     fun seek(seconds: Double) {
         val safe = seconds.coerceIn(selectedStart, selectedEnd)
+        val positionMs = (safe * 1000.0).roundToLong()
         playhead = safe
-        player.seekTo((safe * 1000).toLong())
+        pendingSeekPositionMs = positionMs
+        if (!isTrimTracking) {
+            player.seekTo(positionMs)
+        }
     }
 
     fun applyDetectedRange(index: Int) {
@@ -265,13 +294,23 @@ fun ReviewScreen(
                     seek(value)
                 },
                 onTrackingChanged = { tracking ->
-                    isTrimTracking = tracking
-                    if (tracking && isPlaying) {
-                        player.pause()
-                        isPlaying = false
+                    if (tracking) {
+                        if (isPlaying) {
+                            player.pause()
+                            isPlaying = false
+                        }
+                        pendingSeekPositionMs = (playhead * 1000.0).roundToLong()
+                        player.setScrubbingModeEnabled(true)
+                        isTrimTracking = true
+                    } else {
+                        isTrimTracking = false
+                        player.setScrubbingModeEnabled(false)
+                        player.setSeekParameters(SeekParameters.EXACT)
+                        // Finish on the exact requested frame after the fast scrub preview.
+                        player.seekTo(pendingSeekPositionMs)
                     }
                 },
-                modifier = Modifier.fillMaxWidth().height(48.dp)
+                modifier = Modifier.fillMaxWidth().height(if (isLandscape) 104.dp else 116.dp)
             )
 
             val togglePlayback = {

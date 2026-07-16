@@ -1,9 +1,6 @@
-Bundled ONNX files:
-- mobile_sam_encoder.onnx
-- mobile_sam_decoder.onnx
+These two bundled ONNX files are loaded by TopOut without renaming:
 
-Person detection model:
-- efficientdet_lite2_float16.tflite is downloaded by the Gradle pre-build task.
-- Manual fallback: ./download_person_detector_model.command
-- Runtime asset path: models/efficientdet_lite2_float16.tflite
-- Source: Google MediaPipe EfficientDet-Lite2 float16 model.
+mobile_sam_encoder.onnx
+mobile_sam_decoder.onnx
+
+External weight sidecar files such as *.onnx.data are not expected. The Android app uses the ONNX files above; mobile_sam.pt is not required.

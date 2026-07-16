@@ -88,7 +88,7 @@ enum Cfg {
     static let motionPoseMinConfidence: Float = 0.25
     static let motionPoseNoPoseRetrySeconds: TimeInterval = 5.0
     static let motionClipBoundaryPaddingSeconds: TimeInterval = 3.0
-    static let motionShortClipMinimumTotalSeconds: TimeInterval = 9.0
+    static let motionShortClipMinimumDetectionSeconds: TimeInterval = 2.0
     static let motionShortClipMergeGapSeconds: TimeInterval = 3.0
     static let motionPoseMatCrossingTolerance: CGFloat = 0.02
 }

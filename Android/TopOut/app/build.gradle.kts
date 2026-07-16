@@ -1,8 +1,3 @@
-import java.io.BufferedInputStream
-import java.net.URI
-import java.net.URLConnection
-import org.gradle.api.GradleException
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -40,7 +35,7 @@ android {
     }
 
     androidResources {
-        noCompress += setOf("onnx", "tflite")
+        noCompress += "onnx"
     }
 
     buildFeatures {
@@ -97,7 +92,7 @@ dependencies {
     implementation("androidx.media3:media3-transformer:$media3")
     implementation("androidx.media3:media3-effect:$media3")
 
-    implementation("com.google.mediapipe:tasks-vision:0.10.29")
+    implementation("com.google.mlkit:pose-detection-accurate:18.0.0-beta5")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.27.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
@@ -107,64 +102,4 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
-}
-
-
-// EfficientDet-Lite2 float16 is kept out of source control. Android builds download the
-// Google-hosted model once and then reuse Gradle's output cache. The app never downloads it at runtime.
-val personDetectorModelUrl =
-    "https://storage.googleapis.com/mediapipe-models/object_detector/" +
-        "efficientdet_lite2/float16/latest/efficientdet_lite2.tflite"
-val personDetectorModelFile =
-    layout.projectDirectory.file("src/main/assets/models/efficientdet_lite2_float16.tflite")
-
-val downloadPersonDetectorModel by tasks.registering {
-    group = "build setup"
-    description = "Downloads the MediaPipe EfficientDet-Lite2 float16 object detector model."
-    outputs.file(personDetectorModelFile)
-
-    doLast {
-        val destination = personDetectorModelFile.asFile
-        if (destination.isFile && destination.length() >= 12_000_000L) return@doLast
-
-        destination.parentFile.mkdirs()
-        val temporary = destination.resolveSibling("${destination.name}.download")
-        temporary.delete()
-
-        val connection: URLConnection = URI(personDetectorModelUrl).toURL().openConnection()
-        connection.connectTimeout = 30_000
-        connection.readTimeout = 120_000
-
-        try {
-            BufferedInputStream(connection.getInputStream()).use { input ->
-                temporary.outputStream().buffered().use { output ->
-                    input.copyTo(output)
-                }
-            }
-        } catch (error: Exception) {
-            temporary.delete()
-            throw GradleException(
-                "Could not download the official EfficientDet-Lite2 model from $personDetectorModelUrl. " +
-                    "Check the network connection, then run ./download_person_detector_model.command and rebuild.",
-                error
-            )
-        }
-
-        check(temporary.length() >= 12_000_000L) {
-            "EfficientDet-Lite2 download is incomplete: ${temporary.length()} bytes"
-        }
-        if (destination.exists()) check(destination.delete()) {
-            "Could not replace ${destination.absolutePath}"
-        }
-        check(temporary.renameTo(destination)) {
-            "Could not move the object detector model into ${destination.absolutePath}"
-        }
-    }
-}
-
-// Ensure the model exists before Android packages any variant's assets.
-tasks.configureEach {
-    if (name == "preBuild" || (name.startsWith("merge") && name.endsWith("Assets"))) {
-        dependsOn(downloadPersonDetectorModel)
-    }
 }

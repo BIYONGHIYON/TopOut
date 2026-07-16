@@ -1,7 +1,8 @@
-# 감지 구간 개수 제한 제거
+# Clip range count limit removal
 
-- 녹화 중 원본 감지 구간을 모두 보존합니다.
-- 녹화 종료 후 겹치는 구간 병합과 짧은 구간 정리를 수행합니다.
-- 정리 후에도 유효 구간 개수에 상한을 적용하지 않습니다.
-- 결과 화면은 모든 유효 구간을 이전/다음 방식으로 확인합니다.
-- 각 구간은 시작·종료 시각 두 값만 저장하므로 구간 수 증가 자체의 메모리 비용은 매우 작습니다.
+TopOut no longer limits detected clip ranges to ten.
+
+- raw ranges remain available for the complete recording;
+- final normalization merges overlaps and applies the existing short-range/three-second-neighbour cleanup;
+- all remaining valid ranges are displayed in the review screen;
+- review navigation uses the complete `detectedRanges` collection, so 11 or more ranges are supported.

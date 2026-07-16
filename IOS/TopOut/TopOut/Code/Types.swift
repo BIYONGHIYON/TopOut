@@ -207,6 +207,20 @@ struct ClipRange {
 struct ReviewClipRange {
     var startSeconds: TimeInterval
     var endSeconds: TimeInterval
+    var unpaddedStartSeconds: TimeInterval
+    var unpaddedEndSeconds: TimeInterval
+
+    init(
+        startSeconds: TimeInterval,
+        endSeconds: TimeInterval,
+        unpaddedStartSeconds: TimeInterval? = nil,
+        unpaddedEndSeconds: TimeInterval? = nil
+    ) {
+        self.startSeconds = startSeconds
+        self.endSeconds = endSeconds
+        self.unpaddedStartSeconds = unpaddedStartSeconds ?? startSeconds
+        self.unpaddedEndSeconds = unpaddedEndSeconds ?? endSeconds
+    }
 }
 
 struct ClipTimes {

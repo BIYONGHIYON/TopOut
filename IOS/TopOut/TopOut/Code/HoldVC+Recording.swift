@@ -314,87 +314,107 @@ extension HoldVC {
             ranges.append(ClipRange(startPTS: startPTS, endPTS: endPTS))
         }
 
-        let reviewRanges: [ReviewClipRange] = ranges.compactMap { (range: ClipRange) -> ReviewClipRange? in
-            let start = clampedSeconds(
+        let rawRanges: [ReviewClipRange] = ranges.compactMap { range in
+            let rawStart = clampedSeconds(
                 CMTimeGetSeconds(range.startPTS - session.startPTS),
                 min: 0,
                 max: session.duration
             )
-            let end = clampedSeconds(
+            let rawEnd = clampedSeconds(
                 CMTimeGetSeconds(range.endPTS - session.startPTS),
                 min: 0,
                 max: session.duration
             )
-            guard end > start else { return nil }
-            return ReviewClipRange(startSeconds: start, endSeconds: end)
+            guard rawEnd > rawStart else { return nil }
+            return ReviewClipRange(
+                startSeconds: rawStart,
+                endSeconds: rawEnd,
+                unpaddedStartSeconds: rawStart,
+                unpaddedEndSeconds: rawEnd
+            )
         }
 
-        return normalizedDetectedClipRanges(reviewRanges)
+        return normalizedDetectedClipRanges(rawRanges, recordingDuration: session.duration)
     }
 
-    private func normalizedDetectedClipRanges(_ ranges: [ReviewClipRange]) -> [ReviewClipRange] {
-        let minimumTotalDuration = Cfg.motionShortClipMinimumTotalSeconds
+    private func normalizedDetectedClipRanges(
+        _ ranges: [ReviewClipRange],
+        recordingDuration: TimeInterval
+    ) -> [ReviewClipRange] {
+        let minimumDetectionDuration = Cfg.motionShortClipMinimumDetectionSeconds
         let mergeGap = Cfg.motionShortClipMergeGapSeconds
+        let padding = Cfg.motionClipBoundaryPaddingSeconds
         var working = ranges
-            .filter { $0.endSeconds > $0.startSeconds }
+            .filter { $0.unpaddedEndSeconds > $0.unpaddedStartSeconds }
             .sorted { lhs, rhs in
-                if lhs.startSeconds == rhs.startSeconds { return lhs.endSeconds < rhs.endSeconds }
-                return lhs.startSeconds < rhs.startSeconds
+                if lhs.unpaddedStartSeconds == rhs.unpaddedStartSeconds {
+                    return lhs.unpaddedEndSeconds < rhs.unpaddedEndSeconds
+                }
+                return lhs.unpaddedStartSeconds < rhs.unpaddedStartSeconds
             }
 
-        var didChange = true
-        while didChange {
-            didChange = false
-
-            guard let shortIndex = working.firstIndex(where: { $0.endSeconds - $0.startSeconds < minimumTotalDuration }) else {
-                break
-            }
-
+        while let shortIndex = working.firstIndex(where: {
+            $0.unpaddedEndSeconds - $0.unpaddedStartSeconds < minimumDetectionDuration
+        }) {
             let shortRange = working[shortIndex]
             let previousIndex = shortIndex > working.startIndex ? working.index(before: shortIndex) : nil
             let nextIndex = working.index(after: shortIndex) < working.endIndex ? working.index(after: shortIndex) : nil
 
-            let previousGap: TimeInterval? = previousIndex.map { idx in
-                Swift.max(0, shortRange.startSeconds - working[idx].endSeconds)
+            let previousGap = previousIndex.map { idx in
+                Swift.max(0, shortRange.unpaddedStartSeconds - working[idx].unpaddedEndSeconds)
             }
-            let nextGap: TimeInterval? = nextIndex.map { idx in
-                Swift.max(0, working[idx].startSeconds - shortRange.endSeconds)
+            let nextGap = nextIndex.map { idx in
+                Swift.max(0, working[idx].unpaddedStartSeconds - shortRange.unpaddedEndSeconds)
             }
-
             let canMergePrevious = previousGap.map { $0 <= mergeGap } ?? false
             let canMergeNext = nextGap.map { $0 <= mergeGap } ?? false
 
             if canMergePrevious || canMergeNext {
                 let shouldMergePrevious: Bool
                 if canMergePrevious && canMergeNext {
-                    shouldMergePrevious = (previousGap ?? TimeInterval.greatestFiniteMagnitude) <= (nextGap ?? TimeInterval.greatestFiniteMagnitude)
+                    shouldMergePrevious = (previousGap ?? .greatestFiniteMagnitude) <=
+                        (nextGap ?? .greatestFiniteMagnitude)
                 } else {
                     shouldMergePrevious = canMergePrevious
                 }
 
-                if shouldMergePrevious, let previousIndex = previousIndex {
-                    working[previousIndex] = ReviewClipRange(
-                        startSeconds: working[previousIndex].startSeconds,
-                        endSeconds: Swift.max(working[previousIndex].endSeconds, shortRange.endSeconds)
-                    )
+                if shouldMergePrevious, let previousIndex {
+                    working[previousIndex] = rawUnion(working[previousIndex], shortRange)
                     working.remove(at: shortIndex)
-                } else if let nextIndex = nextIndex {
-                    working[shortIndex] = ReviewClipRange(
-                        startSeconds: shortRange.startSeconds,
-                        endSeconds: Swift.max(shortRange.endSeconds, working[nextIndex].endSeconds)
-                    )
+                } else if let nextIndex {
+                    working[shortIndex] = rawUnion(shortRange, working[nextIndex])
                     working.remove(at: nextIndex)
                 }
             } else {
                 working.remove(at: shortIndex)
             }
-
-            didChange = true
         }
 
-        // Preserve every valid range after the existing short-range cleanup/merge pass.
-        // ReviewVC already navigates using detectedRanges.count, so it supports any count.
-        return working.filter { $0.endSeconds > $0.startSeconds }
+        // Only after every short-range merge/removal is complete do we add review context.
+        return working.compactMap { raw in
+            let rawStart = raw.unpaddedStartSeconds
+            let rawEnd = raw.unpaddedEndSeconds
+            let paddedStart = Swift.max(0, rawStart - padding)
+            let paddedEnd = Swift.min(recordingDuration, rawEnd + padding)
+            guard paddedEnd > paddedStart else { return nil }
+            return ReviewClipRange(
+                startSeconds: paddedStart,
+                endSeconds: paddedEnd,
+                unpaddedStartSeconds: rawStart,
+                unpaddedEndSeconds: rawEnd
+            )
+        }
+    }
+
+    private func rawUnion(_ lhs: ReviewClipRange, _ rhs: ReviewClipRange) -> ReviewClipRange {
+        let start = Swift.min(lhs.unpaddedStartSeconds, rhs.unpaddedStartSeconds)
+        let end = Swift.max(lhs.unpaddedEndSeconds, rhs.unpaddedEndSeconds)
+        return ReviewClipRange(
+            startSeconds: start,
+            endSeconds: end,
+            unpaddedStartSeconds: start,
+            unpaddedEndSeconds: end
+        )
     }
 
     private func clampedSeconds(_ value: TimeInterval, min lower: TimeInterval, max upper: TimeInterval) -> TimeInterval {

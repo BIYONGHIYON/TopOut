@@ -49,18 +49,12 @@ class AppSettingsIosParityTest {
     }
 
     @Test
-    fun zoomAndDetectionConstantsMatchCurrentPolicy() {
+    fun zoomAndVisionConstantsMatchCurrentPolicy() {
         assertEquals(0.5f, TopOutConfig.MinZoom, 0.0001f)
         assertEquals(1f, TopOutConfig.SelectionMinZoom, 0.0001f)
         assertEquals(5f, TopOutConfig.SelectionMaxZoom, 0.0001f)
         assertEquals(8f, TopOutConfig.CameraMaxZoom, 0.0001f)
-        assertEquals(4.0, TopOutConfig.FullFrameMotionFps, 0.0001)
-        assertEquals(2.0, TopOutConfig.PersonDetectorFps, 0.0001)
-        assertEquals(512, TopOutConfig.PersonDetectorInputMaxLongSide)
-        assertEquals(1.0, TopOutConfig.PersonSearchWindowSeconds, 0.0001)
-        assertEquals(5.0, TopOutConfig.PersonLostTimeoutSeconds, 0.0001)
-        assertEquals(0.25f, TopOutConfig.PersonDetectorScoreThreshold, 0.0001f)
-        assertEquals(0.05f, TopOutConfig.PersonMatClearanceRatio, 0.0001f)
+        assertEquals(512, TopOutConfig.PoseInputMaxLongSide)
         assertEquals(256, TopOutConfig.MaskSize)
         assertEquals(0.48f, TopOutConfig.RoundedCornerRatio, 0.0001f)
         assertEquals(0.016f, TopOutConfig.RedLineRatio, 0.0001f)
