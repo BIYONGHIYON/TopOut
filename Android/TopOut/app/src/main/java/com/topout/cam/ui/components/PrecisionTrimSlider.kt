@@ -371,7 +371,7 @@ fun PrecisionTrimSlider(
                 }
         ) {
             Canvas(Modifier.fillMaxSize()) {
-                val centerY = size.height * 0.46f
+                val centerY = size.height * 0.54f
                 val baseMajorStep = niceStep(safeDuration / 8.0)
                 val majorSpacingPx = (baseMajorStep / viewportSpan * trackWidthPx).toFloat()
                 val subdivisions = when {
@@ -487,8 +487,8 @@ fun PrecisionTrimSlider(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 7.dp)
-                .height(16.dp),
+                .height(13.dp)
+                .offset(y = (-6).dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -529,6 +529,7 @@ fun PrecisionTrimSlider(
                 .fillMaxWidth(0.72f)
                 .height(22.dp)
                 .align(Alignment.CenterHorizontally)
+                .offset(y = (-6).dp)
         )
     }
 }

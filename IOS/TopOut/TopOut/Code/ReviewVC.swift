@@ -494,15 +494,15 @@ final class ReviewVC: UIViewController {
         )
 
         let zoomSliderHeight: CGFloat = 18
-        let zoomLabelHeight: CGFloat = 13
+        let zoomLabelHeight: CGFloat = 11
         let zoomSliderWidth = panelWidth * 0.72
         let zoomSliderX = panelX + (panelWidth - zoomSliderWidth) * 0.5
-        let zoomSliderY = firstRowY - buttonGap - zoomSliderHeight
+        let zoomSliderY = firstRowY - buttonGap - zoomSliderHeight - 3
         selectedRangeZoomSlider.frame = CGRect(x: zoomSliderX, y: zoomSliderY, width: zoomSliderWidth, height: zoomSliderHeight)
         selectedRangeZoomLabel.frame = CGRect(x: panelX, y: zoomSliderY - zoomLabelHeight, width: panelWidth * 0.72, height: zoomLabelHeight)
         selectedRangeZoomValueLabel.frame = CGRect(x: panelX + panelWidth * 0.72, y: zoomSliderY - zoomLabelHeight, width: panelWidth * 0.28, height: zoomLabelHeight)
 
-        let trimToZoomGap: CGFloat = 7
+        let trimToZoomGap: CGFloat = 0
         let primarySliderHeight: CGFloat = 60
         trimSlider.frame = CGRect(
             x: panelX,
@@ -538,15 +538,15 @@ final class ReviewVC: UIViewController {
         closeBtn.frame = CGRect(x: retakeBtn.frame.maxX + gap, y: buttonY, width: closeWidth, height: buttonHeight)
 
         let zoomSliderHeight: CGFloat = 16
-        let zoomLabelHeight: CGFloat = 12
+        let zoomLabelHeight: CGFloat = 10
         let zoomSliderWidth = panelWidth * 0.68
         let zoomSliderX = panelX + (panelWidth - zoomSliderWidth) * 0.5
-        let zoomSliderY = buttonY - gap - zoomSliderHeight
+        let zoomSliderY = buttonY - gap - zoomSliderHeight - 3
         selectedRangeZoomSlider.frame = CGRect(x: zoomSliderX, y: zoomSliderY, width: zoomSliderWidth, height: zoomSliderHeight)
         selectedRangeZoomLabel.frame = CGRect(x: panelX, y: zoomSliderY - zoomLabelHeight, width: panelWidth * 0.72, height: zoomLabelHeight)
         selectedRangeZoomValueLabel.frame = CGRect(x: panelX + panelWidth * 0.72, y: zoomSliderY - zoomLabelHeight, width: panelWidth * 0.28, height: zoomLabelHeight)
 
-        let trimToZoomGap: CGFloat = 6
+        let trimToZoomGap: CGFloat = 0
         let primarySliderHeight: CGFloat = 58
         trimSlider.frame = CGRect(
             x: panelX,

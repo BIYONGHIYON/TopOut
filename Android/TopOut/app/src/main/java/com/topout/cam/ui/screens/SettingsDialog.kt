@@ -232,7 +232,7 @@ fun SettingsDialog(
 
                         SettingsSection("녹화중 실시간 영상 표시") {
                             SettingSwitch(
-                                text = "비활성화 시 녹화·사람 위치 분석은 유지하고 미리보기 스트림을 중지",
+                                text = "비활성화 시 배터리 절약을 위해 녹화 중 검은 화면 출력",
                                 checked = draft.livePreviewDuringRecordingEnabled,
                                 onChecked = {
                                     draft = draft.copy(livePreviewDuringRecordingEnabled = it)

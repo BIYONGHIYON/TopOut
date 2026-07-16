@@ -233,8 +233,10 @@ fun ReviewScreen(
                 .fillMaxWidth(if (isLandscape) 0.94f else 1f)
                 .widthIn(max = if (isLandscape) 900.dp else 680.dp)
                 .padding(
-                    horizontal = if (isLandscape) 10.dp else 18.dp,
-                    vertical = if (isLandscape) 8.dp else 14.dp
+                    start = if (isLandscape) 10.dp else 18.dp,
+                    top = if (isLandscape) 8.dp else 14.dp,
+                    end = if (isLandscape) 10.dp else 18.dp,
+                    bottom = if (isLandscape) 11.dp else 17.dp
                 ),
             verticalArrangement = Arrangement.spacedBy(if (isLandscape) 5.dp else 8.dp)
         ) {
