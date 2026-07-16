@@ -484,52 +484,60 @@ fun PrecisionTrimSlider(
             }
         }
 
-        Row(
+        // Keep the labels positioned relative to the compact zoom slider. The label row is
+        // allocated above the slider and then lifted slightly inside that shared container, so
+        // neither the title nor the current magnification can be covered by the slider thumb.
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(13.dp)
                 .offset(y = (-6).dp),
-            verticalAlignment = Alignment.CenterVertically
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = "선택된 구간 확대",
-                color = Color.White.copy(alpha = if (enabled) 0.82f else 0.40f),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = "%.1f×".format(zoomFactor),
-                color = Color.White.copy(alpha = if (enabled) 0.68f else 0.34f),
-                fontFamily = FontFamily.Monospace,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.SemiBold
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(16.dp)
+                    .offset(y = (-3).dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Text(
+                    text = "선택된 구간 확대",
+                    color = Color.White.copy(alpha = if (enabled) 0.82f else 0.40f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "%.1f×".format(zoomFactor),
+                    color = Color.White.copy(alpha = if (enabled) 0.68f else 0.34f),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Slider(
+                value = zoomFactor.toFloat().coerceIn(1f, sliderMaximumZoomFactor.toFloat()),
+                onValueChange = { value ->
+                    if (!zoomTracking) {
+                        zoomTracking = true
+                        latestTrackingChanged(true)
+                    }
+                    setViewportCenteredOnSelection(value.toDouble(), latestLower, latestUpper)
+                },
+                onValueChangeFinished = {
+                    if (zoomTracking) {
+                        zoomTracking = false
+                        latestTrackingChanged(false)
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+                },
+                enabled = enabled && sliderMaximumZoomFactor > 1.01,
+                valueRange = 1f..sliderMaximumZoomFactor.toFloat().coerceAtLeast(1.0001f),
+                modifier = Modifier
+                    .fillMaxWidth(0.72f)
+                    .height(22.dp)
             )
         }
-
-        Slider(
-            value = zoomFactor.toFloat().coerceIn(1f, sliderMaximumZoomFactor.toFloat()),
-            onValueChange = { value ->
-                if (!zoomTracking) {
-                    zoomTracking = true
-                    latestTrackingChanged(true)
-                }
-                setViewportCenteredOnSelection(value.toDouble(), latestLower, latestUpper)
-            },
-            onValueChangeFinished = {
-                if (zoomTracking) {
-                    zoomTracking = false
-                    latestTrackingChanged(false)
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                }
-            },
-            enabled = enabled && sliderMaximumZoomFactor > 1.01,
-            valueRange = 1f..sliderMaximumZoomFactor.toFloat().coerceAtLeast(1.0001f),
-            modifier = Modifier
-                .fillMaxWidth(0.72f)
-                .height(22.dp)
-                .align(Alignment.CenterHorizontally)
-                .offset(y = (-6).dp)
-        )
     }
 }
