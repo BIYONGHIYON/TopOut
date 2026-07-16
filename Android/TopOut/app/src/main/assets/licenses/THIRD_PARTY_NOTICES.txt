@@ -16,3 +16,29 @@ were converted to ONNX format and integrated into TopOut for on-device image
 segmentation. These conversion and integration changes were made for TopOut.
 
 The full Apache License 2.0 text is provided below.
+
+
+Ultralytics YOLO11n-Pose
+
+TopOut uses a COCO-pretrained YOLO11n-Pose model exported to ONNX for on-device
+human pose estimation.
+
+Upstream project and model family:
+https://github.com/ultralytics/ultralytics
+https://docs.ultralytics.com/models/yolo11/
+
+ONNX export artifact used by this project:
+https://github.com/KopalnieKrypto/cctv-gpu-engine/releases/tag/yolo11n-pose-v1.0
+SHA-256: 70bd721f9cb797eb44cbc70bc65213397a0a26da38fe6fd5ccdf699016d33d3c
+
+License notice:
+Ultralytics YOLO software and model artifacts are offered under the GNU Affero
+General Public License v3.0 (AGPL-3.0), unless a separate Ultralytics Enterprise
+license has been obtained. The full AGPL-3.0 text is included as
+Ultralytics-AGPL-3.0.txt.
+
+Integration notice:
+TopOut performs RGB letterbox preprocessing, ONNX Runtime CPU inference,
+confidence filtering, NMS, COCO 17-keypoint mapping, and single-person temporal
+association inside the Android application. Images and keypoints remain on the
+device.

@@ -1,17 +1,12 @@
 package com.topout.cam.detection
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.pose.Pose
-import com.google.mlkit.vision.pose.PoseDetection
-import com.google.mlkit.vision.pose.PoseDetector
-import com.google.mlkit.vision.pose.PoseLandmark
-import com.google.mlkit.vision.pose.accurate.AccuratePoseDetectorOptions
 import com.topout.cam.model.ClipRange
 import com.topout.cam.model.TopOutConfig
 import kotlin.math.abs
@@ -21,6 +16,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
@@ -41,11 +37,12 @@ enum class MotionFinishReference {
  *
  * The detector intentionally uses two stages, matching iOS:
  * 1) luma difference around the edited mat line to cheaply wake pose tracking;
- * 2) ML Kit pose tracking every 0.5 s to determine the raw start/end and either the closest
+ * 2) YOLO11n-pose tracking every 0.5 s to determine the raw start/end and either the closest
  *    top-hold moment or the highest pose point, matching iOS MotionDetector.FinishReference.
  * Review padding is deliberately deferred until recording finalization.
  */
 class PoseClimbAnalyzer(
+    context: Context,
     private val onEvent: (MotionEvent) -> Unit
 ) : ImageAnalysis.Analyzer {
     private enum class State { IDLE, CALIBRATING, WAITING, TRACKING, CLIMBING }
@@ -64,28 +61,22 @@ class PoseClimbAnalyzer(
 
     private val frameCaptureRequest = AtomicReference<FrameCaptureRequest?>(null)
     /**
-     * Start verification uses independent inference so a false pose from the wall is not carried
-     * into the next frame. Once climbing starts, stream mode keeps landmark tracking stable.
+     * The YOLO wrapper keeps the previous person box only while CLIMBING, which mirrors the old
+     * distinction between independent start verification and continuous climb tracking.
      */
-    private val startVerificationDetector: PoseDetector = PoseDetection.getClient(
-        AccuratePoseDetectorOptions.Builder()
-            .setDetectorMode(AccuratePoseDetectorOptions.SINGLE_IMAGE_MODE)
-            .build()
-    )
-    private val climbingTrackingDetector: PoseDetector = PoseDetection.getClient(
-        AccuratePoseDetectorOptions.Builder()
-            .setDetectorMode(AccuratePoseDetectorOptions.STREAM_MODE)
-            .build()
-    )
+    private val poseDetector = Yolo11NanoPoseDetector(context)
+    private val poseExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "topout-yolo11n-pose").apply { isDaemon = true }
+    }
 
     private val motionLandmarkTypes = intArrayOf(
-        PoseLandmark.NOSE,
-        PoseLandmark.LEFT_SHOULDER, PoseLandmark.RIGHT_SHOULDER,
-        PoseLandmark.LEFT_ELBOW, PoseLandmark.RIGHT_ELBOW,
-        PoseLandmark.LEFT_WRIST, PoseLandmark.RIGHT_WRIST,
-        PoseLandmark.LEFT_HIP, PoseLandmark.RIGHT_HIP,
-        PoseLandmark.LEFT_KNEE, PoseLandmark.RIGHT_KNEE,
-        PoseLandmark.LEFT_ANKLE, PoseLandmark.RIGHT_ANKLE
+        YoloPoseLandmark.NOSE,
+        YoloPoseLandmark.LEFT_SHOULDER, YoloPoseLandmark.RIGHT_SHOULDER,
+        YoloPoseLandmark.LEFT_ELBOW, YoloPoseLandmark.RIGHT_ELBOW,
+        YoloPoseLandmark.LEFT_WRIST, YoloPoseLandmark.RIGHT_WRIST,
+        YoloPoseLandmark.LEFT_HIP, YoloPoseLandmark.RIGHT_HIP,
+        YoloPoseLandmark.LEFT_KNEE, YoloPoseLandmark.RIGHT_KNEE,
+        YoloPoseLandmark.LEFT_ANKLE, YoloPoseLandmark.RIGHT_ANKLE
     )
 
 
@@ -322,6 +313,7 @@ class PoseClimbAnalyzer(
 
     @Synchronized
     private fun enterPoseTracking(timestamp: Long) {
+        poseDetector.resetTracking()
         state = State.TRACKING
         poseTrackingStartedSeconds = recordingSeconds(timestamp)
         lastPoseSeenSeconds = null
@@ -359,45 +351,32 @@ class PoseClimbAnalyzer(
             return
         }
 
-        val input = InputImage.fromBitmap(poseBitmap, 0)
-        val poseCrop = Rect(0f, 0f, 1f, 1f)
-
-        val activeDetector = synchronized(this) {
-            if (state == State.TRACKING) startVerificationDetector else climbingTrackingDetector
+        val useTrackingAssociation = synchronized(this) { state == State.CLIMBING }
+        runCatching {
+            poseExecutor.execute {
+                try {
+                    val pose = runCatching {
+                        poseDetector.detect(poseBitmap, useTrackingAssociation)
+                    }.getOrNull()
+                    if (pose != null) handlePose(pose, seconds) else handlePoseMissing(seconds)
+                } finally {
+                    poseBitmap.recycle()
+                    processingPose = false
+                }
+            }
+        }.onFailure {
+            poseBitmap.recycle()
+            processingPose = false
+            handlePoseMissing(seconds)
         }
-
-        activeDetector.process(input)
-            .addOnSuccessListener { pose ->
-                handlePose(
-                    pose = pose,
-                    fullDisplayWidth = poseBitmap.width,
-                    fullDisplayHeight = poseBitmap.height,
-                    cropInDisplay = poseCrop,
-                    seconds = seconds
-                )
-            }
-            .addOnFailureListener { handlePoseMissing(seconds) }
-            .addOnCompleteListener {
-                poseBitmap.recycle()
-                processingPose = false
-            }
     }
 
     @Synchronized
     private fun handlePose(
-        pose: Pose,
-        fullDisplayWidth: Int,
-        fullDisplayHeight: Int,
-        cropInDisplay: Rect,
+        pose: YoloPoseResult,
         seconds: Double
     ) {
-        val landmarks = reliableLandmarks(
-            pose = pose,
-            fullDisplayWidth = fullDisplayWidth,
-            fullDisplayHeight = fullDisplayHeight,
-            crop = cropInDisplay,
-            landmarkTypes = motionLandmarkTypes
-        )
+        val landmarks = reliableLandmarks(pose, motionLandmarkTypes)
         if (!PoseHumanGate.isValid(landmarks.keys)) {
             handlePoseMissing(seconds)
             return
@@ -462,6 +441,7 @@ class PoseClimbAnalyzer(
     }
 
     private fun resetForNextStartSearchLocked() {
+        poseDetector.resetTracking()
         state = State.TRACKING
         lastPoseTimestampNanos = null
         lastPoseSeenSeconds = null
@@ -472,6 +452,7 @@ class PoseClimbAnalyzer(
     }
 
     private fun returnToCvSearchLocked() {
+        poseDetector.resetTracking()
         state = State.WAITING
         lastPoseTimestampNanos = null
         lastPoseSeenSeconds = null
@@ -489,34 +470,16 @@ class PoseClimbAnalyzer(
     }
 
     private fun reliableLandmarks(
-        pose: Pose,
-        fullDisplayWidth: Int,
-        fullDisplayHeight: Int,
-        crop: Rect,
+        pose: YoloPoseResult,
         landmarkTypes: IntArray
     ): Map<Int, Offset> {
-        val cropWidth = max(0.0001f, crop.width)
-        val cropHeight = max(0.0001f, crop.height)
         val points = LinkedHashMap<Int, Offset>(landmarkTypes.size)
-
-        // Use an explicit loop rather than mapNotNull. Primitive arrays such as IntArray do not
-        // expose the same collection operators on every Kotlin/IDE combination, and an explicit
-        // loop also makes the skip conditions match Swift's guard/continue flow exactly.
         for (type: Int in landmarkTypes) {
-            val landmark = pose.getPoseLandmark(type) ?: continue
-            if (landmark.inFrameLikelihood < TopOutConfig.PoseConfidence) continue
-
-            val full = Offset(
-                landmark.position.x / max(1, fullDisplayWidth),
-                landmark.position.y / max(1, fullDisplayHeight)
-            )
-            if (full.x < crop.left || full.x > crop.right || full.y < crop.top || full.y > crop.bottom) {
-                continue
-            }
-
+            val keypoint = pose.keypoints[type] ?: continue
+            if (keypoint.confidence < TopOutConfig.PoseConfidence) continue
             points[type] = Offset(
-                ((full.x - crop.left) / cropWidth).coerceIn(0f, 1f),
-                ((full.y - crop.top) / cropHeight).coerceIn(0f, 1f)
+                keypoint.position.x.coerceIn(0f, 1f),
+                keypoint.position.y.coerceIn(0f, 1f)
             )
         }
         return points
@@ -787,7 +750,7 @@ class PoseClimbAnalyzer(
         return SmallFrame(outputWidth, outputHeight, output)
     }
 
-    /** CameraX's ViewPort cropRect is raw-sensor oriented; this converts it to ML Kit/display space. */
+    /** CameraX's ViewPort cropRect is raw-sensor oriented; this converts it to display space. */
     private fun cropRectInDisplay(image: ImageProxy): Rect {
         val raw = image.cropRect
         val rawCorners = listOf(
@@ -894,6 +857,7 @@ class PoseClimbAnalyzer(
         lastLowestAboveMat = null
         activeStartSeconds = null
         resetFinishReferenceTrackingLocked()
+        poseDetector.resetTracking()
         processingPose = false
         if (!keepConfiguration) {
             matLine = emptyList()
@@ -918,7 +882,7 @@ class PoseClimbAnalyzer(
 
     fun close() {
         frameCaptureRequest.getAndSet(null)?.result?.complete(null)
-        startVerificationDetector.close()
-        climbingTrackingDetector.close()
+        poseExecutor.shutdownNow()
+        poseDetector.close()
     }
 }

@@ -1,5 +1,7 @@
 # Android ML Kit pose rollback
 
+> **과거 변경 이력:** 이 문서는 이전 ML Kit 롤백 단계의 기록입니다. 현재 1.1 빌드는 `YOLO11N_POSE_MODEL_SWAP.md`의 YOLO11n-Pose 구성을 사용합니다.
+
 The release app now uses Google ML Kit Accurate Pose Detection again.
 
 ## Restored automatic-detection pipeline

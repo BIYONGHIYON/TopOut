@@ -4,7 +4,7 @@ TopOut records climbing video with audio and automatically proposes climb ranges
 
 ## Automatic detection
 
-The Android release uses Google ML Kit Accurate Pose Detection. A lightweight mat-boundary motion gate wakes pose analysis, start verification uses single-image mode, and an active climb uses stream mode. Pose inference runs at most every 0.5 seconds with a 512 px maximum input long side.
+The Android release uses YOLO11n-Pose through ONNX Runtime. A lightweight mat-boundary motion gate wakes pose analysis, start verification independently selects the strongest valid person, and an active climb uses bounding-box continuity to remain on the same person. Pose inference runs at most every 0.5 seconds with a 640×640 letterboxed input.
 
 ## Clip ranges
 
@@ -28,9 +28,15 @@ app/src/main/assets/models/mobile_sam_encoder.onnx
 app/src/main/assets/models/mobile_sam_decoder.onnx
 ```
 
-Check assets and build:
+The YOLO11n-Pose ONNX file is downloaded automatically by the Gradle task
+`downloadYoloPoseModel`, verified against a pinned SHA-256 value, and packaged from
+`app/build/generated/yoloPoseAssets/models/yolo11n-pose.onnx`. The first build therefore
+requires network access.
+
+Build and verify:
 
 ```bash
+./gradlew downloadYoloPoseModel
 ./check_models.command
 ./gradlew clean assembleDebug
 ```

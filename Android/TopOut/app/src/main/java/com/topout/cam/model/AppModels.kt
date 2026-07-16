@@ -291,7 +291,10 @@ object TopOutConfig {
 
     const val PoseStartVerificationIntervalSeconds = 0.5
     const val PoseIntervalSeconds = 0.5
-    const val PoseInputMaxLongSide = 512
+    const val PoseInputMaxLongSide = 640
+    const val YoloPoseInputSize = 640
+    const val YoloPosePersonConfidence = 0.25f
+    const val YoloPoseNmsIou = 0.45f
     const val PoseNoPoseRetrySeconds = 5.0
     const val ClipBoundaryPaddingSeconds = 3.0
     const val PoseConfidence = 0.50f

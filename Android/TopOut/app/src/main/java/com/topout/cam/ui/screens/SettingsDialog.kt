@@ -354,7 +354,7 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
                     "TopOut은 클라이밍 시작과 종료 시점을 감지하고 자동 촬영 기능을 제공하기 위해 카메라 영상에서 사용자의 신체 포즈와 매트 주변 움직임을 분석할 수 있습니다."
                 )
                 PrivacyParagraph(
-                    "신체 포즈 분석은 Google ML Kit Accurate Pose Detection을 이용해 기기 내에서 수행됩니다. 분석 과정에서 생성되는 관절 좌표와 중간 분석 결과는 외부 서버로 전송되지 않으며 사용자를 식별하는 프로필로 저장되지 않습니다."
+                    "신체 포즈 분석은 YOLO11n-Pose와 ONNX Runtime을 이용해 기기 내에서 수행됩니다. 분석 과정에서 생성되는 관절 좌표와 중간 분석 결과는 외부 서버로 전송되지 않으며 사용자를 식별하는 프로필로 저장되지 않습니다."
                 )
             }
 

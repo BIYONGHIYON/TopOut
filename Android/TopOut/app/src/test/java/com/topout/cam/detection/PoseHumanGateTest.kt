@@ -1,6 +1,5 @@
 package com.topout.cam.detection
 
-import com.google.mlkit.vision.pose.PoseLandmark
 import com.topout.cam.model.TopOutConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -18,11 +17,11 @@ class PoseHumanGateTest {
         assertFalse(
             PoseHumanGate.isValid(
                 setOf(
-                    PoseLandmark.NOSE,
-                    PoseLandmark.LEFT_WRIST,
-                    PoseLandmark.RIGHT_WRIST,
-                    PoseLandmark.LEFT_ANKLE,
-                    PoseLandmark.RIGHT_ANKLE
+                    YoloPoseLandmark.NOSE,
+                    YoloPoseLandmark.LEFT_WRIST,
+                    YoloPoseLandmark.RIGHT_WRIST,
+                    YoloPoseLandmark.LEFT_ANKLE,
+                    YoloPoseLandmark.RIGHT_ANKLE
                 )
             )
         )
@@ -33,13 +32,13 @@ class PoseHumanGateTest {
         assertFalse(
             PoseHumanGate.isValid(
                 setOf(
-                    PoseLandmark.NOSE,
-                    PoseLandmark.LEFT_SHOULDER,
-                    PoseLandmark.RIGHT_SHOULDER,
-                    PoseLandmark.LEFT_ELBOW,
-                    PoseLandmark.RIGHT_ELBOW,
-                    PoseLandmark.LEFT_WRIST,
-                    PoseLandmark.RIGHT_WRIST
+                    YoloPoseLandmark.NOSE,
+                    YoloPoseLandmark.LEFT_SHOULDER,
+                    YoloPoseLandmark.RIGHT_SHOULDER,
+                    YoloPoseLandmark.LEFT_ELBOW,
+                    YoloPoseLandmark.RIGHT_ELBOW,
+                    YoloPoseLandmark.LEFT_WRIST,
+                    YoloPoseLandmark.RIGHT_WRIST
                 )
             )
         )
@@ -50,12 +49,12 @@ class PoseHumanGateTest {
         assertTrue(
             PoseHumanGate.isValid(
                 setOf(
-                    PoseLandmark.LEFT_SHOULDER,
-                    PoseLandmark.RIGHT_SHOULDER,
-                    PoseLandmark.LEFT_HIP,
-                    PoseLandmark.LEFT_ELBOW,
-                    PoseLandmark.LEFT_KNEE,
-                    PoseLandmark.LEFT_ANKLE
+                    YoloPoseLandmark.LEFT_SHOULDER,
+                    YoloPoseLandmark.RIGHT_SHOULDER,
+                    YoloPoseLandmark.LEFT_HIP,
+                    YoloPoseLandmark.LEFT_ELBOW,
+                    YoloPoseLandmark.LEFT_KNEE,
+                    YoloPoseLandmark.LEFT_ANKLE
                 )
             )
         )
@@ -68,13 +67,13 @@ class PoseHumanGateTest {
         assertFalse(
             PoseHumanGate.isValid(
                 setOf(
-                    PoseLandmark.LEFT_SHOULDER,
-                    PoseLandmark.RIGHT_SHOULDER,
-                    PoseLandmark.NOSE,
-                    PoseLandmark.LEFT_ELBOW,
-                    PoseLandmark.RIGHT_ELBOW,
-                    PoseLandmark.LEFT_WRIST,
-                    PoseLandmark.RIGHT_WRIST
+                    YoloPoseLandmark.LEFT_SHOULDER,
+                    YoloPoseLandmark.RIGHT_SHOULDER,
+                    YoloPoseLandmark.NOSE,
+                    YoloPoseLandmark.LEFT_ELBOW,
+                    YoloPoseLandmark.RIGHT_ELBOW,
+                    YoloPoseLandmark.LEFT_WRIST,
+                    YoloPoseLandmark.RIGHT_WRIST
                 )
             )
         )

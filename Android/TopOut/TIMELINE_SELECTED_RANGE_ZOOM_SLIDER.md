@@ -25,4 +25,4 @@
 - 절대 영상 시각 기준 시작점·종료점·재생 헤드
 - 원본 구간 2초 미만 처리, 원본 간격 3초 병합, 정리 후 3초 패딩
 - 감지 구간 개수 무제한
-- ML Kit Accurate Pose Detection
+- YOLO11n-Pose ONNX Detection

@@ -52,7 +52,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         OnnxMobileSamSegmenter(application)
     }
     private val holdSegmenter: HoldSegmenter get() = holdSegmenterDelegate.value
-    private val poseAnalyzer = PoseClimbAnalyzer(onEvent = ::handleMotionEvent)
+    private val poseAnalyzer = PoseClimbAnalyzer(application, onEvent = ::handleMotionEvent)
 
     private val _uiState = MutableStateFlow(TopOutUiState())
     val uiState: StateFlow<TopOutUiState> = _uiState.asStateFlow()
@@ -124,7 +124,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         // Keep launch lightweight. MobileSAM sessions are created lazily only when top-hold
-        // selection is actually used; automatic ML Kit pose detection does not need the ONNX models.
+        // selection is actually used; automatic YOLO11n-pose detection loads its ONNX model lazily on the first pose frame.
         viewModelScope.launch {
             delay(550L)
             _uiState.update { it.copy(launchVisible = false) }

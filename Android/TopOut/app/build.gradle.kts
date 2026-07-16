@@ -1,8 +1,22 @@
+import java.io.File
+import java.net.URI
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+
+val yoloPoseAssetsDirectory = layout.buildDirectory.dir("generated/yoloPoseAssets")
+val yoloPoseModelFile = yoloPoseAssetsDirectory.map { it.file("models/yolo11n-pose.onnx") }
+val yoloPoseModelUrl =
+    "https://github.com/KopalnieKrypto/cctv-gpu-engine/releases/download/" +
+        "yolo11n-pose-v1.0/yolo11n-pose.onnx"
+val yoloPoseModelSha256 = "70bd721f9cb797eb44cbc70bc65213397a0a26da38fe6fd5ccdf699016d33d3c"
 
 android {
     namespace = "com.topout.cam"
@@ -38,6 +52,8 @@ android {
         noCompress += "onnx"
     }
 
+    sourceSets["main"].assets.srcDir(yoloPoseAssetsDirectory)
+
     buildFeatures {
         compose = true
         buildConfig = true
@@ -56,6 +72,59 @@ kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
+}
+
+val downloadYoloPoseModel by tasks.registering {
+    group = "topout models"
+    description = "Downloads and verifies the YOLO11n-pose ONNX model used by the Android app."
+    inputs.property("modelUrl", yoloPoseModelUrl)
+    inputs.property("modelSha256", yoloPoseModelSha256)
+    outputs.file(yoloPoseModelFile)
+
+    doLast {
+        fun sha256(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().buffered().use { input ->
+                val buffer = ByteArray(1024 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    digest.update(buffer, 0, read)
+                }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+
+        val output = yoloPoseModelFile.get().asFile
+        if (output.isFile && sha256(output).equals(yoloPoseModelSha256, ignoreCase = true)) {
+            return@doLast
+        }
+
+        output.parentFile.mkdirs()
+        val temporary = File(output.parentFile, "${output.name}.download")
+        temporary.delete()
+        val connection = URI(yoloPoseModelUrl).toURL().openConnection().apply {
+            connectTimeout = 30_000
+            readTimeout = 120_000
+            setRequestProperty("User-Agent", "TopOut-Android-Gradle")
+        }
+        connection.getInputStream().buffered().use { input ->
+            temporary.outputStream().buffered().use { outputStream -> input.copyTo(outputStream) }
+        }
+        val actual = sha256(temporary)
+        require(actual.equals(yoloPoseModelSha256, ignoreCase = true)) {
+            "YOLO11n-pose 모델 SHA-256 불일치: expected=$yoloPoseModelSha256 actual=$actual"
+        }
+        Files.move(
+            temporary.toPath(),
+            output.toPath(),
+            StandardCopyOption.REPLACE_EXISTING
+        )
+    }
+}
+
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn(downloadYoloPoseModel)
 }
 
 dependencies {
@@ -92,7 +161,6 @@ dependencies {
     implementation("androidx.media3:media3-transformer:$media3")
     implementation("androidx.media3:media3-effect:$media3")
 
-    implementation("com.google.mlkit:pose-detection-accurate:18.0.0-beta5")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.27.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
