@@ -24,3 +24,9 @@ local.properties
 **/test2.MOV
 **/testRecord.mov
 **/testRecord.MOV
+
+# Android signing keys
+keystore/
+*.jks
+*.keystore
+keystore.properties
