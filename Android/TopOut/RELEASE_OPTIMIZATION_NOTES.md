@@ -1,3 +1,11 @@
+# Build toolchain
+
+- Android Gradle Plugin: 9.2.1
+- Gradle: 9.4.1
+- JDK: 17
+- compileSdk / targetSdk: 36
+- Kotlin compilation: AGP built-in Kotlin with Compose compiler plugin 2.3.20
+
 # TopOut Android release optimization
 
 ## Functional behavior retained

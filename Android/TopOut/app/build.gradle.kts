@@ -19,11 +19,13 @@ val moveNetPoseModelUrl =
 
 android {
     namespace = "com.topout.cam"
+    //noinspection NewerVersionAvailable
     compileSdk = 36
 
     defaultConfig {
         applicationId = "com.topout.cam"
         minSdk = 26
+        //noinspection NewerVersionAvailable
         targetSdk = 36
         versionCode = 3
         versionName = "1.2"
@@ -53,7 +55,8 @@ android {
         noCompress += setOf("onnx", "tflite")
     }
 
-    sourceSets["main"].assets.srcDir(moveNetPoseAssetsDirectory)
+    // AndroidSourceSet.srcDir does not accept Provider<Directory>; resolve it to a File.
+    sourceSets["main"].assets.srcDir(moveNetPoseAssetsDirectory.get().asFile)
 
     buildFeatures {
         compose = true
@@ -83,7 +86,7 @@ val downloadMoveNetPoseModel by tasks.registering {
     outputs.file(moveNetPoseModelFile)
 
     doLast {
-        fun isValidTflite(file: File): Boolean {
+        fun isValidTFLite(file: File): Boolean {
             if (!file.isFile || file.length() < 1_000_000L) return false
             val header = ByteArray(8)
             file.inputStream().use { input ->
@@ -93,7 +96,7 @@ val downloadMoveNetPoseModel by tasks.registering {
         }
 
         val output = moveNetPoseModelFile.get().asFile
-        if (isValidTflite(output)) return@doLast
+        if (isValidTFLite(output)) return@doLast
 
         output.parentFile.mkdirs()
         val temporary = File(output.parentFile, "${output.name}.download")
@@ -106,7 +109,7 @@ val downloadMoveNetPoseModel by tasks.registering {
         connection.getInputStream().buffered().use { input ->
             temporary.outputStream().buffered().use { outputStream -> input.copyTo(outputStream) }
         }
-        require(isValidTflite(temporary)) {
+        require(isValidTFLite(temporary)) {
             "MoveNet Lightning FP16 다운로드 결과가 유효한 TFLite FlatBuffer가 아닙니다."
         }
         Files.move(
@@ -122,18 +125,25 @@ tasks.matching { it.name == "preBuild" }.configureEach {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
+    val composeBom = platform("androidx.compose:compose-bom:2026.06.00")
     implementation(composeBom)
-    androidTestImplementation(composeBom)
 
+    // Pinned to the newest API 36 / AGP 8.13 compatible line.
+    //noinspection GradleDependency
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.core:core-splashscreen:1.2.0")
+    //noinspection GradleDependency
     implementation("androidx.activity:activity-compose:1.11.0")
+    // Lifecycle 2.11 requires API 37 / AGP 9.1; keep the API 36-compatible release.
+    //noinspection GradleDependency
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
+    //noinspection GradleDependency
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
+    //noinspection GradleDependency
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.4")
+    //noinspection GradleDependency
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
-    implementation("androidx.datastore:datastore-preferences:1.1.7")
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
 
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -158,12 +168,10 @@ dependencies {
     // MobileSAM continues to use ONNX Runtime; pose inference uses MoveNet through TensorFlow Lite.
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.27.0")
     implementation("org.tensorflow:tensorflow-lite:2.17.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
