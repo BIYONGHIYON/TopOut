@@ -291,15 +291,17 @@ object TopOutConfig {
 
     const val PoseStartVerificationIntervalSeconds = 0.5
     const val PoseIntervalSeconds = 0.5
-    const val PoseInputMaxLongSide = 640
-    const val YoloPoseInputSize = 640
-    const val YoloPosePersonConfidence = 0.25f
-    const val YoloPoseNmsIou = 0.45f
+    const val PoseInputMaxLongSide = 384
+    const val MoveNetPoseInputSize = 192
+    const val MoveNetCropKeypointConfidence = 0.15f
+    // Retained for the dormant PicoDet/RTMPose fallback implementation.
+    const val PosePersonConfidence = 0.25f
+    const val PoseNmsIou = 0.45f
     const val PoseNoPoseRetrySeconds = 5.0
     const val ClipBoundaryPaddingSeconds = 3.0
-    const val PoseConfidence = 0.50f
-    const val PoseMinimumReliableLandmarks = 6
-    const val PoseMinimumCoreLandmarks = 3
+    const val PoseConfidence = 0.25f
+    const val PoseMinimumReliableLandmarks = 4
+    const val PoseMinimumCoreLandmarks = 2
     const val PoseMatTolerance = 0.02f
     /** Raw detected climbs shorter than this are treated as short candidates before padding. */
     const val ShortClipMinimumDetectionSeconds = 2.0

@@ -8,8 +8,8 @@ import org.junit.Test
 
 class PoseHumanGateTest {
     @Test
-    fun confidenceThresholdIsRaisedToPointFive() {
-        assertEquals(0.50f, TopOutConfig.PoseConfidence, 0.0001f)
+    fun confidenceThresholdIsTunedForBackFacingClimbing() {
+        assertEquals(0.25f, TopOutConfig.PoseConfidence, 0.0001f)
     }
 
     @Test
@@ -17,11 +17,11 @@ class PoseHumanGateTest {
         assertFalse(
             PoseHumanGate.isValid(
                 setOf(
-                    YoloPoseLandmark.NOSE,
-                    YoloPoseLandmark.LEFT_WRIST,
-                    YoloPoseLandmark.RIGHT_WRIST,
-                    YoloPoseLandmark.LEFT_ANKLE,
-                    YoloPoseLandmark.RIGHT_ANKLE
+                    PoseLandmark.NOSE,
+                    PoseLandmark.LEFT_WRIST,
+                    PoseLandmark.RIGHT_WRIST,
+                    PoseLandmark.LEFT_ANKLE,
+                    PoseLandmark.RIGHT_ANKLE
                 )
             )
         )
@@ -32,29 +32,27 @@ class PoseHumanGateTest {
         assertFalse(
             PoseHumanGate.isValid(
                 setOf(
-                    YoloPoseLandmark.NOSE,
-                    YoloPoseLandmark.LEFT_SHOULDER,
-                    YoloPoseLandmark.RIGHT_SHOULDER,
-                    YoloPoseLandmark.LEFT_ELBOW,
-                    YoloPoseLandmark.RIGHT_ELBOW,
-                    YoloPoseLandmark.LEFT_WRIST,
-                    YoloPoseLandmark.RIGHT_WRIST
+                    PoseLandmark.NOSE,
+                    PoseLandmark.LEFT_SHOULDER,
+                    PoseLandmark.RIGHT_SHOULDER,
+                    PoseLandmark.LEFT_ELBOW,
+                    PoseLandmark.RIGHT_ELBOW,
+                    PoseLandmark.LEFT_WRIST,
+                    PoseLandmark.RIGHT_WRIST
                 )
             )
         )
     }
 
     @Test
-    fun acceptsPoseWithSixLandmarksAndThreeTorsoPoints() {
+    fun acceptsPoseWithFourLandmarksAndTwoTorsoPoints() {
         assertTrue(
             PoseHumanGate.isValid(
                 setOf(
-                    YoloPoseLandmark.LEFT_SHOULDER,
-                    YoloPoseLandmark.RIGHT_SHOULDER,
-                    YoloPoseLandmark.LEFT_HIP,
-                    YoloPoseLandmark.LEFT_ELBOW,
-                    YoloPoseLandmark.LEFT_KNEE,
-                    YoloPoseLandmark.LEFT_ANKLE
+                    PoseLandmark.LEFT_SHOULDER,
+                    PoseLandmark.LEFT_HIP,
+                    PoseLandmark.LEFT_ELBOW,
+                    PoseLandmark.LEFT_ANKLE
                 )
             )
         )
@@ -67,13 +65,13 @@ class PoseHumanGateTest {
         assertFalse(
             PoseHumanGate.isValid(
                 setOf(
-                    YoloPoseLandmark.LEFT_SHOULDER,
-                    YoloPoseLandmark.RIGHT_SHOULDER,
-                    YoloPoseLandmark.NOSE,
-                    YoloPoseLandmark.LEFT_ELBOW,
-                    YoloPoseLandmark.RIGHT_ELBOW,
-                    YoloPoseLandmark.LEFT_WRIST,
-                    YoloPoseLandmark.RIGHT_WRIST
+                    PoseLandmark.LEFT_SHOULDER,
+                    PoseLandmark.RIGHT_SHOULDER,
+                    PoseLandmark.NOSE,
+                    PoseLandmark.LEFT_ELBOW,
+                    PoseLandmark.RIGHT_ELBOW,
+                    PoseLandmark.LEFT_WRIST,
+                    PoseLandmark.RIGHT_WRIST
                 )
             )
         )

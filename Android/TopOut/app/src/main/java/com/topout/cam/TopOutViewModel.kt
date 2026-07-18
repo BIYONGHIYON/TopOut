@@ -124,7 +124,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         // Keep launch lightweight. MobileSAM sessions are created lazily only when top-hold
-        // selection is actually used; automatic YOLO11n-pose detection loads its ONNX model lazily on the first pose frame.
+        // selection is actually used; automatic MoveNet Lightning FP16 detection loads its TensorFlow Lite model lazily on the first pose frame.
         viewModelScope.launch {
             delay(550L)
             _uiState.update { it.copy(launchVisible = false) }

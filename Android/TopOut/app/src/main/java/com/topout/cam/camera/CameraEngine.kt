@@ -176,7 +176,7 @@ class CameraEngine(private val context: Context) {
     private fun recordingAnalysisTargetSizes(
         aspectRatio: RecordingAspectRatio,
         isLandscape: Boolean
-    ): List<Size> = listOf(1280, 960, 640, 480, 320)
+    ): List<Size> = listOf(960, 640, 1280, 480, 320)
         .map { longSide -> analysisTargetSize(aspectRatio, isLandscape, longSide) }
         .distinct()
 

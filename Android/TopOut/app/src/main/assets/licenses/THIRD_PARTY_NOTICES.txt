@@ -15,30 +15,38 @@ The MobileSAM model components obtained from the official MobileSAM repository
 were converted to ONNX format and integrated into TopOut for on-device image
 segmentation. These conversion and integration changes were made for TopOut.
 
-The full Apache License 2.0 text is provided below.
 
+MoveNet SinglePose Lightning FP16 (version 4)
 
-Ultralytics YOLO11n-Pose
+TopOut uses Google's MoveNet SinglePose Lightning model in the official
+TensorFlow Lite FP16 format for on-device human pose estimation.
 
-TopOut uses a COCO-pretrained YOLO11n-Pose model exported to ONNX for on-device
-human pose estimation.
+Official model:
+https://tfhub.dev/google/lite-model/movenet/singlepose/lightning/tflite/float16/4
 
-Upstream project and model family:
-https://github.com/ultralytics/ultralytics
-https://docs.ultralytics.com/models/yolo11/
+Official TensorFlow MoveNet documentation:
+https://www.tensorflow.org/hub/tutorials/movenet
 
-ONNX export artifact used by this project:
-https://github.com/KopalnieKrypto/cctv-gpu-engine/releases/tag/yolo11n-pose-v1.0
-SHA-256: 70bd721f9cb797eb44cbc70bc65213397a0a26da38fe6fd5ccdf699016d33d3c
-
-License notice:
-Ultralytics YOLO software and model artifacts are offered under the GNU Affero
-General Public License v3.0 (AGPL-3.0), unless a separate Ultralytics Enterprise
-license has been obtained. The full AGPL-3.0 text is included as
-Ultralytics-AGPL-3.0.txt.
+License:
+Apache License 2.0
 
 Integration notice:
-TopOut performs RGB letterbox preprocessing, ONNX Runtime CPU inference,
-confidence filtering, NMS, COCO 17-keypoint mapping, and single-person temporal
-association inside the Android application. Images and keypoints remain on the
-device.
+TopOut performs square crop/padding, uint8 RGB preprocessing, TensorFlow Lite
+inference, COCO 17-keypoint mapping, and single-person temporal smart cropping
+inside the Android application. Camera images and detected keypoints remain on
+the device.
+
+
+TensorFlow Lite runtime
+
+TopOut includes org.tensorflow:tensorflow-lite:2.17.0 to execute the MoveNet
+model on Android.
+
+Project:
+https://github.com/tensorflow/tensorflow
+
+License:
+Apache License 2.0
+
+
+The full Apache License 2.0 text is included as Apache-2.0.txt.

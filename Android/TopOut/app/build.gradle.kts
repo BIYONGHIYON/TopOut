@@ -2,7 +2,6 @@ import java.io.File
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
-import java.security.MessageDigest
 
 plugins {
     id("com.android.application")
@@ -11,12 +10,12 @@ plugins {
 }
 
 
-val yoloPoseAssetsDirectory = layout.buildDirectory.dir("generated/yoloPoseAssets")
-val yoloPoseModelFile = yoloPoseAssetsDirectory.map { it.file("models/yolo11n-pose.onnx") }
-val yoloPoseModelUrl =
-    "https://github.com/KopalnieKrypto/cctv-gpu-engine/releases/download/" +
-        "yolo11n-pose-v1.0/yolo11n-pose.onnx"
-val yoloPoseModelSha256 = "70bd721f9cb797eb44cbc70bc65213397a0a26da38fe6fd5ccdf699016d33d3c"
+val moveNetPoseAssetsDirectory = layout.buildDirectory.dir("generated/moveNetPoseAssets")
+val moveNetPoseModelFile = moveNetPoseAssetsDirectory.map {
+    it.file("models/movenet-lightning-fp16.tflite")
+}
+val moveNetPoseModelUrl =
+    "https://tfhub.dev/google/lite-model/movenet/singlepose/lightning/tflite/float16/4?lite-format=tflite"
 
 android {
     namespace = "com.topout.cam"
@@ -35,7 +34,9 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -49,10 +50,10 @@ android {
     }
 
     androidResources {
-        noCompress += "onnx"
+        noCompress += setOf("onnx", "tflite")
     }
 
-    sourceSets["main"].assets.srcDir(yoloPoseAssetsDirectory)
+    sourceSets["main"].assets.srcDir(moveNetPoseAssetsDirectory)
 
     buildFeatures {
         compose = true
@@ -60,6 +61,7 @@ android {
     }
 
     packaging {
+        jniLibs.useLegacyPackaging = false
         resources.excludes += setOf(
             "/META-INF/{AL2.0,LGPL2.1}",
             "META-INF/LICENSE.md",
@@ -74,36 +76,29 @@ kotlin {
     }
 }
 
-val downloadYoloPoseModel by tasks.registering {
+val downloadMoveNetPoseModel by tasks.registering {
     group = "topout models"
-    description = "Downloads and verifies the YOLO11n-pose ONNX model used by the Android app."
-    inputs.property("modelUrl", yoloPoseModelUrl)
-    inputs.property("modelSha256", yoloPoseModelSha256)
-    outputs.file(yoloPoseModelFile)
+    description = "Downloads and validates the official MoveNet SinglePose Lightning FP16 TFLite model."
+    inputs.property("modelUrl", moveNetPoseModelUrl)
+    outputs.file(moveNetPoseModelFile)
 
     doLast {
-        fun sha256(file: File): String {
-            val digest = MessageDigest.getInstance("SHA-256")
-            file.inputStream().buffered().use { input ->
-                val buffer = ByteArray(1024 * 1024)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    digest.update(buffer, 0, read)
-                }
+        fun isValidTflite(file: File): Boolean {
+            if (!file.isFile || file.length() < 1_000_000L) return false
+            val header = ByteArray(8)
+            file.inputStream().use { input ->
+                if (input.read(header) != header.size) return false
             }
-            return digest.digest().joinToString("") { "%02x".format(it) }
+            return String(header, 4, 4, Charsets.US_ASCII) == "TFL3"
         }
 
-        val output = yoloPoseModelFile.get().asFile
-        if (output.isFile && sha256(output).equals(yoloPoseModelSha256, ignoreCase = true)) {
-            return@doLast
-        }
+        val output = moveNetPoseModelFile.get().asFile
+        if (isValidTflite(output)) return@doLast
 
         output.parentFile.mkdirs()
         val temporary = File(output.parentFile, "${output.name}.download")
         temporary.delete()
-        val connection = URI(yoloPoseModelUrl).toURL().openConnection().apply {
+        val connection = URI(moveNetPoseModelUrl).toURL().openConnection().apply {
             connectTimeout = 30_000
             readTimeout = 120_000
             setRequestProperty("User-Agent", "TopOut-Android-Gradle")
@@ -111,9 +106,8 @@ val downloadYoloPoseModel by tasks.registering {
         connection.getInputStream().buffered().use { input ->
             temporary.outputStream().buffered().use { outputStream -> input.copyTo(outputStream) }
         }
-        val actual = sha256(temporary)
-        require(actual.equals(yoloPoseModelSha256, ignoreCase = true)) {
-            "YOLO11n-pose 모델 SHA-256 불일치: expected=$yoloPoseModelSha256 actual=$actual"
+        require(isValidTflite(temporary)) {
+            "MoveNet Lightning FP16 다운로드 결과가 유효한 TFLite FlatBuffer가 아닙니다."
         }
         Files.move(
             temporary.toPath(),
@@ -124,7 +118,7 @@ val downloadYoloPoseModel by tasks.registering {
 }
 
 tasks.matching { it.name == "preBuild" }.configureEach {
-    dependsOn(downloadYoloPoseModel)
+    dependsOn(downloadMoveNetPoseModel)
 }
 
 dependencies {
@@ -161,7 +155,9 @@ dependencies {
     implementation("androidx.media3:media3-transformer:$media3")
     implementation("androidx.media3:media3-effect:$media3")
 
+    // MobileSAM continues to use ONNX Runtime; pose inference uses MoveNet through TensorFlow Lite.
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.27.0")
+    implementation("org.tensorflow:tensorflow-lite:2.17.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
     testImplementation("junit:junit:4.13.2")

@@ -1,7 +1,21 @@
 package com.topout.cam.detection
 
-/** COCO person keypoint indices emitted by YOLO11 pose models. */
-object YoloPoseLandmark {
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+
+internal data class PoseKeypoint(
+    val position: Offset,
+    val confidence: Float
+)
+
+internal data class PoseResult(
+    val boundingBox: Rect,
+    val confidence: Float,
+    val keypoints: Map<Int, PoseKeypoint>
+)
+
+/** COCO 17-keypoint indices emitted by MoveNet SinglePose. */
+object PoseLandmark {
     const val NOSE = 0
     const val LEFT_EYE = 1
     const val RIGHT_EYE = 2
@@ -19,6 +33,5 @@ object YoloPoseLandmark {
     const val RIGHT_KNEE = 14
     const val LEFT_ANKLE = 15
     const val RIGHT_ANKLE = 16
-
     const val COUNT = 17
 }

@@ -5,10 +5,11 @@ mobile_sam_decoder.onnx
 
 Generated build asset:
 
-yolo11n-pose.onnx
+movenet-lightning-fp16.tflite
 
-The YOLO model is generated under build/generated/yoloPoseAssets/models by the
-Gradle task downloadYoloPoseModel before preBuild. The task verifies SHA-256:
-70bd721f9cb797eb44cbc70bc65213397a0a26da38fe6fd5ccdf699016d33d3c
+The official MoveNet SinglePose Lightning FP16 model is generated under
+build/generated/moveNetPoseAssets/models by the Gradle task
+`downloadMoveNetPoseModel` before preBuild. The task validates the downloaded
+file as a TFLite FlatBuffer by checking the TFL3 file identifier.
 
 External weight sidecar files such as *.onnx.data are not expected.

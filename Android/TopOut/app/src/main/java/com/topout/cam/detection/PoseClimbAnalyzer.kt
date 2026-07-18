@@ -37,7 +37,7 @@ enum class MotionFinishReference {
  *
  * The detector intentionally uses two stages, matching iOS:
  * 1) luma difference around the edited mat line to cheaply wake pose tracking;
- * 2) YOLO11n-pose tracking every 0.5 s to determine the raw start/end and either the closest
+ * 2) MoveNet Lightning FP16 tracking every 0.5 s to determine the raw start/end and either the closest
  *    top-hold moment or the highest pose point, matching iOS MotionDetector.FinishReference.
  * Review padding is deliberately deferred until recording finalization.
  */
@@ -61,22 +61,21 @@ class PoseClimbAnalyzer(
 
     private val frameCaptureRequest = AtomicReference<FrameCaptureRequest?>(null)
     /**
-     * The YOLO wrapper keeps the previous person box only while CLIMBING, which mirrors the old
-     * distinction between independent start verification and continuous climb tracking.
+     * MoveNet keeps the previous smart-crop region throughout TRACKING and CLIMBING. This is important
+     * for distant, back-facing climbers because full-frame inference alone can make the person too small.
      */
-    private val poseDetector = Yolo11NanoPoseDetector(context)
+    private val poseDetector = MoveNetLightningPoseDetector(context)
     private val poseExecutor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "topout-yolo11n-pose").apply { isDaemon = true }
+        Thread(runnable, "topout-movenet-fp16-pose").apply { isDaemon = true }
     }
 
     private val motionLandmarkTypes = intArrayOf(
-        YoloPoseLandmark.NOSE,
-        YoloPoseLandmark.LEFT_SHOULDER, YoloPoseLandmark.RIGHT_SHOULDER,
-        YoloPoseLandmark.LEFT_ELBOW, YoloPoseLandmark.RIGHT_ELBOW,
-        YoloPoseLandmark.LEFT_WRIST, YoloPoseLandmark.RIGHT_WRIST,
-        YoloPoseLandmark.LEFT_HIP, YoloPoseLandmark.RIGHT_HIP,
-        YoloPoseLandmark.LEFT_KNEE, YoloPoseLandmark.RIGHT_KNEE,
-        YoloPoseLandmark.LEFT_ANKLE, YoloPoseLandmark.RIGHT_ANKLE
+        PoseLandmark.LEFT_SHOULDER, PoseLandmark.RIGHT_SHOULDER,
+        PoseLandmark.LEFT_ELBOW, PoseLandmark.RIGHT_ELBOW,
+        PoseLandmark.LEFT_WRIST, PoseLandmark.RIGHT_WRIST,
+        PoseLandmark.LEFT_HIP, PoseLandmark.RIGHT_HIP,
+        PoseLandmark.LEFT_KNEE, PoseLandmark.RIGHT_KNEE,
+        PoseLandmark.LEFT_ANKLE, PoseLandmark.RIGHT_ANKLE
     )
 
 
@@ -109,6 +108,7 @@ class PoseClimbAnalyzer(
     private var activeHighestPoseSeconds: Double? = null
     private var activeHighestPoseY: Float? = null
     @Volatile private var processingPose = false
+    private var rgbScratchPixels = IntArray(0)
 
     /**
      * Returns the next ImageAnalysis frame in the shared CameraX ViewPort. Android uses this as
@@ -340,31 +340,36 @@ class PoseClimbAnalyzer(
         }
 
         processingPose = true
-        val poseBitmap = runCatching {
+        val bitmapConversion = runCatching {
             imageProxyToBitmap(image, TopOutConfig.PoseInputMaxLongSide)
-        }.getOrNull()
+        }
         image.close()
 
+        val poseBitmap = bitmapConversion.getOrNull()
         if (poseBitmap == null) {
             processingPose = false
             handlePoseMissing(seconds)
             return
         }
 
-        val useTrackingAssociation = synchronized(this) { state == State.CLIMBING }
+        val useTrackingAssociation = synchronized(this) { state == State.TRACKING || state == State.CLIMBING }
         runCatching {
             poseExecutor.execute {
                 try {
-                    val pose = runCatching {
+                    val detection = runCatching {
                         poseDetector.detect(poseBitmap, useTrackingAssociation)
-                    }.getOrNull()
-                    if (pose != null) handlePose(pose, seconds) else handlePoseMissing(seconds)
+                    }
+                    detection.onSuccess { pose ->
+                        if (pose != null) handlePose(pose, seconds) else handlePoseMissing(seconds)
+                    }.onFailure { _ ->
+                        handlePoseMissing(seconds)
+                    }
                 } finally {
                     poseBitmap.recycle()
                     processingPose = false
                 }
             }
-        }.onFailure {
+        }.onFailure { _ ->
             poseBitmap.recycle()
             processingPose = false
             handlePoseMissing(seconds)
@@ -373,7 +378,7 @@ class PoseClimbAnalyzer(
 
     @Synchronized
     private fun handlePose(
-        pose: YoloPoseResult,
+        pose: PoseResult,
         seconds: Double
     ) {
         val landmarks = reliableLandmarks(pose, motionLandmarkTypes)
@@ -470,7 +475,7 @@ class PoseClimbAnalyzer(
     }
 
     private fun reliableLandmarks(
-        pose: YoloPoseResult,
+        pose: PoseResult,
         landmarkTypes: IntArray
     ): Map<Int, Offset> {
         val points = LinkedHashMap<Int, Offset>(landmarkTypes.size)
@@ -669,7 +674,9 @@ class PoseClimbAnalyzer(
         val yBase = yBuffer.position()
         val uBase = uBuffer.position()
         val vBase = vBuffer.position()
-        val pixels = IntArray(outputWidth * outputHeight)
+        val requiredPixels = outputWidth * outputHeight
+        if (rgbScratchPixels.size < requiredPixels) rgbScratchPixels = IntArray(requiredPixels)
+        val pixels = rgbScratchPixels
 
         fun valueAt(buffer: java.nio.ByteBuffer, index: Int, fallback: Int): Int =
             if (index in 0 until buffer.limit()) buffer.get(index).toInt() and 0xFF else fallback
@@ -678,11 +685,11 @@ class PoseClimbAnalyzer(
             val displayY = crop.top + crop.height * (y + 0.5f) / outputHeight
             for (x in 0 until outputWidth) {
                 val displayX = crop.left + crop.width * (x + 0.5f) / outputWidth
-                val raw = displayNormalizedToRawPixel(
+                val raw = displayNormalizedToRawPixelPacked(
                     displayX, displayY, image.width, image.height, rotation
                 )
-                val rawX = raw.first
-                val rawY = raw.second
+                val rawX = (raw ushr 32).toInt()
+                val rawY = raw.toInt()
                 val yIndex = yBase + rawY * yPlane.rowStride + rawX * yPlane.pixelStride
                 val uvX = rawX / 2
                 val uvY = rawY / 2
@@ -723,8 +730,12 @@ class PoseClimbAnalyzer(
             val displayY = crop.top + crop.height * (y + 0.5f) / outputHeight
             for (x in 0 until outputWidth) {
                 val displayX = crop.left + crop.width * (x + 0.5f) / outputWidth
-                val raw = displayNormalizedToRawPixel(displayX, displayY, image.width, image.height, rotation)
-                val index = bufferBase + raw.second * plane.rowStride + raw.first * plane.pixelStride
+                val raw = displayNormalizedToRawPixelPacked(
+                    displayX, displayY, image.width, image.height, rotation
+                )
+                val rawX = (raw ushr 32).toInt()
+                val rawY = raw.toInt()
+                val index = bufferBase + rawY * plane.rowStride + rawX * plane.pixelStride
                 output[y * outputWidth + x] =
                     if (index in bufferBase until buffer.limit()) buffer.get(index) else 0
             }
@@ -774,13 +785,14 @@ class PoseClimbAnalyzer(
         else -> point
     }
 
-    private fun displayNormalizedToRawPixel(
+    /** Packs raw x in the high 32 bits and raw y in the low 32 bits to avoid per-pixel Pair allocations. */
+    private fun displayNormalizedToRawPixelPacked(
         displayX: Float,
         displayY: Float,
         rawWidth: Int,
         rawHeight: Int,
         rotation: Int
-    ): Pair<Int, Int> {
+    ): Long {
         val x = displayX.coerceIn(0f, 1f)
         val y = displayY.coerceIn(0f, 1f)
         val rawX: Float
@@ -803,8 +815,9 @@ class PoseClimbAnalyzer(
                 rawY = y
             }
         }
-        return (rawX * (rawWidth - 1)).roundToInt().coerceIn(0, rawWidth - 1) to
-            (rawY * (rawHeight - 1)).roundToInt().coerceIn(0, rawHeight - 1)
+        val pixelX = (rawX * (rawWidth - 1)).roundToInt().coerceIn(0, rawWidth - 1)
+        val pixelY = (rawY * (rawHeight - 1)).roundToInt().coerceIn(0, rawHeight - 1)
+        return (pixelX.toLong() shl 32) or (pixelY.toLong() and 0xFFFF_FFFFL)
     }
 
     private fun buildBandBins(): List<BandBin> = (0 until max(1, horizontalBinCount)).map { index ->
@@ -885,4 +898,6 @@ class PoseClimbAnalyzer(
         poseExecutor.shutdownNow()
         poseDetector.close()
     }
+
+
 }

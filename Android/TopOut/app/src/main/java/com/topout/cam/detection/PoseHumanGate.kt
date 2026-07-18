@@ -3,19 +3,20 @@ package com.topout.cam.detection
 import com.topout.cam.model.TopOutConfig
 
 /**
- * Rejects sparse YOLO pose outputs before they can start or finish a climb.
+ * Rejects sparse MoveNet pose outputs before they can start or finish a climb.
  *
- * The previous ML Kit version used the same rule: enough reliable joints overall, enough torso
- * joints, and at least one shoulder plus one hip. Only the landmark index source has changed.
+ * Climbing footage is commonly back-facing, distant, partially occluded, and motion-blurred. The gate
+ * therefore uses a moderate MoveNet threshold while still requiring body structure: enough reliable
+ * joints overall, at least two torso joints, and at least one shoulder plus one hip.
  */
 object PoseHumanGate {
     private val shoulderTypes = setOf(
-        YoloPoseLandmark.LEFT_SHOULDER,
-        YoloPoseLandmark.RIGHT_SHOULDER
+        PoseLandmark.LEFT_SHOULDER,
+        PoseLandmark.RIGHT_SHOULDER
     )
     private val hipTypes = setOf(
-        YoloPoseLandmark.LEFT_HIP,
-        YoloPoseLandmark.RIGHT_HIP
+        PoseLandmark.LEFT_HIP,
+        PoseLandmark.RIGHT_HIP
     )
     private val coreTypes = shoulderTypes + hipTypes
 
