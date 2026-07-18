@@ -3,10 +3,12 @@ package com.topout.cam.detection
 /** Pure start rule shared by the analyzer and unit tests. */
 internal object PoseStartRule {
     /**
-     * A first valid pose above the mat is a start, even when there was no previous pose sample.
-     * Remaining above the mat does not emit duplicate starts.
+     * A climb can start only after the temporal human-motion gate has verified the candidate.
+     * Once verified, the first pose above the mat is a start even without a previous pose sample.
      */
-    fun shouldStart(lowestAboveMat: Boolean, previousLowestAboveMat: Boolean?): Boolean =
-        lowestAboveMat && previousLowestAboveMat != true
-
+    fun shouldStart(
+        lowestAboveMat: Boolean,
+        previousLowestAboveMat: Boolean?,
+        humanMotionVerified: Boolean
+    ): Boolean = humanMotionVerified && lowestAboveMat && previousLowestAboveMat != true
 }

@@ -63,6 +63,18 @@ internal class MoveNetLightningPoseDetector(context: Context) : AutoCloseable {
         return pose
     }
 
+    /** Seeds the next inference crop only after the caller has verified real joint motion. */
+    @Synchronized
+    fun primeTracking(pose: PoseResult, imageWidth: Int, imageHeight: Int) {
+        if (closed || imageWidth <= 0 || imageHeight <= 0) return
+        previousCropRegion = MoveNetPoseOutputParser.nextCropRegion(
+            pose = pose,
+            imageWidth = imageWidth,
+            imageHeight = imageHeight,
+            minimumKeypointScore = TopOutConfig.MoveNetCropKeypointConfidence
+        )
+    }
+
     @Synchronized
     fun resetTracking() {
         previousCropRegion = null

@@ -276,6 +276,7 @@ object TopOutConfig {
     const val MotionAnalysisBoostFps = 12.0
     const val MotionAnalysisBoostSeconds = 1.2
     const val MotionFrameWidth = 160
+    const val MotionComparisonFrameLag = 3
     const val MotionPixelDifference = 20
     const val MotionCountdownSeconds = 3.0
     const val MotionCalibrationMadFactor = 2.8f
@@ -294,6 +295,11 @@ object TopOutConfig {
     const val PoseInputMaxLongSide = 384
     const val MoveNetPoseInputSize = 192
     const val MoveNetCropKeypointConfidence = 0.15f
+    const val SmartCropMotionVerificationFrames = 3
+    const val SmartCropMinimumMovedLandmarks = 3
+    const val SmartCropMinimumMovementRatio = 0.05f
+    const val SmartCropPostUnlockConfirmationFrames = 2
+    const val SmartCropConsecutiveMissingFramesBeforeReset = 2
     // Retained for the dormant PicoDet/RTMPose fallback implementation.
     const val PosePersonConfidence = 0.25f
     const val PoseNmsIou = 0.45f

@@ -3,7 +3,7 @@
 -keep class org.tensorflow.lite.** { *; }
 -dontwarn org.tensorflow.lite.**
 
-# Release artifacts must not retain app-authored Logcat calls if one is added later.
+# Strip application Logcat calls from optimized release builds.
 -assumenosideeffects class android.util.Log {
     public static *** v(...);
     public static *** d(...);

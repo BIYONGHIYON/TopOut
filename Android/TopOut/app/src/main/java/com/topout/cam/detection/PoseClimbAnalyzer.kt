@@ -50,7 +50,11 @@ class PoseClimbAnalyzer(
 
     private data class SmallFrame(val width: Int, val height: Int, val luma: ByteArray)
     private data class BandBin(val x0: Float, val x1: Float)
-    private data class CalibrationSample(val frame: SmallFrame, val energy: Float)
+    private data class CalibrationSample(
+        val belowSignals: FloatArray,
+        val upperSignals: FloatArray,
+        val energy: Float
+    )
     private data class Calibration(val belowBaseline: FloatArray, val upperBaseline: FloatArray)
     private data class RunScore(val indices: List<Int>, val energy: Float)
     private data class BoundaryMotion(val indices: List<Int>, val energy: Float)
@@ -61,10 +65,15 @@ class PoseClimbAnalyzer(
 
     private val frameCaptureRequest = AtomicReference<FrameCaptureRequest?>(null)
     /**
-     * MoveNet keeps the previous smart-crop region throughout TRACKING and CLIMBING. This is important
-     * for distant, back-facing climbers because full-frame inference alone can make the person too small.
+     * MoveNet remains on the full frame until three consecutive pose frames show human-scale motion.
+     * This prevents static climbing holds from locking the detector into a false smart-crop region.
      */
     private val poseDetector = MoveNetLightningPoseDetector(context)
+    private val smartCropMotionGate = PoseSmartCropMotionGate(
+        requiredFrames = TopOutConfig.SmartCropMotionVerificationFrames,
+        minimumMovedLandmarks = TopOutConfig.SmartCropMinimumMovedLandmarks,
+        minimumMovementRatio = TopOutConfig.SmartCropMinimumMovementRatio
+    )
     private val poseExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "topout-movenet-fp16-pose").apply { isDaemon = true }
     }
@@ -87,7 +96,9 @@ class PoseClimbAnalyzer(
     private var horizontalBinCount = TopOutConfig.MatBoundaryBins
     private var belowBins: List<BandBin> = emptyList()
     private var upperBins: List<BandBin> = emptyList()
-    private var captureBaseFrame: SmallFrame? = null
+    private val boundaryFrameHistory = FrameLagBuffer<SmallFrame>(
+        TopOutConfig.MotionComparisonFrameLag
+    )
 
     private var analysisOriginTimestampNanos: Long? = null
     private var recordingOriginTimestampNanos: Long? = null
@@ -108,6 +119,9 @@ class PoseClimbAnalyzer(
     private var activeHighestPoseSeconds: Double? = null
     private var activeHighestPoseY: Float? = null
     @Volatile private var processingPose = false
+    private var smartCropEnabled = false
+    private var smartCropConfirmationFrames = 0
+    private var smartCropConsecutiveMissingFrames = 0
     private var rgbScratchPixels = IntArray(0)
 
     /**
@@ -125,6 +139,7 @@ class PoseClimbAnalyzer(
         return bitmap
     }
 
+    @Suppress("UNUSED_PARAMETER")
     @Synchronized
     fun configure(
         matLine: List<Offset>,
@@ -139,7 +154,6 @@ class PoseClimbAnalyzer(
         this.horizontalBinCount = max(1, horizontalBinCount)
         belowBins = buildBandBins()
         upperBins = buildBandBins()
-        captureBaseFrame = referenceImage?.let(::smallFrameFromBitmap)
         resetStateLocked(keepConfiguration = true)
     }
 
@@ -164,6 +178,7 @@ class PoseClimbAnalyzer(
         activeStartSeconds = null
         resetFinishReferenceTrackingLocked()
         lastLowestAboveMat = null
+        resetSmartCropVerificationLocked()
     }
 
     @Synchronized
@@ -221,8 +236,6 @@ class PoseClimbAnalyzer(
             image.close()
             return
         }
-        if (captureBaseFrame == null) captureBaseFrame = frame
-
         when (state) {
             State.CALIBRATING -> {
                 collectCalibration(frame, timestamp)
@@ -230,7 +243,10 @@ class PoseClimbAnalyzer(
             }
 
             State.WAITING -> {
-                val base = captureBaseFrame
+                // Compare against the frame exactly three analyzed samples earlier instead of the
+                // fixed recording-start frame. A lighting/noise change already present at startup
+                // therefore becomes the local background instead of waking pose indefinitely.
+                val base = boundaryFrameHistory.referenceFor(frame)
                 val calibrationSnapshot = calibration
                 if (base != null && calibrationSnapshot != null &&
                     base.width == frame.width && base.height == frame.height
@@ -273,12 +289,13 @@ class PoseClimbAnalyzer(
     @Synchronized
     private fun collectCalibration(frame: SmallFrame, timestamp: Long) {
         if (calibrationStartedTimestampNanos == null) calibrationStartedTimestampNanos = timestamp
-        val base = captureBaseFrame
-        val energy = if (base != null && base.width == frame.width && base.height == frame.height) {
-            belowBins.sumOf { baseDiffScore(frame, base, it, BandKind.BELOW).toDouble() }.toFloat() +
-                upperBins.sumOf { baseDiffScore(frame, base, it, BandKind.UPPER).toDouble() }.toFloat()
-        } else 0f
-        calibrationSamples += CalibrationSample(frame, energy)
+        val base = boundaryFrameHistory.referenceFor(frame)
+        if (base != null && base.width == frame.width && base.height == frame.height) {
+            val belowSignals = rawBandSignals(frame, base, belowBins, BandKind.BELOW)
+            val upperSignals = rawBandSignals(frame, base, upperBins, BandKind.UPPER)
+            val energy = belowSignals.sum() + upperSignals.sum()
+            calibrationSamples += CalibrationSample(belowSignals, upperSignals, energy)
+        }
 
         val started = calibrationStartedTimestampNanos ?: timestamp
         if ((timestamp - started) / 1_000_000_000.0 >= TopOutConfig.MotionCountdownSeconds) {
@@ -287,11 +304,6 @@ class PoseClimbAnalyzer(
     }
 
     private fun finishCalibrationLocked() {
-        val base = captureBaseFrame
-        if (base == null) {
-            state = State.WAITING
-            return
-        }
         val samples = calibrationSamples.toList()
         val energies = samples.map { it.energy }
         val median = median(energies)
@@ -303,9 +315,11 @@ class PoseClimbAnalyzer(
         val accepted = samples.filter { it.energy <= threshold }
         val used = if (accepted.isEmpty()) samples else accepted
         calibration = Calibration(
-            belowBaseline = makeBaseline(used.map { it.frame }, base, belowBins, BandKind.BELOW),
-            upperBaseline = makeBaseline(used.map { it.frame }, base, upperBins, BandKind.UPPER)
+            belowBaseline = makeSignalBaseline(used.map { it.belowSignals }, belowBins.size),
+            upperBaseline = makeSignalBaseline(used.map { it.upperSignals }, upperBins.size)
         )
+        // collectCalibration already leaves the latest three countdown frames in the lag buffer,
+        // so the first WAITING comparison continues with the same N vs N-3 rule.
         state = State.WAITING
         calibrationStartedTimestampNanos = null
         calibrationSamples.clear()
@@ -313,7 +327,7 @@ class PoseClimbAnalyzer(
 
     @Synchronized
     private fun enterPoseTracking(timestamp: Long) {
-        poseDetector.resetTracking()
+        resetSmartCropVerificationLocked()
         state = State.TRACKING
         poseTrackingStartedSeconds = recordingSeconds(timestamp)
         lastPoseSeenSeconds = null
@@ -352,7 +366,7 @@ class PoseClimbAnalyzer(
             return
         }
 
-        val useTrackingAssociation = synchronized(this) { state == State.TRACKING || state == State.CLIMBING }
+        val useTrackingAssociation = synchronized(this) { smartCropEnabled }
         runCatching {
             poseExecutor.execute {
                 try {
@@ -360,7 +374,11 @@ class PoseClimbAnalyzer(
                         poseDetector.detect(poseBitmap, useTrackingAssociation)
                     }
                     detection.onSuccess { pose ->
-                        if (pose != null) handlePose(pose, seconds) else handlePoseMissing(seconds)
+                        if (pose != null) {
+                            handlePose(pose, seconds, poseBitmap.width, poseBitmap.height)
+                        } else {
+                            handlePoseMissing(seconds)
+                        }
                     }.onFailure { _ ->
                         handlePoseMissing(seconds)
                     }
@@ -379,12 +397,46 @@ class PoseClimbAnalyzer(
     @Synchronized
     private fun handlePose(
         pose: PoseResult,
-        seconds: Double
+        seconds: Double,
+        imageWidth: Int,
+        imageHeight: Int
     ) {
         val landmarks = reliableLandmarks(pose, motionLandmarkTypes)
-        if (!PoseHumanGate.isValid(landmarks.keys)) {
+        val coreCount = landmarks.keys.count { type ->
+            type == PoseLandmark.LEFT_SHOULDER ||
+                type == PoseLandmark.RIGHT_SHOULDER ||
+                type == PoseLandmark.LEFT_HIP ||
+                type == PoseLandmark.RIGHT_HIP
+        }
+        val humanValid = PoseHumanGate.isValid(landmarks.keys)
+        if (!humanValid) {
+            smartCropMotionGate.reset()
+            // A single cropped-frame miss can happen during fast movement or immediately after the
+            // crop changes. Keep the crop for one miss, but require post-unlock confirmation to
+            // restart from zero. Revoke the crop only after two consecutive misses while TRACKING.
+            // During an active climb, retain the existing no-pose grace period for occlusions.
+            if (state == State.TRACKING && smartCropEnabled) {
+                smartCropConfirmationFrames = 0
+                smartCropConsecutiveMissingFrames += 1
+                if (smartCropConsecutiveMissingFrames >= TopOutConfig.SmartCropConsecutiveMissingFramesBeforeReset) {
+                    resetSmartCropVerificationLocked()
+                }
+            }
             handlePoseMissing(seconds)
             return
+        }
+
+        if (state == State.TRACKING && smartCropEnabled) {
+            smartCropConsecutiveMissingFrames = 0
+        }
+
+        val observation = if (!smartCropEnabled) smartCropMotionGate.observe(landmarks) else null
+        val unlockedThisFrame = observation?.shouldUnlock == true
+        if (unlockedThisFrame) {
+            smartCropEnabled = true
+            smartCropConfirmationFrames = 0
+            smartCropConsecutiveMissingFrames = 0
+            poseDetector.primeTracking(pose, imageWidth, imageHeight)
         }
         val points = landmarks.values.distinctBy {
             ((it.x * 10_000).roundToInt() shl 16) xor (it.y * 10_000).roundToInt()
@@ -392,14 +444,31 @@ class PoseClimbAnalyzer(
 
         lastPoseSeenSeconds = seconds
         poseTrackingStartedSeconds = null
+
+        // A pose-like arrangement of static holds may pass the relaxed body-joint gate. It must
+        // never start a climb until the three-frame human-motion gate has unlocked smart crop and
+        // the cropped pose has been human-valid for two additional consecutive frames.
+        // Keep lastLowestAboveMat untouched while unverified so the first confirmed pose can still
+        // become the start boundary even when it is already above the mat.
+        if (state == State.TRACKING) {
+            if (!smartCropEnabled) return
+            if (unlockedThisFrame) return
+            smartCropConfirmationFrames += 1
+            if (smartCropConfirmationFrames < TopOutConfig.SmartCropPostUnlockConfirmationFrames) return
+        }
+
         val lowest = points.maxByOrNull { it.y } ?: return
         val lowestAboveMat = isAboveMatLine(lowest)
 
         when (state) {
             State.TRACKING -> {
-                // The first valid pose after CV motion is also a crossing candidate. If its
-                // lowest reliable point is already above the mat, START is emitted immediately.
-                val crossedUp = PoseStartRule.shouldStart(lowestAboveMat, lastLowestAboveMat)
+                // Only a motion-verified person can become a crossing candidate. The first verified
+                // pose may start immediately when its lowest reliable point is already above the mat.
+                val crossedUp = PoseStartRule.shouldStart(
+                    lowestAboveMat = lowestAboveMat,
+                    previousLowestAboveMat = lastLowestAboveMat,
+                    humanMotionVerified = smartCropEnabled
+                )
                 lastLowestAboveMat = lowestAboveMat
                 if (!crossedUp) return
 
@@ -428,6 +497,7 @@ class PoseClimbAnalyzer(
 
     @Synchronized
     private fun handlePoseMissing(seconds: Double) {
+        if (!smartCropEnabled) smartCropMotionGate.reset()
         if (lastPoseSeenSeconds == null && poseTrackingStartedSeconds == null) {
             poseTrackingStartedSeconds = seconds
             return
@@ -446,7 +516,7 @@ class PoseClimbAnalyzer(
     }
 
     private fun resetForNextStartSearchLocked() {
-        poseDetector.resetTracking()
+        resetSmartCropVerificationLocked()
         state = State.TRACKING
         lastPoseTimestampNanos = null
         lastPoseSeenSeconds = null
@@ -457,7 +527,10 @@ class PoseClimbAnalyzer(
     }
 
     private fun returnToCvSearchLocked() {
-        poseDetector.resetTracking()
+        resetSmartCropVerificationLocked()
+        // Pose tracking can last several seconds. Do not compare a new CV frame with stale samples
+        // captured before pose tracking started; warm up a fresh three-frame history instead.
+        boundaryFrameHistory.clear()
         state = State.WAITING
         lastPoseTimestampNanos = null
         lastPoseSeenSeconds = null
@@ -465,6 +538,14 @@ class PoseClimbAnalyzer(
         lastLowestAboveMat = null
         activeStartSeconds = null
         resetFinishReferenceTrackingLocked()
+    }
+
+    private fun resetSmartCropVerificationLocked() {
+        smartCropEnabled = false
+        smartCropConfirmationFrames = 0
+        smartCropConsecutiveMissingFrames = 0
+        smartCropMotionGate.reset()
+        poseDetector.resetTracking()
     }
 
     private fun openClipRangeLocked(): ClipRange? {
@@ -489,6 +570,7 @@ class PoseClimbAnalyzer(
         }
         return points
     }
+
 
     private fun isAboveMatLine(point: Offset): Boolean {
         val stricterBoundary = max(
@@ -555,6 +637,15 @@ class PoseClimbAnalyzer(
         max(0f, raw - baseline.getOrElse(index) { 0f } - TopOutConfig.MotionBaseDiffMargin)
     }
 
+    private fun rawBandSignals(
+        frame: SmallFrame,
+        base: SmallFrame,
+        bins: List<BandBin>,
+        kind: BandKind
+    ): FloatArray = FloatArray(bins.size) { index ->
+        baseDiffScore(frame, base, bins[index], kind)
+    }
+
     private fun classifyBoundaryMotion(below: FloatArray, upper: FloatArray): BoundaryMotion? {
         val count = min(below.size, upper.size)
         if (count <= 0) return null
@@ -608,14 +699,10 @@ class PoseClimbAnalyzer(
         return result
     }
 
-    private fun makeBaseline(
-        frames: List<SmallFrame>,
-        base: SmallFrame,
-        bins: List<BandBin>,
-        kind: BandKind
-    ): FloatArray = FloatArray(bins.size) { index ->
-        median(frames.map { baseDiffScore(it, base, bins[index], kind) })
-    }
+    private fun makeSignalBaseline(signals: List<FloatArray>, binCount: Int): FloatArray =
+        FloatArray(binCount) { index ->
+            median(signals.map { it.getOrElse(index) { 0f } })
+        }
 
     private fun baseDiffScore(frame: SmallFrame, base: SmallFrame, bin: BandBin, kind: BandKind): Float {
         if (frame.width != base.width || frame.height != base.height) return 0f
@@ -743,24 +830,6 @@ class PoseClimbAnalyzer(
         return SmallFrame(outputWidth, outputHeight, output)
     }
 
-    private fun smallFrameFromBitmap(bitmap: Bitmap): SmallFrame? {
-        if (bitmap.width <= 0 || bitmap.height <= 0) return null
-        val outputWidth = max(32, TopOutConfig.MotionFrameWidth)
-        val outputHeight = max(32, (outputWidth * bitmap.height.toFloat() / bitmap.width).roundToInt())
-        val output = ByteArray(outputWidth * outputHeight)
-        for (y in 0 until outputHeight) {
-            val sourceY = min(bitmap.height - 1, ((y + 0.5f) * bitmap.height / outputHeight).toInt())
-            for (x in 0 until outputWidth) {
-                val sourceX = min(bitmap.width - 1, ((x + 0.5f) * bitmap.width / outputWidth).toInt())
-                val color = bitmap.getPixel(sourceX, sourceY)
-                val luma = (Color.red(color) * 0.2126f + Color.green(color) * 0.7152f +
-                    Color.blue(color) * 0.0722f).roundToInt().coerceIn(0, 255)
-                output[y * outputWidth + x] = luma.toByte()
-            }
-        }
-        return SmallFrame(outputWidth, outputHeight, output)
-    }
-
     /** CameraX's ViewPort cropRect is raw-sensor oriented; this converts it to display space. */
     private fun cropRectInDisplay(image: ImageProxy): Rect {
         val raw = image.cropRect
@@ -864,13 +933,14 @@ class PoseClimbAnalyzer(
         calibrationStartedTimestampNanos = null
         calibrationSamples.clear()
         calibration = null
+        boundaryFrameHistory.clear()
         lastPoseTimestampNanos = null
         lastPoseSeenSeconds = null
         poseTrackingStartedSeconds = null
         lastLowestAboveMat = null
         activeStartSeconds = null
         resetFinishReferenceTrackingLocked()
-        poseDetector.resetTracking()
+        resetSmartCropVerificationLocked()
         processingPose = false
         if (!keepConfiguration) {
             matLine = emptyList()
@@ -879,7 +949,6 @@ class PoseClimbAnalyzer(
             horizontalBinCount = TopOutConfig.MatBoundaryBins
             belowBins = emptyList()
             upperBins = emptyList()
-            captureBaseFrame = null
         }
     }
 

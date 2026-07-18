@@ -27,3 +27,10 @@
 - Keeps ONNX/TFLite model assets uncompressed for direct access/mmap.
 - Uses modern uncompressed native-library packaging and disables native extraction.
 - Enables Gradle build cache and parallel task execution.
+
+## Smart-crop false-positive guard
+
+- MoveNet now stays on full-frame inference until three consecutive valid body-pose frames are available.
+- Smart crop is enabled only when at least three body joints present in all three frames move by at least 5% of the maximum detected person bounding-box diagonal between the first and third frame.
+- Invalid or missing pose frames reset the three-frame verification window.
+- When the condition passes, the current full-frame pose seeds the first smart-crop region directly.

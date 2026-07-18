@@ -24,7 +24,7 @@ enum MotionFinishReference: String {
 /// MotionDetector Pose Climb
 ///
 /// 기준:
-/// - 3초 매트 보정 후 CV로 매트 주변 움직임을 찾습니다.
+/// - 3초 매트 보정 후 현재 프레임과 3개 분석 프레임 전을 비교해 매트 주변 움직임을 찾습니다.
 /// - 움직임이 감지되면 0.5초 간격 pose tracking으로 전환합니다.
 /// - 가장 낮은 pose 점이 매트 기준선 위로 올라가면 START, 다시 아래로 내려오면 FINISH로 봅니다.
 /// - 탑홀드 마스킹 사용 시 FINISH는 탑홀드와 가장 가까웠던 pose 시점을 사용합니다.
@@ -53,6 +53,7 @@ final class MotionDetector {
 
     private struct CalibrationSample {
         let frame: SmallFrame
+        let referenceFrame: SmallFrame
         let energy: CGFloat
     }
 
@@ -105,7 +106,7 @@ final class MotionDetector {
     private var finishReference: MotionFinishReference = .closestTopHold
     private var activeCropRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)
     private var horizontalBinCount = Cfg.motionBandBinCount
-    private var captureBaseFrame: SmallFrame?
+    private var cvFrameHistory: [SmallFrame] = []
 
     private var isActive = false
     private var state: State = .idle
@@ -135,7 +136,7 @@ final class MotionDetector {
         matLine: [CGPoint],
         topBox: CGRect?,
         finishReference: MotionFinishReference,
-        referenceImage: UIImage?,
+        referenceImage _: UIImage?,
         activeCropRect: CGRect,
         horizontalBinCount: Int = Cfg.motionBandBinCount
     ) {
@@ -146,14 +147,9 @@ final class MotionDetector {
             self.finishReference = finishReference
             self.activeCropRect = self.clamped(activeCropRect)
             self.horizontalBinCount = max(1, horizontalBinCount)
-            if let referenceImage {
-                self.captureBaseFrame = Self.makeSmallFrame(from: referenceImage)
-            } else {
-                self.captureBaseFrame = nil
-            }
             self.buildRegionsLocked()
             self.resetStateLocked(keepConfig: true)
-            self.debug("🎯 motion configured pose climb: matPoints=\(matLine.count), finishReference=\(finishReference.rawValue), topBox=\(self.topBox), crop=\(self.activeCropRect), bins=\(self.horizontalBinCount), hasCaptureBase=\(self.captureBaseFrame != nil)")
+            self.debug("🎯 motion configured pose climb: matPoints=\(matLine.count), finishReference=\(finishReference.rawValue), topBox=\(self.topBox), crop=\(self.activeCropRect), bins=\(self.horizontalBinCount), cvLag=\(Cfg.motionCVComparisonFrameLag)")
         }
     }
 
@@ -214,18 +210,15 @@ final class MotionDetector {
         lastAnalyzedPTS = pts
 
         guard let frame = makeSmallFrame(from: sampleBuffer) else { return }
-
-        if captureBaseFrame == nil {
-            captureBaseFrame = frame
-        }
+        let comparisonFrame = rollingCVReference(for: frame)
 
         if state == .calibrating {
-            collectCalibration(frame: frame, pts: pts)
+            collectCalibration(frame: frame, referenceFrame: comparisonFrame, pts: pts)
             return
         }
 
         guard state == .waiting else { return }
-        guard let base = captureBaseFrame, let calibration else { return }
+        guard let base = comparisonFrame, let calibration else { return }
         guard base.width == frame.width, base.height == frame.height else { return }
 
         let belowValues = adjustedBandSignals(frame: frame, base: base, bins: belowBins, kind: .below, baseline: calibration.belowBaseline)
@@ -345,31 +338,26 @@ final class MotionDetector {
 
     // MARK: Calibration
 
-    private func collectCalibration(frame: SmallFrame, pts: CMTime) {
+    private func collectCalibration(frame: SmallFrame, referenceFrame: SmallFrame?, pts: CMTime) {
         if calibrationStartedPTS == nil { calibrationStartedPTS = pts }
 
-        let energy: CGFloat
-        if let base = captureBaseFrame, base.width == frame.width, base.height == frame.height {
+        if let base = referenceFrame, base.width == frame.width, base.height == frame.height {
             let below = belowBins.map { baseDiffScore(frame: frame, base: base, bin: $0, kind: .below) }.reduce(CGFloat(0), +)
             let upper = upperBins.map { baseDiffScore(frame: frame, base: base, bin: $0, kind: .upper) }.reduce(CGFloat(0), +)
-            energy = below + upper
-        } else {
-            energy = 0
+            calibrationSamples.append(
+                CalibrationSample(frame: frame, referenceFrame: base, energy: below + upper)
+            )
         }
 
-        calibrationSamples.append(CalibrationSample(frame: frame, energy: energy))
-
         guard duration(from: calibrationStartedPTS, to: pts) >= Cfg.motionCountdownSeconds else { return }
+        guard !calibrationSamples.isEmpty else { return }
         finishCalibration()
     }
 
     private func finishCalibration() {
-        guard let base = captureBaseFrame else {
-            state = .waiting
-            return
-        }
-
         let samples = calibrationSamples
+        guard !samples.isEmpty else { return }
+
         let energies = samples.map { $0.energy }
         let med = median(energies)
         let mad = median(energies.map { abs($0 - med) })
@@ -377,8 +365,8 @@ final class MotionDetector {
         let accepted = samples.filter { $0.energy <= threshold }
         let used = accepted.isEmpty ? samples : accepted
 
-        let belowBase = makeBaseline(frames: used.map { $0.frame }, base: base, bins: belowBins, kind: .below)
-        let upperBase = makeBaseline(frames: used.map { $0.frame }, base: base, bins: upperBins, kind: .upper)
+        let belowBase = makeBaseline(samples: used, bins: belowBins, kind: .below)
+        let upperBase = makeBaseline(samples: used, bins: upperBins, kind: .upper)
 
         calibration = Calibration(
             belowBaseline: belowBase,
@@ -389,8 +377,8 @@ final class MotionDetector {
         calibrationStartedPTS = nil
         calibrationSamples.removeAll()
 
-        debug(String(format: "🧪 motion base ready: samples=%d accepted=%d rejected=%d belowBase=%@ upperBase=%@",
-                     samples.count, used.count, samples.count - used.count,
+        debug(String(format: "🧪 rolling motion base ready: lag=%d samples=%d accepted=%d rejected=%d belowBase=%@ upperBase=%@",
+                     Cfg.motionCVComparisonFrameLag, samples.count, used.count, samples.count - used.count,
                      shortValues(belowBase), shortValues(upperBase)))
     }
 
@@ -409,6 +397,7 @@ final class MotionDetector {
     }
 
     private func enterPoseTrackingFromCV(at pts: CMTime, reason: String) {
+        cvFrameHistory.removeAll(keepingCapacity: true)
         state = .tracking
         poseTrackingStartedPTS = pts
         lastPoseSeenPTS = nil
@@ -492,6 +481,7 @@ final class MotionDetector {
 
     private func returnToCVSearch(reason: String) {
         debug("↩️ return to CV search: \(reason)")
+        cvFrameHistory.removeAll(keepingCapacity: true)
         state = .waiting
         lastPosePTS = nil
         lastPoseSeenPTS = nil
@@ -525,6 +515,7 @@ final class MotionDetector {
         guard state == .climbing else { return }
         debug("🔁 retry detected: \(reason)")
         onEvent?(.retry)
+        cvFrameHistory.removeAll(keepingCapacity: true)
         state = .waiting
         lastPosePTS = nil
         lastPoseSeenPTS = nil
@@ -868,12 +859,14 @@ final class MotionDetector {
         return (lhs.indices.first ?? 0) < (rhs.indices.first ?? 0)
     }
 
-    private func makeBaseline(frames: [SmallFrame], base: SmallFrame, bins: [BandBin], kind: BandKind) -> [CGFloat] {
+    private func makeBaseline(samples: [CalibrationSample], bins: [BandBin], kind: BandKind) -> [CGFloat] {
         bins.map { bin in
             var values: [CGFloat] = []
-            values.reserveCapacity(frames.count)
-            for frame in frames {
-                values.append(baseDiffScore(frame: frame, base: base, bin: bin, kind: kind))
+            values.reserveCapacity(samples.count)
+            for sample in samples {
+                values.append(
+                    baseDiffScore(frame: sample.frame, base: sample.referenceFrame, bin: bin, kind: kind)
+                )
             }
             return median(values)
         }
@@ -1053,6 +1046,7 @@ final class MotionDetector {
         calibrationStartedPTS = nil
         calibrationSamples.removeAll()
         calibration = nil
+        cvFrameHistory.removeAll(keepingCapacity: true)
         lastPosePTS = nil
         lastPoseSeenPTS = nil
         poseTrackingStartedPTS = nil
@@ -1066,10 +1060,27 @@ final class MotionDetector {
             finishReference = .closestTopHold
             activeCropRect = CGRect(x: 0, y: 0, width: 1, height: 1)
             horizontalBinCount = Cfg.motionBandBinCount
-            captureBaseFrame = nil
             belowBins.removeAll()
             upperBins.removeAll()
         }
+    }
+
+    private func rollingCVReference(for frame: SmallFrame) -> SmallFrame? {
+        let lag = Swift.max(1, Cfg.motionCVComparisonFrameLag)
+
+        if let previous = cvFrameHistory.last,
+           (previous.width != frame.width || previous.height != frame.height) {
+            cvFrameHistory.removeAll(keepingCapacity: true)
+        }
+
+        guard cvFrameHistory.count >= lag else {
+            cvFrameHistory.append(frame)
+            return nil
+        }
+
+        let reference = cvFrameHistory.removeFirst()
+        cvFrameHistory.append(frame)
+        return reference
     }
 
     private func duration(from start: CMTime?, to end: CMTime) -> TimeInterval {

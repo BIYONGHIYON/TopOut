@@ -67,6 +67,7 @@ enum Cfg {
     static let motionAnalysisBoostFPS: Double = 12
     static let motionAnalysisBoostSeconds: TimeInterval = 1.2
     static let motionFrameWidth = 160
+    static let motionCVComparisonFrameLag = 3
     static let motionPixelDiff: UInt8 = 20
     static let motionCountdownSeconds: TimeInterval = 3.0
     static let motionCalibrationMADFactor: CGFloat = 2.8

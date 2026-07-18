@@ -6,22 +6,57 @@ import org.junit.Test
 
 class PoseStartRuleTest {
     @Test
-    fun firstPoseAlreadyAboveMatStartsImmediately() {
-        assertTrue(PoseStartRule.shouldStart(lowestAboveMat = true, previousLowestAboveMat = null))
+    fun unverifiedPoseNeverStarts() {
+        assertFalse(
+            PoseStartRule.shouldStart(
+                lowestAboveMat = true,
+                previousLowestAboveMat = null,
+                humanMotionVerified = false
+            )
+        )
     }
 
     @Test
-    fun firstPoseBelowMatDoesNotStart() {
-        assertFalse(PoseStartRule.shouldStart(lowestAboveMat = false, previousLowestAboveMat = null))
+    fun firstVerifiedPoseAlreadyAboveMatStartsImmediately() {
+        assertTrue(
+            PoseStartRule.shouldStart(
+                lowestAboveMat = true,
+                previousLowestAboveMat = null,
+                humanMotionVerified = true
+            )
+        )
     }
 
     @Test
-    fun belowToAboveCrossingStarts() {
-        assertTrue(PoseStartRule.shouldStart(lowestAboveMat = true, previousLowestAboveMat = false))
+    fun firstVerifiedPoseBelowMatDoesNotStart() {
+        assertFalse(
+            PoseStartRule.shouldStart(
+                lowestAboveMat = false,
+                previousLowestAboveMat = null,
+                humanMotionVerified = true
+            )
+        )
     }
 
     @Test
-    fun remainingAboveDoesNotStartAgain() {
-        assertFalse(PoseStartRule.shouldStart(lowestAboveMat = true, previousLowestAboveMat = true))
+    fun verifiedBelowToAboveCrossingStarts() {
+        assertTrue(
+            PoseStartRule.shouldStart(
+                lowestAboveMat = true,
+                previousLowestAboveMat = false,
+                humanMotionVerified = true
+            )
+        )
+    }
+
+    @Test
+    fun verifiedRemainingAboveDoesNotStartAgain() {
+        assertFalse(
+            PoseStartRule.shouldStart(
+                lowestAboveMat = true,
+                previousLowestAboveMat = true,
+                humanMotionVerified = true
+            )
+        )
     }
 }
