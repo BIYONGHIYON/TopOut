@@ -24,13 +24,14 @@ enum MotionFinishReference: String {
 /// MotionDetector Pose Climb
 ///
 /// 기준:
-/// - 3초 매트 보정 후 현재 프레임과 3개 분석 프레임 전을 비교해 매트 주변 움직임을 찾습니다.
-/// - 움직임이 감지되면 0.5초 간격 pose tracking으로 전환합니다.
+/// - 3초 매트 보정 후 현재 프레임과 3개 분석 프레임 전을 비교합니다.
+/// - CV 탐색 영역은 매트 경계선 바로 위쪽부터 화면 높이의 40% 구간입니다.
+/// - 해당 영역에서 유의미한 변화가 감지되면 0.5초 간격 pose tracking으로 전환합니다.
 /// - 가장 낮은 pose 점이 매트 기준선 위로 올라가면 START, 다시 아래로 내려오면 FINISH로 봅니다.
 /// - 탑홀드 마스킹 사용 시 FINISH는 탑홀드와 가장 가까웠던 pose 시점을 사용합니다.
 /// - 탑홀드 마스킹 미사용 시에는 신체의 가장 높은 점이 화면상 가장 높았던 시점을 사용합니다.
 /// - 녹화 중에는 원본 START/FINISH 시각만 저장하고, 정리 완료 후 3초 여백을 더합니다.
-/// - 한 번 pose tracking에 들어가면 다음 START도 pose로 계속 찾고, 5초 이상 pose가 없으면 CV 탐색으로 복귀합니다.
+/// - 한 번 pose tracking에 들어가면 다음 START도 pose로 계속 찾고, 6초 이상 pose가 없으면 CV 탐색으로 복귀합니다.
 final class MotionDetector {
     private enum State: String {
         case idle
@@ -46,38 +47,17 @@ final class MotionDetector {
         let luma: [UInt8]
     }
 
-    private struct BandBin {
-        let x0: CGFloat
-        let x1: CGFloat
-    }
-
     private struct CalibrationSample {
-        let frame: SmallFrame
-        let referenceFrame: SmallFrame
         let energy: CGFloat
     }
 
     private struct Calibration {
-        let belowBaseline: [CGFloat]
-        let upperBaseline: [CGFloat]
+        let regionBaseline: CGFloat
     }
 
-    private struct ActiveRun {
-        let indices: [Int]
-        var count: Int { indices.count }
-    }
-
-    private struct RunScore {
-        let indices: [Int]
-        let energy: CGFloat
-        var count: Int { indices.count }
-    }
-
-    private struct BoundaryMotion {
-        let run: ActiveRun
-        let energy: CGFloat
-        let status: String
-        let secondaryEnergy: CGFloat?
+    private struct CVRegionMotion {
+        let rawSignal: CGFloat
+        let adjustedSignal: CGFloat
     }
 
     private struct PoseSnapshot {
@@ -88,7 +68,14 @@ final class MotionDetector {
     }
 
     var onEvent: ((MotionEvent) -> Void)?
-    private let q = DispatchQueue(label: "topout.motion.detector.pose.v37", qos: .userInitiated)
+    private let q = DispatchQueue(label: "topout.motion.detector.pose.v38", qos: .userInitiated)
+
+    // 카메라 프레임(최대 60fps)이 포즈 분석 직렬 큐에 계속 쌓이지 않도록
+    // 처리 대기 중에는 가장 최신 프레임 한 장만 유지합니다.
+    private let pendingFrameLock = NSLock()
+    private var latestPendingSampleBuffer: CMSampleBuffer?
+    private var isPendingFrameTaskScheduled = false
+
     private let poseRequest = VNDetectHumanBodyPoseRequest()
     private let poseCIContext = CIContext(options: [.useSoftwareRenderer: false])
     private let reliablePoseJoints: [VNHumanBodyPoseObservation.JointName] = [
@@ -105,7 +92,6 @@ final class MotionDetector {
     private var topBox: CGRect = .zero
     private var finishReference: MotionFinishReference = .closestTopHold
     private var activeCropRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)
-    private var horizontalBinCount = Cfg.motionBandBinCount
     private var cvFrameHistory: [SmallFrame] = []
 
     private var isActive = false
@@ -116,9 +102,6 @@ final class MotionDetector {
     private var calibrationStartedPTS: CMTime?
     private var calibrationSamples: [CalibrationSample] = []
     private var calibration: Calibration?
-
-    private var belowBins: [BandBin] = []
-    private var upperBins: [BandBin] = []
 
     private var lastPosePTS: CMTime?
     private var lastPoseSeenPTS: CMTime?
@@ -137,8 +120,7 @@ final class MotionDetector {
         topBox: CGRect?,
         finishReference: MotionFinishReference,
         referenceImage _: UIImage?,
-        activeCropRect: CGRect,
-        horizontalBinCount: Int = Cfg.motionBandBinCount
+        activeCropRect: CGRect
     ) {
         q.async { [weak self] in
             guard let self else { return }
@@ -146,10 +128,8 @@ final class MotionDetector {
             self.topBox = topBox.map { self.clamped($0) } ?? .zero
             self.finishReference = finishReference
             self.activeCropRect = self.clamped(activeCropRect)
-            self.horizontalBinCount = max(1, horizontalBinCount)
-            self.buildRegionsLocked()
             self.resetStateLocked(keepConfig: true)
-            self.debug("🎯 motion configured pose climb: matPoints=\(matLine.count), finishReference=\(finishReference.rawValue), topBox=\(self.topBox), crop=\(self.activeCropRect), bins=\(self.horizontalBinCount), cvLag=\(Cfg.motionCVComparisonFrameLag)")
+            self.debug("🎯 motion configured pose climb: matPoints=\(matLine.count), finishReference=\(finishReference.rawValue), topBox=\(self.topBox), crop=\(self.activeCropRect), cvRegionAboveMat=\(Cfg.motionCVRegionAboveMatHeightRatio), cvLag=\(Cfg.motionCVComparisonFrameLag)")
         }
     }
 
@@ -182,12 +162,50 @@ final class MotionDetector {
     }
 
     func update(_ sampleBuffer: CMSampleBuffer) {
+        pendingFrameLock.lock()
+        latestPendingSampleBuffer = sampleBuffer
+
+        guard !isPendingFrameTaskScheduled else {
+            pendingFrameLock.unlock()
+            return
+        }
+
+        isPendingFrameTaskScheduled = true
+        pendingFrameLock.unlock()
+
         q.async { [weak self] in
-            self?.process(sampleBuffer)
+            self?.processLatestPendingFrame()
         }
     }
 
     // MARK: Processing
+
+    /// 한 번에 프레임 하나만 분석 큐로 넘깁니다.
+    /// 분석 중 새 프레임이 들어오면 이전 대기 프레임을 교체하고 최신 프레임만 다음 작업으로 처리합니다.
+    /// 다음 작업을 별도로 다시 enqueue하여 configure/stop 같은 상태 변경 작업이 프레임 처리 사이에 실행될 수 있게 합니다.
+    private func processLatestPendingFrame() {
+        pendingFrameLock.lock()
+        let sampleBuffer = latestPendingSampleBuffer
+        latestPendingSampleBuffer = nil
+        pendingFrameLock.unlock()
+
+        if let sampleBuffer {
+            autoreleasepool {
+                process(sampleBuffer)
+            }
+        }
+
+        pendingFrameLock.lock()
+        if latestPendingSampleBuffer != nil {
+            pendingFrameLock.unlock()
+            q.async { [weak self] in
+                self?.processLatestPendingFrame()
+            }
+        } else {
+            isPendingFrameTaskScheduled = false
+            pendingFrameLock.unlock()
+        }
+    }
 
     private func process(_ sampleBuffer: CMSampleBuffer) {
         guard isActive, !matLine.isEmpty else { return }
@@ -221,10 +239,12 @@ final class MotionDetector {
         guard let base = comparisonFrame, let calibration else { return }
         guard base.width == frame.width, base.height == frame.height else { return }
 
-        let belowValues = adjustedBandSignals(frame: frame, base: base, bins: belowBins, kind: .below, baseline: calibration.belowBaseline)
-        let upperValues = adjustedBandSignals(frame: frame, base: base, bins: upperBins, kind: .upper, baseline: calibration.upperBaseline)
-        let boundaryMotion = classifyBoundaryMotion(belowValues: belowValues, upperValues: upperValues)
-        if boundaryMotion != nil {
+        let rawRegionSignal = cvSearchRegionDiffScore(frame: frame, base: base)
+        let adjustedRegionSignal = Swift.max(0, rawRegionSignal - calibration.regionBaseline - Cfg.motionBaseDiffMargin)
+        let cvMotion: CVRegionMotion? = adjustedRegionSignal >= Cfg.motionCVRegionActiveThreshold
+            ? CVRegionMotion(rawSignal: rawRegionSignal, adjustedSignal: adjustedRegionSignal)
+            : nil
+        if cvMotion != nil {
             boostMotionAnalysis(until: pts + CMTime(seconds: Cfg.motionAnalysisBoostSeconds, preferredTimescale: 600))
         }
 
@@ -240,14 +260,12 @@ final class MotionDetector {
             return snapshot
         }
 
-        handleWaitingBoundary(boundaryMotion, pts: pts, pose: runPose)
+        handleWaitingCVRegion(cvMotion, pts: pts, pose: runPose)
 
-        if Cfg.motionDebugLog, (boundaryMotion != nil || latestPose != nil) {
+        if Cfg.motionDebugLog, (cvMotion != nil || latestPose != nil) {
             debugState(
                 pts: pts,
-                belowActive: activeIndices(belowValues),
-                upperActive: activeIndices(upperValues),
-                boundaryMotion: boundaryMotion,
+                cvMotion: cvMotion,
                 latestPose: latestPose,
                 poseReason: poseReason
             )
@@ -265,9 +283,7 @@ final class MotionDetector {
         if Cfg.motionDebugLog {
             debugState(
                 pts: pts,
-                belowActive: [],
-                upperActive: [],
-                boundaryMotion: nil,
+                cvMotion: nil,
                 latestPose: snapshot,
                 poseReason: state == .climbing ? "climbingPose" : "trackingPose"
             )
@@ -276,9 +292,7 @@ final class MotionDetector {
 
     private func debugState(
         pts: CMTime,
-        belowActive: [Int],
-        upperActive: [Int],
-        boundaryMotion: BoundaryMotion?,
+        cvMotion: CVRegionMotion?,
         latestPose: PoseSnapshot?,
         poseReason: String
     ) {
@@ -289,12 +303,16 @@ final class MotionDetector {
             poseText = "-"
         }
 
-        let boundaryText: String
-        if let boundaryMotion {
-            let secondary = boundaryMotion.secondaryEnergy.map { String(format: "%.2f", Double($0)) } ?? "-"
-            boundaryText = "\(formatIndices(boundaryMotion.run.indices))/\(boundaryMotion.status)/e=\(String(format: "%.2f", Double(boundaryMotion.energy)))/s=\(secondary)"
+        let cvText: String
+        if let cvMotion {
+            cvText = String(
+                format: "raw=%.3f adjusted=%.3f threshold=%.3f",
+                Double(cvMotion.rawSignal),
+                Double(cvMotion.adjustedSignal),
+                Double(Cfg.motionCVRegionActiveThreshold)
+            )
         } else {
-            boundaryText = "-"
+            cvText = "-"
         }
 
         let noPoseAge: String
@@ -304,14 +322,7 @@ final class MotionDetector {
             noPoseAge = "-"
         }
 
-        debug(String(format: "📈 motion bins below=%@ upper=%@ | boundary=%@ | pose=%@ reason=%@ noPoseAge=%@ state=%@",
-                     formatIndices(belowActive),
-                     formatIndices(upperActive),
-                     boundaryText,
-                     poseText,
-                     poseReason,
-                     noPoseAge,
-                     state.rawValue))
+        debug("📈 cv region=\(cvText) | pose=\(poseText) reason=\(poseReason) noPoseAge=\(noPoseAge) state=\(state.rawValue)")
     }
 
     private func currentAnalysisInterval(at pts: CMTime) -> TimeInterval {
@@ -342,10 +353,8 @@ final class MotionDetector {
         if calibrationStartedPTS == nil { calibrationStartedPTS = pts }
 
         if let base = referenceFrame, base.width == frame.width, base.height == frame.height {
-            let below = belowBins.map { baseDiffScore(frame: frame, base: base, bin: $0, kind: .below) }.reduce(CGFloat(0), +)
-            let upper = upperBins.map { baseDiffScore(frame: frame, base: base, bin: $0, kind: .upper) }.reduce(CGFloat(0), +)
             calibrationSamples.append(
-                CalibrationSample(frame: frame, referenceFrame: base, energy: below + upper)
+                CalibrationSample(energy: cvSearchRegionDiffScore(frame: frame, base: base))
             )
         }
 
@@ -365,33 +374,32 @@ final class MotionDetector {
         let accepted = samples.filter { $0.energy <= threshold }
         let used = accepted.isEmpty ? samples : accepted
 
-        let belowBase = makeBaseline(samples: used, bins: belowBins, kind: .below)
-        let upperBase = makeBaseline(samples: used, bins: upperBins, kind: .upper)
+        let regionBaseline = median(used.map { $0.energy })
 
-        calibration = Calibration(
-            belowBaseline: belowBase,
-            upperBaseline: upperBase
-        )
+        calibration = Calibration(regionBaseline: regionBaseline)
 
         state = .waiting
         calibrationStartedPTS = nil
         calibrationSamples.removeAll()
 
-        debug(String(format: "🧪 rolling motion base ready: lag=%d samples=%d accepted=%d rejected=%d belowBase=%@ upperBase=%@",
+        debug(String(format: "🧪 rolling CV region base ready: lag=%d samples=%d accepted=%d rejected=%d baseline=%.3f regionHeight=%.2f",
                      Cfg.motionCVComparisonFrameLag, samples.count, used.count, samples.count - used.count,
-                     shortValues(belowBase), shortValues(upperBase)))
+                     Double(regionBaseline), Double(Cfg.motionCVRegionAboveMatHeightRatio)))
     }
 
     // MARK: State Machine
 
-    private func handleWaitingBoundary(
-        _ motion: BoundaryMotion?,
+    private func handleWaitingCVRegion(
+        _ motion: CVRegionMotion?,
         pts: CMTime,
         pose: (_ reason: String) -> PoseSnapshot?
     ) {
         guard let motion else { return }
 
-        enterPoseTrackingFromCV(at: pts, reason: "boundary motion \(boundaryRunKey(motion.run))")
+        enterPoseTrackingFromCV(
+            at: pts,
+            reason: String(format: "CV region changed adjusted=%.3f", Double(motion.adjustedSignal))
+        )
         guard let snapshot = pose("cvMotionPose") else { return }
         handlePoseTrackingSnapshot(snapshot, pts: pts)
     }
@@ -688,10 +696,12 @@ final class MotionDetector {
     }
 
     private func isAboveMatLine(_ point: CGPoint, tolerance: CGFloat) -> Bool {
-        // 사용자가 그은 매트 경계선 바로 위가 아니라, CV에서 쓰는 upper band의 최상단을
-        // 실질적인 통과 기준으로 사용합니다. 현재 band는 5%이며, y값은 위로 갈수록 작아지므로
-        // 가장 낮은 pose 점이 이 선을 넘어야 start로 인정됩니다.
-        let stricterBoundary = Swift.max(0.0, lineY(at: point.x) - Swift.max(0.02, Cfg.motionMatBandHeightRatio))
+        // CV 탐색 영역 변경과 무관하게 기존 start 통과 기준은 유지합니다.
+        // 가장 낮은 pose 점이 매트선보다 화면 높이의 5% 위로 올라와야 start로 인정합니다.
+        let stricterBoundary = Swift.max(
+            0.0,
+            lineY(at: point.x) - Swift.max(0.02, Cfg.motionPoseStartAboveMatOffsetRatio)
+        )
         return point.y <= stricterBoundary + tolerance
     }
 
@@ -760,10 +770,6 @@ final class MotionDetector {
         return sqrt(dx * dx + dy * dy)
     }
 
-    private func boundaryRunKey(_ run: ActiveRun) -> String {
-        guard let first = run.indices.min(), let last = run.indices.max() else { return "-" }
-        return "\(first)-\(last)"
-    }
 
     private func uniquePoints(_ points: [CGPoint]) -> [CGPoint] {
         var result: [CGPoint] = []
@@ -774,120 +780,44 @@ final class MotionDetector {
         return result
     }
 
-    // MARK: Signals
+    // MARK: CV Search Region
 
-    private enum BandKind { case below, upper }
+    /// 매트 경계선 바로 위쪽에서 화면 높이의 40%만큼을 전 너비로 비교합니다.
+    /// 현재 프레임과 3개 분석 프레임 전의 픽셀 차이 비율을 반환합니다.
+    private func cvSearchRegionDiffScore(frame: SmallFrame, base: SmallFrame) -> CGFloat {
+        guard frame.width == base.width, frame.height == base.height else { return 0 }
 
-    private func adjustedBandSignals(frame: SmallFrame, base: SmallFrame, bins: [BandBin], kind: BandKind, baseline: [CGFloat]) -> [CGFloat] {
-        bins.enumerated().map { i, bin in
-            let raw = baseDiffScore(frame: frame, base: base, bin: bin, kind: kind)
-            let baseValue = i < baseline.count ? baseline[i] : 0
-            return Swift.max(0, raw - baseValue - Cfg.motionBaseDiffMargin)
-        }
-    }
+        let width = frame.width
+        let height = frame.height
+        let regionHeight = clamp(Cfg.motionCVRegionAboveMatHeightRatio, min: 0.02, max: 1.0)
+        let threshold = Int(Cfg.motionPixelDiff)
 
-    private func activeIndices(_ values: [CGFloat]) -> [Int] {
-        values.enumerated().compactMap { idx, value in
-            value >= Cfg.motionBinActiveThreshold ? idx : nil
-        }
-    }
+        var changed = 0
+        var total = 0
 
-    private func classifyBoundaryMotion(belowValues: [CGFloat], upperValues: [CGFloat]) -> BoundaryMotion? {
-        let count = Swift.min(belowValues.count, upperValues.count)
-        guard count > 0 else { return nil }
+        for x in 0..<width {
+            let xNorm = (CGFloat(x) + 0.5) / CGFloat(width)
+            let boundary = lineY(at: xNorm)
+            let yStartNorm = Swift.max(0.0, boundary - regionHeight)
+            let yEndNorm = boundary
+            guard yEndNorm > yStartNorm else { continue }
 
-        let combined = (0..<count).map { idx in
-            Swift.max(belowValues[idx], upperValues[idx])
-        }
-        let active = combined.enumerated().compactMap { idx, value in
-            value >= Cfg.motionBinActiveThreshold ? idx : nil
-        }
-        let runs = scoredRuns(indices: active, values: combined)
-        guard !runs.isEmpty else { return nil }
+            let y0 = Swift.max(0, Swift.min(height - 1, Int(floor(yStartNorm * CGFloat(height)))))
+            let y1 = Swift.max(y0 + 1, Swift.min(height, Int(ceil(yEndNorm * CGFloat(height)))))
 
-        let candidates = runs.filter { $0.count >= 1 && $0.count <= Cfg.motionBoundaryPrimaryMaxBins }
-        guard let primary = candidates.sorted(by: strongerRunFirst).first else { return nil }
-
-        let others = runs.filter { $0.indices != primary.indices }.sorted(by: strongerRunFirst)
-        guard let second = others.first else {
-            return BoundaryMotion(run: ActiveRun(indices: primary.indices), energy: primary.energy, status: "single", secondaryEnergy: nil)
-        }
-
-        let secondIsSmallNoise = second.count <= Cfg.motionBoundaryNoiseMaxBins && second.energy <= primary.energy * Cfg.motionBoundaryNoiseEnergyRatio
-        if secondIsSmallNoise {
-            return BoundaryMotion(run: ActiveRun(indices: primary.indices), energy: primary.energy, status: "noiseIgnored", secondaryEnergy: second.energy)
-        }
-
-        let primaryDominates = primary.energy >= second.energy * Cfg.motionBoundaryDominanceRatio ||
-            (primary.energy - second.energy) >= Cfg.motionBoundaryDominanceMargin
-        if primaryDominates {
-            return BoundaryMotion(run: ActiveRun(indices: primary.indices), energy: primary.energy, status: "dominantInShake", secondaryEnergy: second.energy)
-        }
-
-        // 비슷한 크기의 국소 움직임이 여러 곳에서 동시에 잡히면 전체 흔들림으로 봅니다.
-        return nil
-    }
-
-    private func scoredRuns(indices: [Int], values: [CGFloat]) -> [RunScore] {
-        guard !indices.isEmpty else { return [] }
-        let sorted = Array(Set(indices)).sorted()
-        var result: [RunScore] = []
-        var current: [Int] = []
-        var currentEnergy: CGFloat = 0
-
-        func flush() {
-            guard !current.isEmpty else { return }
-            result.append(RunScore(indices: current, energy: currentEnergy))
-            current.removeAll(keepingCapacity: true)
-            currentEnergy = 0
-        }
-
-        for idx in sorted where values.indices.contains(idx) {
-            if let last = current.last, idx != last + 1 {
-                flush()
+            for y in y0..<y1 {
+                let idx = y * width + x
+                if abs(Int(frame.luma[idx]) - Int(base.luma[idx])) >= threshold {
+                    changed += 1
+                }
+                total += 1
             }
-            current.append(idx)
-            currentEnergy += values[idx]
         }
-        flush()
-        return result
-    }
 
-    private func strongerRunFirst(_ lhs: RunScore, _ rhs: RunScore) -> Bool {
-        if lhs.energy != rhs.energy { return lhs.energy > rhs.energy }
-        if lhs.count != rhs.count { return lhs.count > rhs.count }
-        return (lhs.indices.first ?? 0) < (rhs.indices.first ?? 0)
-    }
-
-    private func makeBaseline(samples: [CalibrationSample], bins: [BandBin], kind: BandKind) -> [CGFloat] {
-        bins.map { bin in
-            var values: [CGFloat] = []
-            values.reserveCapacity(samples.count)
-            for sample in samples {
-                values.append(
-                    baseDiffScore(frame: sample.frame, base: sample.referenceFrame, bin: bin, kind: kind)
-                )
-            }
-            return median(values)
-        }
+        return total > 0 ? CGFloat(changed) / CGFloat(total) : 0
     }
 
     // MARK: Region Geometry
-
-    private func buildRegionsLocked() {
-        belowBins = buildBandBins()
-        upperBins = buildBandBins()
-    }
-
-    private func buildBandBins() -> [BandBin] {
-        let count = Swift.max(1, horizontalBinCount)
-        return (0..<count).map { i in
-            BandBin(
-                x0: CGFloat(i) / CGFloat(count),
-                x1: CGFloat(i + 1) / CGFloat(count)
-            )
-        }
-    }
 
     private func lineY(at x: CGFloat) -> CGFloat {
         guard !matLine.isEmpty else { return Cfg.matDefaultY }
@@ -915,51 +845,6 @@ final class MotionDetector {
         let maxX = clamp(r.maxX, min: 0, max: 1)
         let maxY = clamp(r.maxY, min: 0, max: 1)
         return CGRect(x: minX, y: minY, width: Swift.max(0, maxX - minX), height: Swift.max(0, maxY - minY))
-    }
-
-    // MARK: Base Diff
-
-    private func baseDiffScore(frame: SmallFrame, base: SmallFrame, bin: BandBin, kind: BandKind) -> CGFloat {
-        guard frame.width == base.width, frame.height == base.height else { return 0 }
-
-        let width = frame.width
-        let height = frame.height
-        let x0 = Swift.max(0, Swift.min(width - 1, Int(floor(bin.x0 * CGFloat(width)))))
-        let x1 = Swift.max(x0 + 1, Swift.min(width, Int(ceil(bin.x1 * CGFloat(width)))))
-        let bandHeight = Swift.max(0.02, Cfg.motionMatBandHeightRatio)
-        let threshold = Int(Cfg.motionPixelDiff)
-
-        var changed = 0
-        var total = 0
-
-        for x in x0..<x1 {
-            let xNorm = (CGFloat(x) + 0.5) / CGFloat(width)
-            let boundary = lineY(at: xNorm)
-            let yStartNorm: CGFloat
-            let yEndNorm: CGFloat
-
-            switch kind {
-            case .below:
-                yStartNorm = boundary
-                yEndNorm = Swift.min(1.0, boundary + bandHeight)
-            case .upper:
-                yStartNorm = Swift.max(0.0, boundary - bandHeight)
-                yEndNorm = boundary
-            }
-
-            guard yEndNorm > yStartNorm else { continue }
-
-            let y0 = Swift.max(0, Swift.min(height - 1, Int(floor(yStartNorm * CGFloat(height)))))
-            let y1 = Swift.max(y0 + 1, Swift.min(height, Int(ceil(yEndNorm * CGFloat(height)))))
-
-            for y in y0..<y1 {
-                let idx = y * width + x
-                if abs(Int(frame.luma[idx]) - Int(base.luma[idx])) >= threshold { changed += 1 }
-                total += 1
-            }
-        }
-
-        return total > 0 ? CGFloat(changed) / CGFloat(total) : 0
     }
 
     // MARK: Frame Conversion
@@ -1059,9 +944,6 @@ final class MotionDetector {
             topBox = .zero
             finishReference = .closestTopHold
             activeCropRect = CGRect(x: 0, y: 0, width: 1, height: 1)
-            horizontalBinCount = Cfg.motionBandBinCount
-            belowBins.removeAll()
-            upperBins.removeAll()
         }
     }
 
@@ -1102,13 +984,7 @@ final class MotionDetector {
         Swift.max(lo, Swift.min(v, hi))
     }
 
-    private func formatIndices(_ values: [Int]) -> String {
-        values.isEmpty ? "-" : values.map(String.init).joined(separator: ",")
-    }
 
-    private func shortValues(_ values: [CGFloat]) -> String {
-        "[" + values.map { String(format: "%.2f", Double($0)) }.joined(separator: ",") + "]"
-    }
 
     private func debug(_ text: @autoclosure () -> String) {
         if Cfg.motionDebugLog { print(text()) }

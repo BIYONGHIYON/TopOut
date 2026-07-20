@@ -27,8 +27,7 @@ extension HoldVC {
                     topBox: normalizedTopBox,
                     finishReference: .closestTopHold,
                     referenceImage: referenceImage,
-                    activeCropRect: activeSourceCropRect,
-                    horizontalBinCount: activeHorizontalBinCount
+                    activeCropRect: activeSourceCropRect
                 )
             } else {
                 motionDetector.stop()
@@ -42,8 +41,7 @@ extension HoldVC {
                     topBox: nil,
                     finishReference: .highestPosePoint,
                     referenceImage: referenceImage,
-                    activeCropRect: activeSourceCropRect,
-                    horizontalBinCount: activeHorizontalBinCount
+                    activeCropRect: activeSourceCropRect
                 )
             } else {
                 motionDetector.stop()

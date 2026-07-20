@@ -288,7 +288,6 @@ final class HoldVC: UIViewController {
     var recordingElapsedTimer: Timer?
     var recordingElapsedStartDate: Date?
     var recordingStatusMessage: String?
-    var samReadyPollWorkItem: DispatchWorkItem?
     var hasHiddenLaunchScreen = false
 
     // MARK: Recording Stability
@@ -365,7 +364,8 @@ final class HoldVC: UIViewController {
 
         // Do not force Dark Mode here.
         // The custom launch image must read the device/system appearance first.
-        // After the launch screen is hidden, the main camera UI is forced to Dark Mode in checkSAMReadyAndHideLaunch().
+        // The launch image follows the device appearance.
+        // The main camera UI switches to Dark Mode as soon as the camera is ready.
 
         setScreenAwake(true)
         UIDevice.current.beginGeneratingDeviceOrientationNotifications()
@@ -382,9 +382,7 @@ final class HoldVC: UIViewController {
         setupMotionCallbacks()
         registerTraitChangeHandlers()
         showLaunchScreen()
-        loadModelsInBackground()
-        requestCameraAccess()
-        startSAMReadinessPolling()
+        preloadMobileSAMForLaunchThenRequestCameraAccess()
     }
 
     override func viewDidLayoutSubviews() {

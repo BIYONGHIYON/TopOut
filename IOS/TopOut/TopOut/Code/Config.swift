@@ -72,24 +72,22 @@ enum Cfg {
     static let motionCountdownSeconds: TimeInterval = 3.0
     static let motionCalibrationMADFactor: CGFloat = 2.8
     static let motionCalibrationMinOutlierDelta: CGFloat = 0.035
-    static let motionMatBandHeightRatio: CGFloat = 0.05
-    static let motionBandBinCount = 10
-    static let motionBinActiveThreshold: CGFloat = 0.08
+    // CV 탐색 영역: 매트 경계선 바로 위쪽부터 화면 높이의 40%
+    static let motionCVRegionAboveMatHeightRatio: CGFloat = 0.40
+    // 전체 탐색 영역에서 기준 노이즈를 제외한 변화 픽셀 비율
+    static let motionCVRegionActiveThreshold: CGFloat = 0.04
     static let motionBaseDiffMargin: CGFloat = 0.025
-    static let motionBoundaryPrimaryMaxBins = 3
-    static let motionBoundaryNoiseMaxBins = 2
-    static let motionBoundaryNoiseEnergyRatio: CGFloat = 0.55
-    static let motionBoundaryDominanceRatio: CGFloat = 2.2
-    static let motionBoundaryDominanceMargin: CGFloat = 0.10
 
     // MARK: Pose Detection
     static let motionPoseStartVerificationInterval: TimeInterval = 0.5
     static let motionPoseTrackingInterval: TimeInterval = 0.5
     static let motionPoseInputMaxLongSide: CGFloat = 384
     static let motionPoseMinConfidence: Float = 0.25
-    static let motionPoseNoPoseRetrySeconds: TimeInterval = 5.0
+    static let motionPoseNoPoseRetrySeconds: TimeInterval = 6.0
     static let motionClipBoundaryPaddingSeconds: TimeInterval = 3.0
     static let motionShortClipMinimumDetectionSeconds: TimeInterval = 2.0
     static let motionShortClipMergeGapSeconds: TimeInterval = 3.0
+    // 기존 start 판정 유지: 가장 낮은 관절이 매트선보다 화면 높이의 5% 위로 올라오면 시작
+    static let motionPoseStartAboveMatOffsetRatio: CGFloat = 0.05
     static let motionPoseMatCrossingTolerance: CGFloat = 0.02
 }

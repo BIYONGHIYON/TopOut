@@ -28,7 +28,9 @@ extension HoldVC {
             self.isDeveloperModeEnabled = developerModeEnabled
             self.saveUserSettings()
             self.view.setNeedsLayout()
-            self.showCameraUI()
+            self.applySelectedCaptureFormatIfPossible { [weak self] in
+                self?.showCameraUI()
+            }
         }
 
         let nav = OrientationLockedNavigationController(rootViewController: vc)

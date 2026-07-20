@@ -183,6 +183,7 @@ extension HoldVC {
                 self.installPreviewLayerIfNeeded()
                 self.updateCameraOrientationIfPossible()
                 self.startCamera()
+                self.hideLaunchScreenAndShowCameraUIIfNeeded()
                 self.view.setNeedsLayout()
             }
         }
@@ -610,7 +611,15 @@ final class VideoFrameSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
     private var isRecording = false
     private var isMotionDetectionEnabled = true
-    private var latestPixelBuffer: CVPixelBuffer?
+
+    private struct FrameCaptureRequest {
+        let id: UUID
+        let aspectRatio: CGFloat
+        let maxLongSide: CGFloat
+        let completion: (UIImage?) -> Void
+    }
+
+    private var pendingFrameCapture: FrameCaptureRequest?
 
     init(recorder: ContinuousRecorder, motionDetector: MotionDetector) {
         self.recorder = recorder
@@ -636,22 +645,25 @@ final class VideoFrameSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         maxLongSide: CGFloat,
         completion: @escaping (UIImage?) -> Void
     ) {
-        stateQ.async { [weak self] in
-            guard let self, let buffer = self.latestPixelBuffer else {
-                DispatchQueue.main.async { completion(nil) }
-                return
-            }
+        let request = FrameCaptureRequest(
+            id: UUID(),
+            aspectRatio: aspectRatio,
+            maxLongSide: maxLongSide,
+            completion: completion
+        )
 
-            DispatchQueue.global(qos: .userInitiated).async { [ciContext, buffer] in
-                let image = autoreleasepool {
-                    Self.makeCroppedImage(
-                        from: buffer,
-                        aspectRatio: aspectRatio,
-                        maxLongSide: maxLongSide,
-                        context: ciContext
-                    )
-                }
-                DispatchQueue.main.async { completion(image) }
+        // Keep preview running at the selected camera FPS, but do not retain every preview frame.
+        // Only the next video frame is consumed when the user taps Ready.
+        stateQ.async { [weak self] in
+            self?.pendingFrameCapture = request
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self else { return }
+            self.stateQ.async { [weak self] in
+                guard let self, self.pendingFrameCapture?.id == request.id else { return }
+                self.pendingFrameCapture = nil
+                DispatchQueue.main.async { request.completion(nil) }
             }
         }
     }
@@ -664,9 +676,15 @@ final class VideoFrameSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
         let mediaType = CMFormatDescriptionGetMediaType(formatDescription)
 
-        let recordingState = stateQ.sync { (isRecording, isMotionDetectionEnabled) }
-        let shouldRecord = recordingState.0
-        let shouldRunMotionDetection = recordingState.1
+        let state = stateQ.sync { () -> (recording: Bool, motionDetection: Bool, capture: FrameCaptureRequest?) in
+            let capture = mediaType == kCMMediaType_Video ? pendingFrameCapture : nil
+            if capture != nil {
+                pendingFrameCapture = nil
+            }
+            return (isRecording, isMotionDetectionEnabled, capture)
+        }
+        let shouldRecord = state.recording
+        let shouldRunMotionDetection = state.motionDetection
 
         if mediaType == kCMMediaType_Audio {
             guard shouldRecord else { return }
@@ -674,11 +692,18 @@ final class VideoFrameSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             return
         }
 
-        if !shouldRecord, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
-            // 준비완료 캡처에 사용할 최신 프레임만 보관합니다.
-            // 녹화 중에는 캡처 요청이 없으므로 매 프레임 state queue에 저장하지 않아 배터리/CPU 사용을 줄입니다.
-            stateQ.async { [weak self, pixelBuffer] in
-                self?.latestPixelBuffer = pixelBuffer
+        if let request = state.capture,
+           let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+            DispatchQueue.global(qos: .userInitiated).async { [ciContext, pixelBuffer] in
+                let image = autoreleasepool {
+                    Self.makeCroppedImage(
+                        from: pixelBuffer,
+                        aspectRatio: request.aspectRatio,
+                        maxLongSide: request.maxLongSide,
+                        context: ciContext
+                    )
+                }
+                DispatchQueue.main.async { request.completion(image) }
             }
         }
 

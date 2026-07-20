@@ -262,10 +262,6 @@ extension HoldVC {
 
 
     // MARK: Launch / Model Loading
-    var isSAMReady: Bool {
-        encoder != nil && decoder != nil
-    }
-
     func showLaunchScreen() {
         hasHiddenLaunchScreen = false
         launchImageView.image = launchImageForCurrentAppearance()
@@ -280,32 +276,15 @@ extension HoldVC {
         return UIImage(named: imageName)
     }
 
-    func startSAMReadinessPolling() {
-        samReadyPollWorkItem?.cancel()
-
-        let item = DispatchWorkItem { [weak self] in
-            self?.checkSAMReadyAndHideLaunch()
-        }
-        samReadyPollWorkItem = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: item)
-    }
-
-    func checkSAMReadyAndHideLaunch() {
+    func hideLaunchScreenAndShowCameraUIIfNeeded() {
         guard !hasHiddenLaunchScreen else { return }
+        hasHiddenLaunchScreen = true
 
-        if isSAMReady {
-            hasHiddenLaunchScreen = true
-
-            // Keep the launch screen on the device/system appearance,
-            // then force the actual capture UI to Dark Mode right before showing it.
-            overrideUserInterfaceStyle = .dark
-
-            launchImageView.isHidden = true
-            showCameraUI()
-            return
-        }
-
-        startSAMReadinessPolling()
+        // MobileSAM은 시작 썸네일이 표시되는 동안 먼저 로드됩니다.
+        // 모델 로딩 완료 후에만 카메라 세션을 구성·실행하므로 두 고부하 작업이 겹치지 않습니다.
+        overrideUserInterfaceStyle = .dark
+        launchImageView.isHidden = true
+        showCameraUI()
     }
 
     func registerTraitChangeHandlers() {
@@ -404,10 +383,10 @@ extension HoldVC {
         let hasRecordingStarted = recordingElapsedStartDate != nil
 
         readyBtn.isHidden = isRecording
-        readyBtn.isEnabled = !isRecording && isSAMReady
-        settingsBtn.isHidden = isRecording || !isSAMReady
+        readyBtn.isEnabled = !isRecording && isCameraReady && !isBusy
+        settingsBtn.isHidden = isRecording
         settingsBtn.isEnabled = !isRecording && recState == .idle
-        zoomLabel.isHidden = isRecording || !isSAMReady
+        zoomLabel.isHidden = isRecording
         manualStopBtn.isHidden = !isRecording || usesPowerSavingScreen || !hasRecordingStarted
         manualStopBtn.isEnabled = isRecording && hasRecordingStarted
         livePreviewToggleButton.isHidden = !isRecording || !hasRecordingStarted
@@ -655,20 +634,45 @@ extension HoldVC {
             emb = nil
         }
 
+        let boundaryRequestID = selectionRequestID
         if isAutoClipDetectionEnabled {
-            let detectedLine = MatDetector.detect(in: image, horizontalBinCount: activeHorizontalBinCount)
-            matLinePoints = detectedLine
-            matLineView.setPoints(detectedLine)
-            matLineView.isHidden = false
+            // 추론 전 75% 기본선을 먼저 표시하면 완료 시 선이 순간 이동해 보입니다.
+            // 추론 중에는 선을 숨기고, 최종 예측 또는 fallback을 한 번만 표시합니다.
+            matLinePoints = []
+            matLineView.clear()
+            matLineView.isHidden = true
+            recordBtn.isEnabled = false
+            setLoading(true)
 
             if requiresTopHoldSelection {
-                selectHint.text = "탑홀드를 탭하세요 · 파란 점으로 매트 경계를 보정하세요"
-                selectTipLabel.text = "Tip. 작은 홀드는 확대해서 선택할 수 있어요"
-                recordBtn.isEnabled = false
+                selectHint.text = "AI가 매트 경계를 분석하고 있어요"
             } else {
-                selectHint.text = "파란 점으로 매트 경계를 보정한 뒤 녹화 시작을 눌러주세요"
-                selectTipLabel.text = "Tip. 파란 점은 위아래로 움직일 수 있어요"
-                recordBtn.isEnabled = detectedLine.count >= 2
+                selectHint.text = "AI가 매트 경계를 분석하고 있어요"
+            }
+            selectTipLabel.text = "Tip. 분석이 끝나면 경계선을 직접 보정할 수 있어요"
+
+            isBusy = true
+            detectMatBoundaryWithMobileSAM(in: image) { [weak self] detectedLine in
+                guard let self else { return }
+                guard self.selectionRequestID == boundaryRequestID,
+                      self.mode == .select,
+                      self.frameImage === image else { return }
+
+                self.isBusy = false
+                self.matLinePoints = detectedLine
+                self.matLineView.setPoints(detectedLine)
+                self.matLineView.isHidden = false
+                self.setLoading(false)
+
+                if self.requiresTopHoldSelection {
+                    self.selectHint.text = "탑홀드를 탭하세요 · 파란 점으로 매트 경계를 보정하세요"
+                    self.selectTipLabel.text = "Tip. 작은 홀드는 확대해서 선택할 수 있어요"
+                    self.warmUpEmbedding(for: image)
+                } else {
+                    self.selectHint.text = "파란 점으로 매트 경계를 보정한 뒤 녹화 시작을 눌러주세요"
+                    self.selectTipLabel.text = "Tip. 파란 점은 위아래로 움직일 수 있어요"
+                    self.recordBtn.isEnabled = detectedLine.count >= 2
+                }
             }
         } else {
             matLinePoints = []
@@ -693,10 +697,12 @@ extension HoldVC {
         selectTipLabel.isHidden = !isHelpEnabled
         selectView.isHidden = false
         retakeBtn.isEnabled = true
-        setLoading(false)
+        if !isAutoClipDetectionEnabled {
+            setLoading(false)
+        }
         view.setNeedsLayout()
 
-        if requiresTopHoldSelection {
+        if requiresTopHoldSelection && !isAutoClipDetectionEnabled {
             warmUpEmbedding(for: image)
         }
     }
@@ -706,9 +712,13 @@ extension HoldVC {
     }
 
     func showCameraError(_ message: String) {
+        if !hasHiddenLaunchScreen {
+            hideLaunchScreenAndShowCameraUIIfNeeded()
+        }
         previewTipLabel.isHidden = true
         livePreviewToggleButton.isHidden = true
         camHint.text = message
+        camHint.isHidden = false
         readyBtn.isEnabled = false
     }
 
@@ -724,6 +734,7 @@ extension HoldVC {
         frameImage = nil
         pixels = nil
         emb = nil
+        isBusy = false
 
         imgView.image = nil
         selectOverlayView.image = nil

@@ -3,15 +3,27 @@ import UIKit
 import CoreML
 
 extension HoldVC {
-    func loadModelsInBackground() {
+    /// 앱 시작 썸네일이 보이는 동안 MobileSAM을 먼저 메모리에 올립니다.
+    /// 카메라 권한 요청·세션 구성·startRunning은 모델 로딩이 끝난 뒤에만 시작해
+    /// 모델 초기화와 카메라 초기화가 동시에 기기 자원을 점유하지 않도록 합니다.
+    func preloadMobileSAMForLaunchThenRequestCameraAccess() {
         workQ.async { [weak self] in
+            guard let self else { return }
+
             do {
-                try self?.loadModelsIfNeeded()
+                try self.loadModelsIfNeeded()
             } catch {
+                // 모델 로딩에 실패해도 카메라 사용 자체는 허용합니다.
+                // 이후 매트 경계 탐지는 기존 75% fallback으로 안전하게 동작합니다.
+            }
+
+            DispatchQueue.main.async { [weak self] in
+                self?.requestCameraAccess()
             }
         }
     }
 
+    // Loaded during the launch thumbnail screen before the camera session is configured.
     func loadModelsIfNeeded() throws {
         if encoder != nil, decoder != nil { return }
 
