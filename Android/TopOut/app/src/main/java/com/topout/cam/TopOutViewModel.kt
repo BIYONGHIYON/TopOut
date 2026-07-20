@@ -10,7 +10,6 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.viewModelScope
 import com.topout.cam.camera.CameraEngine
 import com.topout.cam.data.SettingsRepository
-import com.topout.cam.detection.MatBoundaryDetector
 import com.topout.cam.detection.MotionEvent
 import com.topout.cam.detection.MotionFinishReference
 import com.topout.cam.detection.PoseClimbAnalyzer
@@ -48,10 +47,8 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private val settingsRepository = SettingsRepository(application)
     private val cameraEngine = CameraEngine(application)
     private val videoExporter = VideoExporter(application)
-    private val holdSegmenterDelegate = lazy(LazyThreadSafetyMode.NONE) {
-        OnnxMobileSamSegmenter(application)
-    }
-    private val holdSegmenter: HoldSegmenter get() = holdSegmenterDelegate.value
+    private val mobileSam = OnnxMobileSamSegmenter(application)
+    private val holdSegmenter: HoldSegmenter = mobileSam
     private val poseAnalyzer = PoseClimbAnalyzer(application, onEvent = ::handleMotionEvent)
 
     private val _uiState = MutableStateFlow(TopOutUiState())
@@ -123,10 +120,15 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
 
-        // Keep launch lightweight. MobileSAM sessions are created lazily only when top-hold
-        // selection is actually used; automatic MoveNet Lightning FP16 detection loads its TensorFlow Lite model lazily on the first pose frame.
+        // Load MobileSAM while the brand/thumbnail screen is visible. TopOutApp does not create or
+        // bind CameraX until launchVisible becomes false, so model loading and camera startup never
+        // compete for CPU, memory bandwidth, or thermal headroom.
         viewModelScope.launch {
-            delay(550L)
+            val startedAt = System.nanoTime()
+            mobileSam.prepare()
+            val elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L
+            val minimumLaunchMillis = 550L
+            if (elapsedMillis < minimumLaunchMillis) delay(minimumLaunchMillis - elapsedMillis)
             _uiState.update { it.copy(launchVisible = false) }
         }
     }
@@ -230,16 +232,21 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             // Ready was pressed. Keep ImageAnalysis only as a rare fallback when the TextureView
             // has not produced a bitmap yet.
             delay(120L)
-            // iOS freezes the current camera sample buffer, not a screenshot of the preview layer.
-            // Prefer the shared ImageAnalysis frame for the same behavior; PreviewView remains a
-            // fallback for devices that cannot expose a third analysis stream.
-            val analysisSnapshot = poseAnalyzer.captureNextFrame(TopOutConfig.CaptureMaxLongSide)
+            // Use the TextureView-backed PreviewView bitmap as the single source for both the
+            // selection UI and MobileSAM. MobileSAM resizes its input to 1024px internally, so a
+            // separate low-resolution ImageAnalysis snapshot does not reduce inference cost enough
+            // to justify displaying a softer YUV-converted frame or risking a frame-time mismatch.
+            //
+            // ImageAnalysis remains a fallback only for rare devices where PreviewView.bitmap is
+            // temporarily unavailable.
             val previewSnapshot = runCatching {
                 frameProvider()?.copy(Bitmap.Config.ARGB_8888, false)
             }.getOrNull()
-            val frame = analysisSnapshot ?: previewSnapshot
+            val frame = previewSnapshot
+                ?: poseAnalyzer.captureNextFrame(TopOutConfig.CaptureMaxLongSide)
+
             if (frame == null || frame.width <= 0 || frame.height <= 0) {
-                // HoldVC.showCameraError displays camera failures in the upper guidance label.
+                frame?.recycle()
                 _uiState.update {
                     it.copy(
                         isBusy = false,
@@ -250,10 +257,13 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             val mat = if (settings.autoClipDetectionEnabled) {
-                MatBoundaryDetector.detect(frame)
+                mobileSam.detectMatBoundary(frame).getOrElse {
+                    listOf(Offset(0.06f, TopOutConfig.MatDefaultY), Offset(0.94f, TopOutConfig.MatDefaultY))
+                }
             } else {
                 emptyList()
             }
+
             selectionRequestId += 1
             _uiState.update { state ->
                 state.copy(
@@ -265,8 +275,9 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     statusText = selectionGuidance(state.settings)
                 )
             }
-            // iOS only prepares SAM when top-hold masking is enabled.
-            if (settings.requiresTopHoldSelection) {
+            // detectMatBoundary already cached the embedding for this exact displayed bitmap. When
+            // automatic mat detection is off, warm it once only if top-hold selection needs SAM.
+            if (settings.requiresTopHoldSelection && !settings.autoClipDetectionEnabled) {
                 viewModelScope.launch { holdSegmenter.warmUp(frame) }
             }
         }
@@ -392,10 +403,14 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             poseAnalyzer.stop()
         }
 
+        // The mat line and optional hold mask are now self-contained. Drop the frozen RGB frame
+        // and its MobileSAM embedding before the long recording begins to reduce steady-state RAM.
+        mobileSam.releaseCachedEmbedding()
         _uiState.update {
             it.copy(
                 stage = CameraStage.RECORDING,
                 recordingState = RecordingState.STARTING,
+                frozenFrame = null,
                 recordingElapsedSeconds = 0.0,
                 recordingCountdown = TopOutConfig.MotionCountdownSeconds.toInt(),
                 detectedRanges = emptyList(),
@@ -798,7 +813,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         poseAnalyzer.stop()
         poseAnalyzer.close()
         cameraEngine.release()
-        if (holdSegmenterDelegate.isInitialized()) holdSegmenter.close()
+        mobileSam.close()
         super.onCleared()
     }
 }

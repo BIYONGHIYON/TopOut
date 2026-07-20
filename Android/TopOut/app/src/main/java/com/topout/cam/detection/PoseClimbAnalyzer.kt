@@ -16,7 +16,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
-import java.util.concurrent.Executors
+import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
@@ -36,7 +36,7 @@ enum class MotionFinishReference {
  * Direct Android port of MotionDetector.swift.
  *
  * The detector intentionally uses two stages, matching iOS:
- * 1) luma difference around the edited mat line to cheaply wake pose tracking;
+ * 1) rolling luma difference in the 40%-high region above the edited mat line to wake pose tracking;
  * 2) MoveNet Lightning FP16 tracking every 0.5 s to determine the raw start/end and either the closest
  *    top-hold moment or the highest pose point, matching iOS MotionDetector.FinishReference.
  * Review padding is deliberately deferred until recording finalization.
@@ -46,18 +46,10 @@ class PoseClimbAnalyzer(
     private val onEvent: (MotionEvent) -> Unit
 ) : ImageAnalysis.Analyzer {
     private enum class State { IDLE, CALIBRATING, WAITING, TRACKING, CLIMBING }
-    private enum class BandKind { BELOW, UPPER }
 
     private data class SmallFrame(val width: Int, val height: Int, val luma: ByteArray)
-    private data class BandBin(val x0: Float, val x1: Float)
-    private data class CalibrationSample(
-        val belowSignals: FloatArray,
-        val upperSignals: FloatArray,
-        val energy: Float
-    )
-    private data class Calibration(val belowBaseline: FloatArray, val upperBaseline: FloatArray)
-    private data class RunScore(val indices: List<Int>, val energy: Float)
-    private data class BoundaryMotion(val indices: List<Int>, val energy: Float)
+    private data class CalibrationSample(val energy: Float)
+    private data class Calibration(val regionBaseline: Float)
     private data class FrameCaptureRequest(
         val maxLongSide: Int,
         val result: CompletableDeferred<Bitmap?>
@@ -74,9 +66,6 @@ class PoseClimbAnalyzer(
         minimumMovedLandmarks = TopOutConfig.SmartCropMinimumMovedLandmarks,
         minimumMovementRatio = TopOutConfig.SmartCropMinimumMovementRatio
     )
-    private val poseExecutor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "topout-movenet-fp16-pose").apply { isDaemon = true }
-    }
 
     private val motionLandmarkTypes = intArrayOf(
         PoseLandmark.LEFT_SHOULDER, PoseLandmark.RIGHT_SHOULDER,
@@ -93,12 +82,7 @@ class PoseClimbAnalyzer(
     private var matLine: List<Offset> = emptyList()
     private var topBox: Rect = Rect.Zero
     private var finishReference: MotionFinishReference = MotionFinishReference.CLOSEST_TOP_HOLD
-    private var horizontalBinCount = TopOutConfig.MatBoundaryBins
-    private var belowBins: List<BandBin> = emptyList()
-    private var upperBins: List<BandBin> = emptyList()
-    private val boundaryFrameHistory = FrameLagBuffer<SmallFrame>(
-        TopOutConfig.MotionComparisonFrameLag
-    )
+    private val cvFrameHistory = ArrayDeque<SmallFrame>()
 
     private var analysisOriginTimestampNanos: Long? = null
     private var recordingOriginTimestampNanos: Long? = null
@@ -118,7 +102,6 @@ class PoseClimbAnalyzer(
     private var activeBestTopHoldDistance: Float? = null
     private var activeHighestPoseSeconds: Double? = null
     private var activeHighestPoseY: Float? = null
-    @Volatile private var processingPose = false
     private var smartCropEnabled = false
     private var smartCropConfirmationFrames = 0
     private var smartCropConsecutiveMissingFrames = 0
@@ -139,7 +122,6 @@ class PoseClimbAnalyzer(
         return bitmap
     }
 
-    @Suppress("UNUSED_PARAMETER")
     @Synchronized
     fun configure(
         matLine: List<Offset>,
@@ -151,9 +133,9 @@ class PoseClimbAnalyzer(
         this.matLine = matLine.sortedBy { it.x }
         this.topBox = topBox?.clamped01() ?: Rect.Zero
         this.finishReference = finishReference
-        this.horizontalBinCount = max(1, horizontalBinCount)
-        belowBins = buildBandBins()
-        upperBins = buildBandBins()
+        // The rolling CV gate uses the edited mat line directly and no longer samples a narrow
+        // strip on or below the boundary. referenceImage/horizontalBinCount remain in the API for
+        // call-site compatibility with earlier v1.2 builds.
         resetStateLocked(keepConfiguration = true)
     }
 
@@ -236,29 +218,26 @@ class PoseClimbAnalyzer(
             image.close()
             return
         }
+        val comparisonFrame = rollingCvReference(frame)
+
         when (state) {
             State.CALIBRATING -> {
-                collectCalibration(frame, timestamp)
+                collectCalibration(frame, comparisonFrame, timestamp)
                 image.close()
             }
 
             State.WAITING -> {
-                // Compare against the frame exactly three analyzed samples earlier instead of the
-                // fixed recording-start frame. A lighting/noise change already present at startup
-                // therefore becomes the local background instead of waking pose indefinitely.
-                val base = boundaryFrameHistory.referenceFor(frame)
+                val base = comparisonFrame
                 val calibrationSnapshot = calibration
                 if (base != null && calibrationSnapshot != null &&
                     base.width == frame.width && base.height == frame.height
                 ) {
-                    val below = adjustedBandSignals(
-                        frame, base, belowBins, BandKind.BELOW, calibrationSnapshot.belowBaseline
+                    val rawSignal = cvSearchRegionDiffScore(frame, base)
+                    val adjustedSignal = max(
+                        0f,
+                        rawSignal - calibrationSnapshot.regionBaseline - TopOutConfig.MotionBaseDiffMargin
                     )
-                    val upper = adjustedBandSignals(
-                        frame, base, upperBins, BandKind.UPPER, calibrationSnapshot.upperBaseline
-                    )
-                    val motion = classifyBoundaryMotion(below, upper)
-                    if (motion != null) {
+                    if (adjustedSignal >= TopOutConfig.MotionCVRegionActiveThreshold) {
                         motionBoostUntilTimestampNanos = timestamp +
                             (TopOutConfig.MotionAnalysisBoostSeconds * 1_000_000_000L).toLong()
                         enterPoseTracking(timestamp)
@@ -287,24 +266,21 @@ class PoseClimbAnalyzer(
     }
 
     @Synchronized
-    private fun collectCalibration(frame: SmallFrame, timestamp: Long) {
+    private fun collectCalibration(frame: SmallFrame, referenceFrame: SmallFrame?, timestamp: Long) {
         if (calibrationStartedTimestampNanos == null) calibrationStartedTimestampNanos = timestamp
-        val base = boundaryFrameHistory.referenceFor(frame)
-        if (base != null && base.width == frame.width && base.height == frame.height) {
-            val belowSignals = rawBandSignals(frame, base, belowBins, BandKind.BELOW)
-            val upperSignals = rawBandSignals(frame, base, upperBins, BandKind.UPPER)
-            val energy = belowSignals.sum() + upperSignals.sum()
-            calibrationSamples += CalibrationSample(belowSignals, upperSignals, energy)
+        if (referenceFrame != null && referenceFrame.width == frame.width && referenceFrame.height == frame.height) {
+            calibrationSamples += CalibrationSample(cvSearchRegionDiffScore(frame, referenceFrame))
         }
 
         val started = calibrationStartedTimestampNanos ?: timestamp
-        if ((timestamp - started) / 1_000_000_000.0 >= TopOutConfig.MotionCountdownSeconds) {
-            finishCalibrationLocked()
-        }
+        if ((timestamp - started) / 1_000_000_000.0 < TopOutConfig.MotionCountdownSeconds) return
+        if (calibrationSamples.isEmpty()) return
+        finishCalibrationLocked()
     }
 
     private fun finishCalibrationLocked() {
         val samples = calibrationSamples.toList()
+        if (samples.isEmpty()) return
         val energies = samples.map { it.energy }
         val median = median(energies)
         val mad = median(energies.map { abs(it - median) })
@@ -314,12 +290,7 @@ class PoseClimbAnalyzer(
         )
         val accepted = samples.filter { it.energy <= threshold }
         val used = if (accepted.isEmpty()) samples else accepted
-        calibration = Calibration(
-            belowBaseline = makeSignalBaseline(used.map { it.belowSignals }, belowBins.size),
-            upperBaseline = makeSignalBaseline(used.map { it.upperSignals }, upperBins.size)
-        )
-        // collectCalibration already leaves the latest three countdown frames in the lag buffer,
-        // so the first WAITING comparison continues with the same N vs N-3 rule.
+        calibration = Calibration(regionBaseline = median(used.map { it.energy }))
         state = State.WAITING
         calibrationStartedTimestampNanos = null
         calibrationSamples.clear()
@@ -327,6 +298,7 @@ class PoseClimbAnalyzer(
 
     @Synchronized
     private fun enterPoseTracking(timestamp: Long) {
+        cvFrameHistory.clear()
         resetSmartCropVerificationLocked()
         state = State.TRACKING
         poseTrackingStartedSeconds = recordingSeconds(timestamp)
@@ -337,60 +309,51 @@ class PoseClimbAnalyzer(
     }
 
     private fun canAnalyzePose(timestamp: Long, intervalSeconds: Double): Boolean {
-        if (processingPose) return false
         val previous = lastPoseTimestampNanos
         if (previous != null && (timestamp - previous) / 1_000_000_000.0 < intervalSeconds) return false
         lastPoseTimestampNanos = timestamp
         return true
     }
 
+    /**
+     * Runs pose conversion and inference on CameraEngine's single analysis executor.
+     *
+     * ImageAnalysis uses STRATEGY_KEEP_ONLY_LATEST. Keeping this analyzer callback occupied until
+     * inference completes means CameraX retains at most one newer frame and replaces it as fresher
+     * frames arrive. No per-frame Runnable, Bitmap, or ImageProxy queue can accumulate, and the next
+     * callback receives the freshest available frame instead of an old queued frame.
+     */
     private fun runPose(
         image: ImageProxy,
         seconds: Double
     ) {
-        if (processingPose) {
-            image.close()
-            return
-        }
-
-        processingPose = true
-        val bitmapConversion = runCatching {
-            imageProxyToBitmap(image, TopOutConfig.PoseInputMaxLongSide)
-        }
-        image.close()
-
-        val poseBitmap = bitmapConversion.getOrNull()
-        if (poseBitmap == null) {
-            processingPose = false
-            handlePoseMissing(seconds)
-            return
-        }
-
-        val useTrackingAssociation = synchronized(this) { smartCropEnabled }
-        runCatching {
-            poseExecutor.execute {
-                try {
-                    val detection = runCatching {
-                        poseDetector.detect(poseBitmap, useTrackingAssociation)
-                    }
-                    detection.onSuccess { pose ->
-                        if (pose != null) {
-                            handlePose(pose, seconds, poseBitmap.width, poseBitmap.height)
-                        } else {
-                            handlePoseMissing(seconds)
-                        }
-                    }.onFailure { _ ->
-                        handlePoseMissing(seconds)
-                    }
-                } finally {
-                    poseBitmap.recycle()
-                    processingPose = false
-                }
+        var poseBitmap: Bitmap? = null
+        try {
+            poseBitmap = imageProxyToBitmap(image, TopOutConfig.PoseInputMaxLongSide)
+            val bitmap = poseBitmap
+            if (bitmap == null) {
+                handlePoseMissing(seconds)
+                return
             }
-        }.onFailure { _ ->
-            poseBitmap.recycle()
-            processingPose = false
+
+            val useTrackingAssociation = synchronized(this) { smartCropEnabled }
+            val detection = runCatching {
+                poseDetector.detect(bitmap, useTrackingAssociation)
+            }
+            detection.onSuccess { pose ->
+                if (pose != null) {
+                    handlePose(pose, seconds, bitmap.width, bitmap.height)
+                } else {
+                    handlePoseMissing(seconds)
+                }
+            }.onFailure {
+                handlePoseMissing(seconds)
+            }
+        } catch (_: Throwable) {
             handlePoseMissing(seconds)
+        } finally {
+            poseBitmap?.recycle()
+            image.close()
         }
     }
 
@@ -402,12 +365,6 @@ class PoseClimbAnalyzer(
         imageHeight: Int
     ) {
         val landmarks = reliableLandmarks(pose, motionLandmarkTypes)
-        val coreCount = landmarks.keys.count { type ->
-            type == PoseLandmark.LEFT_SHOULDER ||
-                type == PoseLandmark.RIGHT_SHOULDER ||
-                type == PoseLandmark.LEFT_HIP ||
-                type == PoseLandmark.RIGHT_HIP
-        }
         val humanValid = PoseHumanGate.isValid(landmarks.keys)
         if (!humanValid) {
             smartCropMotionGate.reset()
@@ -527,10 +484,8 @@ class PoseClimbAnalyzer(
     }
 
     private fun returnToCvSearchLocked() {
+        cvFrameHistory.clear()
         resetSmartCropVerificationLocked()
-        // Pose tracking can last several seconds. Do not compare a new CV frame with stale samples
-        // captured before pose tracking started; warm up a fresh three-frame history instead.
-        boundaryFrameHistory.clear()
         state = State.WAITING
         lastPoseTimestampNanos = null
         lastPoseSeenSeconds = null
@@ -626,117 +581,50 @@ class PoseClimbAnalyzer(
         return sqrt(dx * dx + dy * dy)
     }
 
-    private fun adjustedBandSignals(
-        frame: SmallFrame,
-        base: SmallFrame,
-        bins: List<BandBin>,
-        kind: BandKind,
-        baseline: FloatArray
-    ): FloatArray = FloatArray(bins.size) { index ->
-        val raw = baseDiffScore(frame, base, bins[index], kind)
-        max(0f, raw - baseline.getOrElse(index) { 0f } - TopOutConfig.MotionBaseDiffMargin)
-    }
-
-    private fun rawBandSignals(
-        frame: SmallFrame,
-        base: SmallFrame,
-        bins: List<BandBin>,
-        kind: BandKind
-    ): FloatArray = FloatArray(bins.size) { index ->
-        baseDiffScore(frame, base, bins[index], kind)
-    }
-
-    private fun classifyBoundaryMotion(below: FloatArray, upper: FloatArray): BoundaryMotion? {
-        val count = min(below.size, upper.size)
-        if (count <= 0) return null
-        val combined = FloatArray(count) { max(below[it], upper[it]) }
-        val activeIndices = combined.indices.filter { combined[it] >= TopOutConfig.MotionBinThreshold }
-        val runs = scoredRuns(activeIndices, combined)
-        if (runs.isEmpty()) return null
-
-        val primary = runs
-            .filter { it.indices.size in 1..TopOutConfig.MotionBoundaryPrimaryMaxBins }
-            .sortedWith(runComparator)
-            .firstOrNull() ?: return null
-        val second = runs.filter { it.indices != primary.indices }.sortedWith(runComparator).firstOrNull()
-            ?: return BoundaryMotion(primary.indices, primary.energy)
-
-        val secondIsSmallNoise = second.indices.size <= TopOutConfig.MotionBoundaryNoiseMaxBins &&
-            second.energy <= primary.energy * TopOutConfig.MotionBoundaryNoiseEnergyRatio
-        if (secondIsSmallNoise) return BoundaryMotion(primary.indices, primary.energy)
-
-        val primaryDominates = primary.energy >= second.energy * TopOutConfig.MotionBoundaryDominanceRatio ||
-            primary.energy - second.energy >= TopOutConfig.MotionBoundaryDominanceMargin
-        return if (primaryDominates) BoundaryMotion(primary.indices, primary.energy) else null
-    }
-
-    private val runComparator = Comparator<RunScore> { left, right ->
-        when {
-            left.energy != right.energy -> right.energy.compareTo(left.energy)
-            left.indices.size != right.indices.size -> right.indices.size.compareTo(left.indices.size)
-            else -> (left.indices.firstOrNull() ?: 0).compareTo(right.indices.firstOrNull() ?: 0)
-        }
-    }
-
-    private fun scoredRuns(indices: List<Int>, values: FloatArray): List<RunScore> {
-        if (indices.isEmpty()) return emptyList()
-        val sorted = indices.distinct().sorted()
-        val result = mutableListOf<RunScore>()
-        var current = mutableListOf<Int>()
-        var energy = 0f
-        fun flush() {
-            if (current.isNotEmpty()) result += RunScore(current.toList(), energy)
-            current = mutableListOf()
-            energy = 0f
-        }
-        for (index in sorted) {
-            if (index !in values.indices) continue
-            if (current.isNotEmpty() && index != current.last() + 1) flush()
-            current += index
-            energy += values[index]
-        }
-        flush()
-        return result
-    }
-
-    private fun makeSignalBaseline(signals: List<FloatArray>, binCount: Int): FloatArray =
-        FloatArray(binCount) { index ->
-            median(signals.map { it.getOrElse(index) { 0f } })
-        }
-
-    private fun baseDiffScore(frame: SmallFrame, base: SmallFrame, bin: BandBin, kind: BandKind): Float {
+    /**
+     * Compares only the region above the edited mat line, up to 40% of the visible frame height.
+     * The reference is exactly three throttled CV-analysis frames earlier, not the frozen selection
+     * image, so lighting drift and camera auto-exposure do not accumulate into a false trigger.
+     */
+    private fun cvSearchRegionDiffScore(frame: SmallFrame, base: SmallFrame): Float {
         if (frame.width != base.width || frame.height != base.height) return 0f
         val width = frame.width
         val height = frame.height
-        val x0 = floor(bin.x0 * width).toInt().coerceIn(0, width - 1)
-        val x1 = ceil(bin.x1 * width).toInt().coerceIn(x0 + 1, width)
-        val bandHeight = max(0.02f, TopOutConfig.MotionMatBandHeightRatio)
+        val regionHeight = TopOutConfig.MotionCVRegionAboveMatHeightRatio.coerceIn(0.02f, 1f)
         var changed = 0
         var total = 0
-
-        for (x in x0 until x1) {
+        for (x in 0 until width) {
             val xNorm = (x + 0.5f) / width
             val boundary = lineY(xNorm)
-            val yStart = when (kind) {
-                BandKind.BELOW -> boundary
-                BandKind.UPPER -> max(0f, boundary - bandHeight)
-            }
-            val yEnd = when (kind) {
-                BandKind.BELOW -> min(1f, boundary + bandHeight)
-                BandKind.UPPER -> boundary
-            }
-            if (yEnd <= yStart) continue
-            val y0 = floor(yStart * height).toInt().coerceIn(0, height - 1)
-            val y1 = ceil(yEnd * height).toInt().coerceIn(y0 + 1, height)
+            val yStartNorm = max(0f, boundary - regionHeight)
+            val yEndNorm = boundary
+            if (yEndNorm <= yStartNorm) continue
+            val y0 = floor(yStartNorm * height).toInt().coerceIn(0, height - 1)
+            val y1 = ceil(yEndNorm * height).toInt().coerceIn(y0 + 1, height)
             for (y in y0 until y1) {
                 val index = y * width + x
-                if (abs((frame.luma[index].toInt() and 0xFF) - (base.luma[index].toInt() and 0xFF)) >=
-                    TopOutConfig.MotionPixelDifference
-                ) changed++
+                val current = frame.luma[index].toInt() and 0xFF
+                val previous = base.luma[index].toInt() and 0xFF
+                if (abs(current - previous) >= TopOutConfig.MotionPixelDifference) changed++
                 total++
             }
         }
         return if (total > 0) changed.toFloat() / total else 0f
+    }
+
+    private fun rollingCvReference(frame: SmallFrame): SmallFrame? {
+        val lag = max(1, TopOutConfig.MotionCVComparisonFrameLag)
+        val latest = cvFrameHistory.peekLast()
+        if (latest != null && (latest.width != frame.width || latest.height != frame.height)) {
+            cvFrameHistory.clear()
+        }
+        if (cvFrameHistory.size < lag) {
+            cvFrameHistory.addLast(frame)
+            return null
+        }
+        val reference = cvFrameHistory.removeFirst()
+        cvFrameHistory.addLast(frame)
+        return reference
     }
 
     /** Converts a YUV_420_888 frame to an oriented RGB bitmap using the shared ViewPort crop. */
@@ -830,6 +718,24 @@ class PoseClimbAnalyzer(
         return SmallFrame(outputWidth, outputHeight, output)
     }
 
+    private fun smallFrameFromBitmap(bitmap: Bitmap): SmallFrame? {
+        if (bitmap.width <= 0 || bitmap.height <= 0) return null
+        val outputWidth = max(32, TopOutConfig.MotionFrameWidth)
+        val outputHeight = max(32, (outputWidth * bitmap.height.toFloat() / bitmap.width).roundToInt())
+        val output = ByteArray(outputWidth * outputHeight)
+        for (y in 0 until outputHeight) {
+            val sourceY = min(bitmap.height - 1, ((y + 0.5f) * bitmap.height / outputHeight).toInt())
+            for (x in 0 until outputWidth) {
+                val sourceX = min(bitmap.width - 1, ((x + 0.5f) * bitmap.width / outputWidth).toInt())
+                val color = bitmap.getPixel(sourceX, sourceY)
+                val luma = (Color.red(color) * 0.2126f + Color.green(color) * 0.7152f +
+                    Color.blue(color) * 0.0722f).roundToInt().coerceIn(0, 255)
+                output[y * outputWidth + x] = luma.toByte()
+            }
+        }
+        return SmallFrame(outputWidth, outputHeight, output)
+    }
+
     /** CameraX's ViewPort cropRect is raw-sensor oriented; this converts it to display space. */
     private fun cropRectInDisplay(image: ImageProxy): Rect {
         val raw = image.cropRect
@@ -889,9 +795,6 @@ class PoseClimbAnalyzer(
         return (pixelX.toLong() shl 32) or (pixelY.toLong() and 0xFFFF_FFFFL)
     }
 
-    private fun buildBandBins(): List<BandBin> = (0 until max(1, horizontalBinCount)).map { index ->
-        BandBin(index.toFloat() / horizontalBinCount, (index + 1f) / horizontalBinCount)
-    }
 
     private fun lineY(x: Float): Float {
         if (matLine.isEmpty()) return TopOutConfig.MatDefaultY
@@ -933,7 +836,7 @@ class PoseClimbAnalyzer(
         calibrationStartedTimestampNanos = null
         calibrationSamples.clear()
         calibration = null
-        boundaryFrameHistory.clear()
+        cvFrameHistory.clear()
         lastPoseTimestampNanos = null
         lastPoseSeenSeconds = null
         poseTrackingStartedSeconds = null
@@ -941,14 +844,10 @@ class PoseClimbAnalyzer(
         activeStartSeconds = null
         resetFinishReferenceTrackingLocked()
         resetSmartCropVerificationLocked()
-        processingPose = false
         if (!keepConfiguration) {
             matLine = emptyList()
             topBox = Rect.Zero
             finishReference = MotionFinishReference.CLOSEST_TOP_HOLD
-            horizontalBinCount = TopOutConfig.MatBoundaryBins
-            belowBins = emptyList()
-            upperBins = emptyList()
         }
     }
 
@@ -964,9 +863,7 @@ class PoseClimbAnalyzer(
 
     fun close() {
         frameCaptureRequest.getAndSet(null)?.result?.complete(null)
-        poseExecutor.shutdownNow()
         poseDetector.close()
     }
-
 
 }

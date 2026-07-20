@@ -11,7 +11,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import com.topout.cam.model.HoldMask
 import com.topout.cam.model.TopOutConfig
-import java.io.FileNotFoundException
+import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -49,6 +49,80 @@ class OnnxMobileSamSegmenter(
     private var sessionOptions: OrtSession.SessionOptions? = null
     @Volatile private var closed = false
     private var cachedEmbedding: CachedEmbedding? = null
+
+    /** Loads the ONNX encoder/decoder sessions without starting the camera or running an image. */
+    suspend fun prepare(): Result<Unit> = withContext(Dispatchers.Default) {
+        runCatching {
+            sessionMutex.withLock {
+                ensureSessionsLocked()
+                Unit
+            }
+        }
+    }
+
+    /**
+     * Automatic mat segmentation used by TopOut's selection screen.
+     * Positive prompts are tried at centre 80% -> 85% -> 90%, with 42%/58% x fallbacks.
+     */
+    suspend fun detectMatBoundary(bitmap: Bitmap): Result<List<Offset>> = withContext(Dispatchers.Default) {
+        runCatching {
+            require(!bitmap.isRecycled) { "매트 경계를 찾을 카메라 이미지가 이미 해제되었습니다." }
+            require(bitmap.width > 0 && bitmap.height > 0) { "매트 경계 이미지 크기가 올바르지 않습니다." }
+
+            sessionMutex.withLock {
+                val sessions = ensureSessionsLocked()
+                val embedding = obtainEmbedding(bitmap, sessions.encoder)
+                val mediumCandidates = mutableListOf<MobileSamMatBoundaryDetector.PublicCandidate>()
+
+                for (promptY in floatArrayOf(0.80f, 0.85f, 0.90f)) {
+                    val stageMasks = mutableListOf<MobileSamMatBoundaryDetector.SamBinaryMask>()
+
+                    stageMasks += decodeMatMasks(
+                        bitmap = bitmap,
+                        positive = Offset(0.50f, promptY),
+                        negative = Offset(0.50f, 0.28f),
+                        embedding = embedding,
+                        decoder = sessions.decoder
+                    )
+                    when (val central = MobileSamMatBoundaryDetector.evaluateStage(
+                        MobileSamMatBoundaryDetector.PromptResult(promptY, stageMasks),
+                        strict = true
+                    )) {
+                        is MobileSamMatBoundaryDetector.StageEvaluation.Strong -> return@withLock central.line
+                        is MobileSamMatBoundaryDetector.StageEvaluation.Medium -> Unit
+                        MobileSamMatBoundaryDetector.StageEvaluation.None -> Unit
+                    }
+
+                    for (promptX in floatArrayOf(0.42f, 0.58f)) {
+                        stageMasks += decodeMatMasks(
+                            bitmap = bitmap,
+                            positive = Offset(promptX, promptY),
+                            negative = Offset(promptX, 0.28f),
+                            embedding = embedding,
+                            decoder = sessions.decoder
+                        )
+                    }
+
+                    when (val stage = MobileSamMatBoundaryDetector.evaluateStage(
+                        MobileSamMatBoundaryDetector.PromptResult(promptY, stageMasks),
+                        strict = false
+                    )) {
+                        is MobileSamMatBoundaryDetector.StageEvaluation.Strong -> return@withLock stage.line
+                        is MobileSamMatBoundaryDetector.StageEvaluation.Medium -> mediumCandidates += stage.candidate
+                        MobileSamMatBoundaryDetector.StageEvaluation.None -> Unit
+                    }
+                }
+
+                MobileSamMatBoundaryDetector.consensus(mediumCandidates)
+                    ?: MobileSamMatBoundaryDetector.defaultLine
+            }
+        }
+    }
+
+    /** Releases the frozen-frame embedding once selection is complete. Model sessions stay warm. */
+    fun releaseCachedEmbedding() {
+        cachedEmbedding = null
+    }
 
     override suspend fun warmUp(bitmap: Bitmap): Result<Unit> = withContext(Dispatchers.Default) {
         runCatching {
@@ -106,9 +180,11 @@ class OnnxMobileSamSegmenter(
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
         }
         try {
-            val encoder = environment.createSession(readModelBytes(ENCODER_FILE_NAME), options)
+            // Materialize uncompressed assets once and let ORT load from a file path. This avoids
+            // retaining 40+ MB of temporary model ByteArrays during the launch thumbnail.
+            val encoder = environment.createSession(materializeModelFile(ENCODER_FILE_NAME).absolutePath, options)
             encoderSession = encoder
-            val decoder = environment.createSession(readModelBytes(DECODER_FILE_NAME), options)
+            val decoder = environment.createSession(materializeModelFile(DECODER_FILE_NAME).absolutePath, options)
             decoderSession = decoder
             sessionOptions = options
             return Sessions(encoder, decoder)
@@ -128,18 +204,58 @@ class OnnxMobileSamSegmenter(
         }
     }
 
-    private fun readModelBytes(fileName: String): ByteArray {
+    private fun materializeModelFile(fileName: String): File {
+        val candidatePaths = listOf("models/$fileName", fileName)
+        var selectedPath: String? = null
+        var expectedLength: Long? = null
         var lastError: Throwable? = null
-        for (path in listOf("models/$fileName", fileName)) {
+
+        for (path in candidatePaths) {
             try {
-                return appContext.assets.open(path).use { it.readBytes() }
+                appContext.assets.open(path).use { }
+                selectedPath = path
+                expectedLength = runCatching { appContext.assets.openFd(path).length }
+                    .getOrNull()
+                    ?.takeIf { it > 0L }
+                break
             } catch (error: Throwable) {
                 lastError = error
             }
         }
-        throw FileNotFoundException(
-            "assets/models/$fileName 파일을 찾지 못했습니다. ${lastError?.localizedMessage.orEmpty()}"
+
+        val assetPath = selectedPath ?: throw IllegalStateException(
+            "assets/models/$fileName 파일을 찾지 못했습니다. ${lastError?.localizedMessage.orEmpty()}",
+            lastError
         )
+        val modelDirectory = File(appContext.noBackupFilesDir, "onnx-models").apply { mkdirs() }
+        val target = File(modelDirectory, fileName)
+        if (target.isFile && target.length() > 1_000_000L &&
+            (expectedLength == null || target.length() == expectedLength)
+        ) {
+            return target
+        }
+
+        val temporary = File(modelDirectory, "$fileName.copying")
+        temporary.delete()
+        appContext.assets.open(assetPath).buffered().use { input ->
+            temporary.outputStream().buffered().use { output -> input.copyTo(output) }
+        }
+        require(temporary.length() > 1_000_000L) {
+            "MobileSAM 모델 복사 결과가 올바르지 않습니다: $fileName"
+        }
+        if (expectedLength != null) {
+            require(temporary.length() == expectedLength) {
+                "MobileSAM 모델 크기가 원본 asset과 다릅니다: $fileName"
+            }
+        }
+        if (target.exists() && !target.delete()) {
+            throw IllegalStateException("기존 MobileSAM 캐시 파일을 교체하지 못했습니다: $fileName")
+        }
+        if (!temporary.renameTo(target)) {
+            temporary.copyTo(target, overwrite = true)
+            temporary.delete()
+        }
+        return target
     }
 
     private fun obtainEmbedding(bitmap: Bitmap, encoder: OrtSession): CachedEmbedding {
@@ -350,6 +466,111 @@ class OnnxMobileSamSegmenter(
     }
 
     // MARK: Decoder
+
+    private fun decodeMatMasks(
+        bitmap: Bitmap,
+        positive: Offset,
+        negative: Offset,
+        embedding: CachedEmbedding,
+        decoder: OrtSession
+    ): List<MobileSamMatBoundaryDetector.SamBinaryMask> {
+        val inputNames = decoder.inputInfo.keys
+        val embeddingName = resolveName(inputNames, DECODER_EMBEDDING_ALIASES, "decoder embedding 입력")
+        val pointCoordsName = resolveName(inputNames, POINT_COORDS_ALIASES, "point coordinates 입력")
+        val pointLabelsName = resolveName(inputNames, POINT_LABELS_ALIASES, "point labels 입력")
+        val maskInputName = resolveName(inputNames, MASK_INPUT_ALIASES, "mask 입력")
+        val hasMaskInputName = resolveName(inputNames, HAS_MASK_INPUT_ALIASES, "has-mask 입력")
+        val originalSizeName = resolveName(inputNames, ORIGINAL_SIZE_ALIASES, "원본 이미지 크기 입력")
+
+        val coordsInfo = decoder.inputInfo.getValue(pointCoordsName).tensorInfo("point coordinates 입력")
+        val coordsShape = pointCoordsShape(coordsInfo.shape)
+        val coords = FloatArray(coordsShape.elementCountOrThrow("point coordinates 입력"))
+        require(coords.size >= 4) { "MobileSAM decoder가 양성/음성 두 포인트 입력을 지원하지 않습니다." }
+        coords[0] = positive.x.coerceIn(0f, 1f) * bitmap.width * embedding.transform.scaleX
+        coords[1] = positive.y.coerceIn(0f, 1f) * bitmap.height * embedding.transform.scaleY
+        coords[2] = negative.x.coerceIn(0f, 1f) * bitmap.width * embedding.transform.scaleX
+        coords[3] = negative.y.coerceIn(0f, 1f) * bitmap.height * embedding.transform.scaleY
+
+        val labelsInfo = decoder.inputInfo.getValue(pointLabelsName).tensorInfo("point labels 입력")
+        val labelsShape = pointLabelsShape(labelsInfo.shape, max(2, coords.size / 2))
+        val labels = FloatArray(labelsShape.elementCountOrThrow("point labels 입력")) { -1f }
+        require(labels.size >= 2) { "MobileSAM decoder point labels 크기가 올바르지 않습니다." }
+        labels[0] = 1f
+        labels[1] = 0f
+
+        val maskShape = positiveShape(
+            decoder.inputInfo.getValue(maskInputName).tensorInfo("mask 입력").shape,
+            longArrayOf(1, 1, TopOutConfig.MaskSize.toLong(), TopOutConfig.MaskSize.toLong())
+        )
+        val inputs = linkedMapOf<String, OnnxTensor>()
+        try {
+            inputs[embeddingName] = tensor(embedding.data, embedding.shape)
+            inputs[pointCoordsName] = tensor(coords, coordsShape)
+            inputs[pointLabelsName] = tensor(labels, labelsShape)
+            inputs[maskInputName] = tensor(FloatArray(maskShape.elementCountOrThrow("mask 입력")), maskShape)
+            inputs[hasMaskInputName] = tensor(
+                floatArrayOf(0f),
+                positiveShape(
+                    decoder.inputInfo.getValue(hasMaskInputName).tensorInfo("has-mask 입력").shape,
+                    longArrayOf(1)
+                )
+            )
+            inputs[originalSizeName] = tensor(
+                floatArrayOf(bitmap.height.toFloat(), bitmap.width.toFloat()),
+                positiveShape(
+                    decoder.inputInfo.getValue(originalSizeName).tensorInfo("원본 이미지 크기 입력").shape,
+                    longArrayOf(2)
+                )
+            )
+
+            decoder.run(inputs).use { result ->
+                val outputName = resolveMaskOutputName(decoder.outputInfo.keys)
+                val tensor = result.tensor(outputName, "decoder mat mask 출력")
+                val data = tensor.copyFloatData()
+                val parsed = parseMaskShape(tensor.info.shape)
+                val lowResolution = outputName in LOW_RES_MASK_ALIASES ||
+                    tensor.info.shape.takeLast(2).all { it in 1L..512L }
+                val visibleWidth = if (lowResolution) {
+                    (embedding.transform.resizedWidth.toFloat() / embedding.transform.inputWidth * parsed.width)
+                        .roundToInt().coerceIn(1, parsed.width)
+                } else parsed.width
+                val visibleHeight = if (lowResolution) {
+                    (embedding.transform.resizedHeight.toFloat() / embedding.transform.inputHeight * parsed.height)
+                        .roundToInt().coerceIn(1, parsed.height)
+                } else parsed.height
+                val planeSize = parsed.width * parsed.height
+
+                return (0 until parsed.maskCount).mapNotNull { channel ->
+                    val offset = channel * planeSize
+                    if (offset + planeSize > data.size) return@mapNotNull null
+                    var minimum = Float.POSITIVE_INFINITY
+                    var maximum = Float.NEGATIVE_INFINITY
+                    for (index in offset until offset + planeSize) {
+                        minimum = min(minimum, data[index])
+                        maximum = max(maximum, data[index])
+                    }
+                    val threshold = if (minimum >= 0f && maximum <= 1.0001f) 0.5f else 0f
+                    val values = BooleanArray(planeSize)
+                    for (y in 0 until visibleHeight) {
+                        val row = y * parsed.width
+                        for (x in 0 until visibleWidth) {
+                            values[row + x] = data[offset + row + x] > threshold
+                        }
+                    }
+                    MobileSamMatBoundaryDetector.SamBinaryMask(
+                        width = parsed.width,
+                        height = parsed.height,
+                        visibleWidth = visibleWidth,
+                        visibleHeight = visibleHeight,
+                        positiveX = positive.x.coerceIn(0f, 1f),
+                        values = values
+                    )
+                }
+            }
+        } finally {
+            inputs.values.forEach { runCatching { it.close() } }
+        }
+    }
 
     private fun decodeMask(
         bitmap: Bitmap,

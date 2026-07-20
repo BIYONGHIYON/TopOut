@@ -258,25 +258,17 @@ object TopOutConfig {
     const val ContourSmoothIterations = 2
     const val ContourMinPoints = 8
 
-    const val MatDetectWidth = 220
-    const val MatSearchTopY = 0.50f
-    const val MatSearchBottomY = 0.96f
     const val MatDefaultY = 0.75f
-    const val MatMinEdgeScore = 8f
-    const val MatLowerUniformityTolerance = 15f
     const val MatBoundaryBins = 10
-    const val MatBoundaryMinCoverageRatio = 0.75f
-    const val MatUpperTieScoreTolerance = 2.5f
-    const val MatSampleStripRatio = 0.015f
-    const val MatLowerSampleMultiplier = 2f
-    const val MatLocalRefineWindowRatio = 0.03f
 
     const val MotionAnalysisCalibrationFps = 8.0
     const val MotionAnalysisIdleFps = 6.0
     const val MotionAnalysisBoostFps = 12.0
     const val MotionAnalysisBoostSeconds = 1.2
     const val MotionFrameWidth = 160
-    const val MotionComparisonFrameLag = 3
+    const val MotionCVComparisonFrameLag = 3
+    const val MotionCVRegionAboveMatHeightRatio = 0.40f
+    const val MotionCVRegionActiveThreshold = 0.04f
     const val MotionPixelDifference = 20
     const val MotionCountdownSeconds = 3.0
     const val MotionCalibrationMadFactor = 2.8f
@@ -303,7 +295,7 @@ object TopOutConfig {
     // Retained for the dormant PicoDet/RTMPose fallback implementation.
     const val PosePersonConfidence = 0.25f
     const val PoseNmsIou = 0.45f
-    const val PoseNoPoseRetrySeconds = 5.0
+    const val PoseNoPoseRetrySeconds = 6.0
     const val ClipBoundaryPaddingSeconds = 3.0
     const val PoseConfidence = 0.25f
     const val PoseMinimumReliableLandmarks = 4

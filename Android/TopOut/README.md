@@ -1,10 +1,10 @@
-# TopOut Android
+# TopOut Android v1.3 (build 4)
 
 TopOut records climbing video with audio and automatically proposes climb ranges.
 
 ## Automatic detection
 
-The Android release uses MoveNet SinglePose Lightning FP16 through TensorFlow Lite. A lightweight mat-boundary motion gate wakes pose analysis, and the active climb uses MoveNet's temporal smart crop to remain focused on the same person. The existing pose schedule is unchanged: inference runs at most every 0.5 seconds, while the FP16 model receives a 192×192 RGB input.
+The Android release uses MoveNet SinglePose Lightning FP16 through TensorFlow Lite. MobileSAM proposes the mat boundary from automatic prompts at 80%, 85%, and 90%. A rolling luma-motion gate analyzes only the region above that edited boundary, and the active climb uses MoveNet's temporal smart crop to remain focused on the same person. The existing pose schedule is unchanged: inference runs at most every 0.5 seconds, while the FP16 model receives a 192×192 RGB input.
 
 ## Clip ranges
 
@@ -16,7 +16,12 @@ Detected ranges are not limited to 10. All ranges are retained through the recor
 - camera and microphone recording
 - optional live-preview stream suspension during recording
 - in-app privacy policy and open-source license notices
-- lazy MobileSAM initialization for top-hold selection
+- MobileSAM sessions preload behind the startup thumbnail before CameraX is created
+- automatic MobileSAM mat boundary detection with a 75% fallback
+- six-second pose-loss grace period during an active climb
+- preview and selection do not create a recording file; recording starts only after the record action and countdown
+- latest-frame-only pose analysis via CameraX `STRATEGY_KEEP_ONLY_LATEST`
+- frozen selection image/embedding released before long recording
 - no application debug logging
 
 ## Build

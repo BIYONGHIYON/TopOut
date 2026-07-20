@@ -60,6 +60,10 @@ class MainActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enableEdgeToEdge()
 
+        // Resolve the ViewModel before composing the one-second brand thumbnail. Its init block
+        // preloads MobileSAM immediately, while no CameraPreview/CameraX use case exists yet.
+        val startupViewModel = viewModel
+
         setContent {
             TopOutTheme {
                 var showBrandLaunch by remember { mutableStateOf(true) }
@@ -76,7 +80,7 @@ class MainActivity : ComponentActivity() {
                         permissionsGranted = ::hasPermissions,
                         openSettings = ::openAppSettings
                     ) {
-                        TopOutApp(viewModel)
+                        TopOutApp(startupViewModel)
                     }
                 }
             }

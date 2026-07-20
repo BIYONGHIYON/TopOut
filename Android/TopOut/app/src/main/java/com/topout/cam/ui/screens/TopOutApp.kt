@@ -130,7 +130,8 @@ fun TopOutApp(viewModel: TopOutViewModel) {
         )
     } else {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
-            val activeRatio = state.settings.aspectRatio.widthOverHeight(isLandscape)
+            if (!state.launchVisible) {
+                val activeRatio = state.settings.aspectRatio.widthOverHeight(isLandscape)
             AspectFrame(widthOverHeight = activeRatio, modifier = Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxSize()) {
                     key(
@@ -259,11 +260,12 @@ fun TopOutApp(viewModel: TopOutViewModel) {
                 else -> Unit
             }
 
-            if (state.isBusy && state.stage in setOf(CameraStage.PREVIEW, CameraStage.SELECT)) {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center).size(46.dp),
-                    color = Color.White
-                )
+                if (state.isBusy && state.stage in setOf(CameraStage.PREVIEW, CameraStage.SELECT)) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.align(Alignment.Center).size(46.dp),
+                        color = Color.White
+                    )
+                }
             }
 
             if (state.launchVisible) LaunchOverlay()
