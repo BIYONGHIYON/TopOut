@@ -30,7 +30,7 @@ TopOut/
 ```
 
 - `IOS/TopOut`: UIKit·AVFoundation·Core ML 기반 iOS 구현
-- `Android/TopOut`: Jetpack Compose·CameraX·ML Kit·ONNX Runtime 기반 Android 구현
+- `Android/TopOut`: Jetpack Compose·CameraX·MoveNet Thunder·TensorFlow Lite·ONNX Runtime 기반 Android 구현
 - Android 버전은 iOS 구현의 기능과 주요 동작 조건을 기준으로 정합성을 맞췄습니다.
 
 ---
@@ -57,11 +57,14 @@ TopOut은 완등 후보 시점을 찾았다는 이유만으로 녹화를 자동 
 등반 시작 전부터 고비용 Pose 모델을 계속 실행하지 않습니다.
 
 1. 녹화 시작 후 3초 동안 매트 주변의 기준 영상을 보정합니다.
-2. 매트 경계선 위·아래의 좁은 영역에서 경량 Motion Detection을 수행합니다.
-3. 국소적인 경계 통과 움직임이 발견될 때만 Pose Detection을 실행합니다.
-4. 신뢰 가능한 관절점 중 화면상 가장 낮은 점이 매트 위로 올라가면 등반 시작으로 판단합니다.
+2. 매트 경계선 주변에서 경량 Motion Detection을 수행합니다.
+3. 의미 있는 움직임이 발견될 때만 Android에서는 MoveNet Thunder FP16 Pose Detection을 시작합니다.
+4. 초기 탐지는 긴 변 최대 512px의 전체 화면을 사용하고, 신뢰 가능한 관절 4개 이상과 어깨·골반 중심 관절을 추가 검증합니다.
+5. 연속 3개 Pose 프레임에서 최소 3개 관절이 사람 크기의 5% 이상 이동하면 실제 사람 움직임으로 판단하고 Smart Crop을 활성화합니다.
+6. Smart Crop 영역에서 유효한 사람 Pose가 2프레임 연속 확인되면 등반 시작 판정을 허용합니다.
+7. 신뢰 가능한 관절점 중 화면상 가장 낮은 점이 매트 위로 올라가면 등반 시작으로 기록합니다.
 
-이 구조를 통해 발열과 배터리 소모를 줄이면서 등반 시작 후보를 확인합니다.
+Smart Crop 활성화 이후 Android는 전체 512px RGB 이미지를 다시 만들지 않고, 이전 Pose에서 계산한 사람 ROI를 CameraX YUV 프레임에서 바로 256×256 MoveNet 입력으로 변환합니다. 밝기 채널은 bilinear 보간하고 색상 채널은 nearest sampling을 사용해 발열과 배터리 소모를 줄입니다.
 
 ### 🏁 설정에 따른 종료 기준 선택
 
@@ -147,7 +150,7 @@ TopOut은 완등 후보 시점을 찾았다는 이유만으로 녹화를 자동 
 
 ### 5. 등반 시작 감지
 
-경계 부근의 의미 있는 움직임이 확인되면 Pose Detection으로 전환합니다. 가장 낮은 신체 관절점이 매트 기준선을 아래에서 위로 통과하면 등반 시작으로 기록합니다.
+경계 부근의 의미 있는 움직임이 확인되면 Pose Detection으로 전환합니다. Android에서는 전체 화면 Pose 3프레임의 관절 움직임을 검증한 뒤 Smart Crop을 활성화하고, Crop 영역에서 유효한 사람 Pose가 2프레임 연속 확인되어야 시작 판정을 허용합니다. 이후 가장 낮은 신체 관절점이 매트 기준선을 아래에서 위로 통과하면 등반 시작으로 기록합니다.
 
 ### 6. 종료 후보 시점 갱신
 
@@ -173,7 +176,7 @@ TopOut은 완등 후보 시점을 찾았다는 이유만으로 녹화를 자동 
 | UI | UIKit | Jetpack Compose · Material 3 |
 | 카메라 | AVFoundation | CameraX · Camera2 |
 | 원본 녹화 | AVAssetWriter · MOV | CameraX Recorder · MP4 |
-| Pose | Vision Human Body Pose | ML Kit Accurate Pose Detection |
+| Pose | Vision Human Body Pose | MoveNet SinglePose Thunder FP16 · TensorFlow Lite |
 | MobileSAM | Core ML | ONNX Runtime |
 | 영상 재생 | AVPlayer | Media3 ExoPlayer |
 | 트리밍·내보내기 | AVAssetExportSession · Photos | Media3 Transformer · MediaStore |
@@ -190,22 +193,28 @@ TopOut은 완등 후보 시점을 찾았다는 이유만으로 녹화를 자동 
   - 입력 영상 긴 변 최대 384px
   - 관절 confidence 기준 0.25
 - Android
-  - ML Kit Accurate Pose Detection
-  - 벽 오탐 감소를 위해 입력 영상 긴 변 최대 512px
-  - 시작 검증은 `SINGLE_IMAGE_MODE`
-  - 등반 시작 후 추적은 `STREAM_MODE`
-  - confidence 0.50 이상 관절과 몸통 중심 관절 수를 추가 검증
+  - MoveNet SinglePose Thunder FP16
+  - TensorFlow Lite XNNPACK, CPU 최대 2스레드
+  - 모델 입력 256×256, Pose 분석 간격 0.5초
+  - 초기 전체 화면 탐지에서 긴 변 최대 512px 이미지 사용
+  - Smart Crop 활성화 후 CameraX YUV에서 사람 ROI를 256×256 RGB 입력으로 직접 변환
+  - 사람 판정: confidence 0.25 이상 관절 4개 이상, 몸통 관절 2개 이상, 어깨·골반 각각 최소 1개
+  - Smart Crop 계산에는 confidence 0.15 이상 관절 사용
+  - 연속 3개 Pose 프레임에서 최소 3개 관절이 사람 크기의 5% 이상 이동하면 Smart Crop 활성화
+  - Smart Crop 활성화 후 유효한 사람 Pose 2프레임 연속 확인 뒤 시작 판정 허용
+  - Smart Crop 상태에서 사람 형태가 2회 연속 부정확하면 전체 화면 탐지로 복귀
+  - Pose가 최대 6초간 누락되어도 일시적인 가림으로 보고 기존 시도를 유지
 
 ### 공통 구간 처리 기준
 
 - 시작 감지 전 여백: 3초
 - 종료 기준 시점 이후 여백: 3초
 - Pose 분석 간격: 0.5초
-- Pose 미검출 재시도 기준: 5초
-- 9초 미만의 최종 구간: 인접 구간과 3초 이내이면 병합, 아니면 제외
+- Pose 미검출 허용 시간: 6초
+- 원본 감지 구간이 2초 미만이면 인접 구간과의 간격이 3초 이내일 때 병합하고, 병합할 수 없으면 제외
 - 최대 감지 구간 수: 최근 10개
 
-> `9초 미만`은 시작·종료의 각 3초 여백이 포함된 최종 클립 길이를 기준으로 합니다.
+> `2초 미만`은 시작·종료의 각 3초 여백을 추가하기 전의 원본 감지 구간 길이를 기준으로 합니다.
 
 ---
 
@@ -218,7 +227,7 @@ TopOut은 완등 후보 시점을 찾았다는 이유만으로 녹화를 자동 
 | 촬영 설정 | `RecordingSettingsVC.swift`, `RecordingFormat.swift` | `SettingsDialog.kt`, `SettingsRepository.kt`, `AppModels.kt` |
 | MobileSAM | `SAM.swift`, `Mask.swift`, `Pipeline.swift` | `OnnxMobileSamSegmenter.kt`, `HoldSegmenter.kt` |
 | 매트 탐지 | `MatDetector.swift`, `MatLineView.swift` | `MatBoundaryDetector.kt`, `SelectionEditor.kt` |
-| 움직임·Pose | `MotionDetector.swift` | `PoseClimbAnalyzer.kt`, `PoseHumanGate.kt`, `PoseStartRule.kt` |
+| 움직임·Pose | `MotionDetector.swift` | `PoseClimbAnalyzer.kt`, `MoveNetThunderPoseDetector.kt`, `PoseHumanGate.kt`, `PoseStartRule.kt` |
 | 결과 편집 | `ReviewVC.swift` | `ReviewScreen.kt`, `PrecisionTrimSlider.kt` |
 | 저장공간·중단 보호 | `HoldVC+Stability.swift` | `StorageMonitor.kt`, `TopOutViewModel.kt`, `CameraEngine.kt` |
 | 영상 내보내기 | `Recorder.swift` | `VideoExporter.kt` |
@@ -259,6 +268,8 @@ Android/TopOut/app/src/main/assets/models/mobile_sam_encoder.onnx
 Android/TopOut/app/src/main/assets/models/mobile_sam_decoder.onnx
 ```
 
+Android Pose 모델은 MoveNet SinglePose Thunder FP16을 사용하며, 모델 입력 크기는 256×256입니다. 초기 전체 화면 탐지에는 긴 변 최대 512px 이미지를 사용하고, Smart Crop이 활성화된 이후에는 CameraX YUV 프레임에서 사람 ROI를 직접 MoveNet 입력 버퍼로 변환합니다.
+
 ---
 
 ## 🔐 권한 및 개인정보 관련 설정
@@ -286,8 +297,8 @@ Android 10 이상에서는 MediaStore를 통해 `Movies/TopOut`에 영상을 저
 
 기능 흐름과 주요 수치는 iOS·Android에서 최대한 동일하게 맞췄지만, 다음 요소는 플랫폼 프레임워크와 기기 제조사 차이로 완전히 동일한 결과를 보장하지 않습니다.
 
-- Apple Vision과 ML Kit의 Pose 관절 좌표 및 confidence
-- Core ML과 ONNX Runtime의 추론·부동소수점 결과
+- Apple Vision과 MoveNet Thunder의 Pose 관절 좌표 및 confidence
+- Core ML, TensorFlow Lite, ONNX Runtime의 추론·부동소수점 결과
 - AVFoundation과 CameraX의 렌즈 전환 및 지원 포맷 판정
 - MOV와 MP4의 코덱 프로파일, GOP, 오디오 세부 사양
 - AVAssetExportSession과 Media3 Transformer의 재인코딩 결과
