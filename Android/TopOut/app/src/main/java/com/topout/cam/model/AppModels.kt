@@ -284,8 +284,9 @@ object TopOutConfig {
 
     const val PoseStartVerificationIntervalSeconds = 0.5
     const val PoseIntervalSeconds = 0.5
-    const val PoseInputMaxLongSide = 384
-    const val MoveNetPoseInputSize = 192
+    /** Used only before smart crop is unlocked; tracked frames go YUV directly to 256x256. */
+    const val PoseInputMaxLongSide = 512
+    const val MoveNetPoseInputSize = 256
     const val MoveNetCropKeypointConfidence = 0.15f
     const val SmartCropMotionVerificationFrames = 3
     const val SmartCropMinimumMovedLandmarks = 3

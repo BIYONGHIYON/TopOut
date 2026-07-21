@@ -3,6 +3,7 @@ package com.topout.cam.detection
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.RectF as AndroidRectF
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.compose.ui.geometry.Offset
@@ -37,7 +38,7 @@ enum class MotionFinishReference {
  *
  * The detector intentionally uses two stages, matching iOS:
  * 1) rolling luma difference in the 40%-high region above the edited mat line to wake pose tracking;
- * 2) MoveNet Lightning FP16 tracking every 0.5 s to determine the raw start/end and either the closest
+ * 2) MoveNet Thunder FP16 tracking every 0.5 s to determine the raw start/end and either the closest
  *    top-hold moment or the highest pose point, matching iOS MotionDetector.FinishReference.
  * Review padding is deliberately deferred until recording finalization.
  */
@@ -60,7 +61,7 @@ class PoseClimbAnalyzer(
      * MoveNet remains on the full frame until three consecutive pose frames show human-scale motion.
      * This prevents static climbing holds from locking the detector into a false smart-crop region.
      */
-    private val poseDetector = MoveNetLightningPoseDetector(context)
+    private val poseDetector = MoveNetThunderPoseDetector(context)
     private val smartCropMotionGate = PoseSmartCropMotionGate(
         requiredFrames = TopOutConfig.SmartCropMotionVerificationFrames,
         minimumMovedLandmarks = TopOutConfig.SmartCropMinimumMovedLandmarks,
@@ -329,25 +330,54 @@ class PoseClimbAnalyzer(
     ) {
         var poseBitmap: Bitmap? = null
         try {
-            poseBitmap = imageProxyToBitmap(image, TopOutConfig.PoseInputMaxLongSide)
-            val bitmap = poseBitmap
-            if (bitmap == null) {
-                handlePoseMissing(seconds)
-                return
-            }
-
-            val useTrackingAssociation = synchronized(this) { smartCropEnabled }
-            val detection = runCatching {
-                poseDetector.detect(bitmap, useTrackingAssociation)
-            }
-            detection.onSuccess { pose ->
-                if (pose != null) {
-                    handlePose(pose, seconds, bitmap.width, bitmap.height)
-                } else {
+            val smartCropActive = synchronized(this) { smartCropEnabled }
+            if (smartCropActive) {
+                // Once a real moving person has unlocked smart crop, skip the 512px RGB Bitmap.
+                // Sample the tracked region directly from CameraX YUV into MoveNet's 256x256 input.
+                val viewport = cropRectInDisplay(image)
+                val rotation = normalizedRotation(image.imageInfo.rotationDegrees)
+                val displayWidth = if (rotation % 180 == 0) image.width else image.height
+                val displayHeight = if (rotation % 180 == 0) image.height else image.width
+                val sourceWidth = max(1, (viewport.width * displayWidth).roundToInt())
+                val sourceHeight = max(1, (viewport.height * displayHeight).roundToInt())
+                val detection = runCatching {
+                    poseDetector.detectTrackedYuv(
+                        image = image,
+                        viewportInDisplay = AndroidRectF(
+                            viewport.left, viewport.top, viewport.right, viewport.bottom
+                        ),
+                        sourceWidth = sourceWidth,
+                        sourceHeight = sourceHeight
+                    )
+                }
+                detection.onSuccess { pose ->
+                    if (pose != null) {
+                        handlePose(pose, seconds, sourceWidth, sourceHeight)
+                    } else {
+                        handlePoseMissing(seconds)
+                    }
+                }.onFailure {
                     handlePoseMissing(seconds)
                 }
-            }.onFailure {
-                handlePoseMissing(seconds)
+            } else {
+                // Preserve the 512px full-frame path only for initial person discovery and the
+                // three-frame motion verification that protects against static-hold false locks.
+                poseBitmap = imageProxyToBitmap(image, TopOutConfig.PoseInputMaxLongSide)
+                val bitmap = poseBitmap
+                if (bitmap == null) {
+                    handlePoseMissing(seconds)
+                    return
+                }
+                val detection = runCatching { poseDetector.detect(bitmap, false) }
+                detection.onSuccess { pose ->
+                    if (pose != null) {
+                        handlePose(pose, seconds, bitmap.width, bitmap.height)
+                    } else {
+                        handlePoseMissing(seconds)
+                    }
+                }.onFailure {
+                    handlePoseMissing(seconds)
+                }
             }
         } catch (_: Throwable) {
             handlePoseMissing(seconds)

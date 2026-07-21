@@ -4,7 +4,11 @@ TopOut records climbing video with audio and automatically proposes climb ranges
 
 ## Automatic detection
 
-The Android release uses MoveNet SinglePose Lightning FP16 through TensorFlow Lite. MobileSAM proposes the mat boundary from automatic prompts at 80%, 85%, and 90%. A rolling luma-motion gate analyzes only the region above that edited boundary, and the active climb uses MoveNet's temporal smart crop to remain focused on the same person. The existing pose schedule is unchanged: inference runs at most every 0.5 seconds, while the FP16 model receives a 192×192 RGB input.
+The Android release uses MoveNet SinglePose Thunder FP16 through TensorFlow Lite. MobileSAM proposes the mat boundary from automatic prompts at 80%, 85%, and 90%. A rolling luma-motion gate analyzes only the region above that edited boundary, and the active climb uses MoveNet's temporal smart crop to remain focused on the same person. The existing pose schedule is unchanged: inference runs at most every 0.5 seconds, while the FP16 model receives a 256×256 RGB input.
+
+## Pose preprocessing and power use
+
+The 512px oriented RGB path is used only while finding and verifying a moving person. After smart crop is unlocked, the active crop is read directly from CameraX YUV_420_888 into MoveNet Thunder's 256×256 RGB tensor. This removes the recurring intermediate Bitmap and full-frame RGB conversion during the longer tracking phase.
 
 ## Clip ranges
 
@@ -33,10 +37,10 @@ app/src/main/assets/models/mobile_sam_encoder.onnx
 app/src/main/assets/models/mobile_sam_decoder.onnx
 ```
 
-The official MoveNet SinglePose Lightning FP16 model is downloaded automatically by the Gradle task `downloadMoveNetPoseModel`, validated as a TFLite FlatBuffer, and packaged from:
+The official MoveNet SinglePose Thunder FP16 model is downloaded automatically by the Gradle task `downloadMoveNetPoseModel`, validated as a TFLite FlatBuffer, and packaged from:
 
 ```text
-app/build/generated/moveNetPoseAssets/models/movenet-lightning-fp16.tflite
+app/build/generated/moveNetPoseAssets/models/movenet-thunder-fp16.tflite
 ```
 
 The first build therefore requires network access.

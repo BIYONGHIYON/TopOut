@@ -1,7 +1,7 @@
 # TopOut Android release optimization
 
 ## Functional behavior retained
-- MoveNet SinglePose Lightning FP16 model
+- MoveNet SinglePose Thunder FP16 model
 - 0.5-second pose inference interval
 - Climbing-specific smart crop and pose confidence thresholds
 - Existing start/finish detection policy
@@ -14,12 +14,15 @@
 - Removed internal patch-note files from the distribution root.
 
 ## Runtime optimization
-- Reuses MoveNet input, output, float-output, coordinate and RGB pixel buffers.
+- Reuses MoveNet input, output, float-output, resize bitmap, matrix and RGB pixel buffers.
 - Memory-maps the uncompressed TFLite asset when possible.
 - Enables XNNPACK with at most two CPU threads.
 - Removes per-pixel `Pair` allocations in YUV frame conversion.
 - Reuses the analyzer RGB scratch array.
-- Reduces the pose preprocessing long side from 640 to 384 before the fixed 192x192 model input.
+- Uses the 512px RGB preprocessing path only for initial full-frame discovery and motion verification.
+- After smart crop unlocks, samples CameraX YUV directly into MoveNet's 256x256 RGB tensor.
+- Uses bilinear luma sampling and allocation-free nearest chroma sampling for tracked frames.
+- Avoids the tracked-frame Bitmap creation, Canvas resize, getPixels pass, and 512px RGB scratch work.
 - Prefers a 960px CameraX analysis stream, while retaining 1280px as a compatibility fallback.
 
 ## Packaging optimization

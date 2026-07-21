@@ -12,10 +12,10 @@ plugins {
 
 val moveNetPoseAssetsDirectory = layout.buildDirectory.dir("generated/moveNetPoseAssets")
 val moveNetPoseModelFile = moveNetPoseAssetsDirectory.map {
-    it.file("models/movenet-lightning-fp16.tflite")
+    it.file("models/movenet-thunder-fp16.tflite")
 }
 val moveNetPoseModelUrl =
-    "https://tfhub.dev/google/lite-model/movenet/singlepose/lightning/tflite/float16/4?lite-format=tflite"
+    "https://tfhub.dev/google/lite-model/movenet/singlepose/thunder/tflite/float16/4?lite-format=tflite"
 
 android {
     namespace = "com.topout.cam"
@@ -78,7 +78,7 @@ kotlin {
 
 val downloadMoveNetPoseModel by tasks.registering {
     group = "topout models"
-    description = "Downloads and validates the official MoveNet SinglePose Lightning FP16 TFLite model."
+    description = "Downloads and validates the official MoveNet SinglePose Thunder FP16 TFLite model."
     inputs.property("modelUrl", moveNetPoseModelUrl)
     outputs.file(moveNetPoseModelFile)
 
@@ -107,7 +107,7 @@ val downloadMoveNetPoseModel by tasks.registering {
             temporary.outputStream().buffered().use { outputStream -> input.copyTo(outputStream) }
         }
         require(isValidTflite(temporary)) {
-            "MoveNet Lightning FP16 다운로드 결과가 유효한 TFLite FlatBuffer가 아닙니다."
+            "MoveNet Thunder FP16 다운로드 결과가 유효한 TFLite FlatBuffer가 아닙니다."
         }
         Files.move(
             temporary.toPath(),

@@ -16,13 +16,13 @@ were converted to ONNX format and integrated into TopOut for on-device image
 segmentation. These conversion and integration changes were made for TopOut.
 
 
-MoveNet SinglePose Lightning FP16 (version 4)
+MoveNet SinglePose Thunder FP16 (version 4)
 
-TopOut uses Google's MoveNet SinglePose Lightning model in the official
+TopOut uses Google's MoveNet SinglePose Thunder model in the official
 TensorFlow Lite FP16 format for on-device human pose estimation.
 
 Official model:
-https://tfhub.dev/google/lite-model/movenet/singlepose/lightning/tflite/float16/4
+https://tfhub.dev/google/lite-model/movenet/singlepose/thunder/tflite/float16/4
 
 Official TensorFlow MoveNet documentation:
 https://www.tensorflow.org/hub/tutorials/movenet

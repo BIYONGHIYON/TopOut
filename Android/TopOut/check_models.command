@@ -5,7 +5,7 @@ SOURCE_MODEL_DIR="$ROOT/app/src/main/assets/models"
 GENERATED_MODEL_DIR="$ROOT/app/build/generated/moveNetPoseAssets/models"
 ENCODER="$SOURCE_MODEL_DIR/mobile_sam_encoder.onnx"
 DECODER="$SOURCE_MODEL_DIR/mobile_sam_decoder.onnx"
-MOVENET="$GENERATED_MODEL_DIR/movenet-lightning-fp16.tflite"
+MOVENET="$GENERATED_MODEL_DIR/movenet-thunder-fp16.tflite"
 
 missing=0
 for file in "$ENCODER" "$DECODER"; do
