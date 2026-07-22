@@ -24,7 +24,7 @@ enum MotionFinishReference: String {
 /// MotionDetector Pose Climb
 ///
 /// 기준:
-/// - 3초 매트 보정 후 현재 프레임과 3개 분석 프레임 전을 비교합니다.
+/// - 별도 환경 보정 없이 녹화 시작 후 현재 프레임과 3개 분석 프레임 전을 비교합니다.
 /// - CV 탐색 영역은 매트 경계선 바로 위쪽부터 화면 높이의 40% 구간입니다.
 /// - 해당 영역에서 유의미한 변화가 감지되면 0.5초 간격 pose tracking으로 전환합니다.
 /// - 가장 낮은 pose 점이 매트 기준선 위로 올라가면 START, 다시 아래로 내려오면 FINISH로 봅니다.
@@ -35,7 +35,6 @@ enum MotionFinishReference: String {
 final class MotionDetector {
     private enum State: String {
         case idle
-        case calibrating
         case waiting
         case tracking
         case climbing
@@ -45,14 +44,6 @@ final class MotionDetector {
         let width: Int
         let height: Int
         let luma: [UInt8]
-    }
-
-    private struct CalibrationSample {
-        let energy: CGFloat
-    }
-
-    private struct Calibration {
-        let regionBaseline: CGFloat
     }
 
     private struct CVRegionMotion {
@@ -99,9 +90,6 @@ final class MotionDetector {
 
     private var lastAnalyzedPTS: CMTime?
     private var motionAnalysisBoostUntilPTS: CMTime?
-    private var calibrationStartedPTS: CMTime?
-    private var calibrationSamples: [CalibrationSample] = []
-    private var calibration: Calibration?
 
     private var lastPosePTS: CMTime?
     private var lastPoseSeenPTS: CMTime?
@@ -133,15 +121,25 @@ final class MotionDetector {
         }
     }
 
-    /// Countdown 시작과 동시에 호출합니다.
-    /// 이 상태에서 들어오는 프레임으로 모션 기준값을 안정화합니다.
+    /// 화면의 녹화 카운트다운이 시작될 때 이전 탐지 상태만 초기화합니다.
     func resetForRecording() {
+        discardPendingFrame()
+        q.async { [weak self] in
+            guard let self else { return }
+            self.resetStateLocked(keepConfig: true)
+            self.debug("👀 motion detector armed for recording")
+        }
+    }
+
+    /// 실제 파일 녹화가 시작되는 순간 환경 보정 없이 모션 탐지를 시작합니다.
+    func markRecordingStarted() {
+        discardPendingFrame()
         q.async { [weak self] in
             guard let self else { return }
             self.resetStateLocked(keepConfig: true)
             self.isActive = true
-            self.state = .calibrating
-            self.debug(String(format: "👀 motion detector started: countdown calibration %.1fs", Cfg.motionCountdownSeconds))
+            self.state = .waiting
+            self.debug("👀 motion detector started without baseline calibration")
         }
     }
 
@@ -176,6 +174,12 @@ final class MotionDetector {
         q.async { [weak self] in
             self?.processLatestPendingFrame()
         }
+    }
+
+    private func discardPendingFrame() {
+        pendingFrameLock.lock()
+        latestPendingSampleBuffer = nil
+        pendingFrameLock.unlock()
     }
 
     // MARK: Processing
@@ -230,17 +234,12 @@ final class MotionDetector {
         guard let frame = makeSmallFrame(from: sampleBuffer) else { return }
         let comparisonFrame = rollingCVReference(for: frame)
 
-        if state == .calibrating {
-            collectCalibration(frame: frame, referenceFrame: comparisonFrame, pts: pts)
-            return
-        }
-
         guard state == .waiting else { return }
-        guard let base = comparisonFrame, let calibration else { return }
+        guard let base = comparisonFrame else { return }
         guard base.width == frame.width, base.height == frame.height else { return }
 
         let rawRegionSignal = cvSearchRegionDiffScore(frame: frame, base: base)
-        let adjustedRegionSignal = Swift.max(0, rawRegionSignal - calibration.regionBaseline - Cfg.motionBaseDiffMargin)
+        let adjustedRegionSignal = Swift.max(0, rawRegionSignal - Cfg.motionBaseDiffMargin)
         let cvMotion: CVRegionMotion? = adjustedRegionSignal >= Cfg.motionCVRegionActiveThreshold
             ? CVRegionMotion(rawSignal: rawRegionSignal, adjustedSignal: adjustedRegionSignal)
             : nil
@@ -328,8 +327,6 @@ final class MotionDetector {
     private func currentAnalysisInterval(at pts: CMTime) -> TimeInterval {
         let fps: Double
         switch state {
-        case .calibrating:
-            fps = Cfg.motionAnalysisCalibrationFPS
         case .waiting:
             if let until = motionAnalysisBoostUntilPTS, CMTimeCompare(pts, until) <= 0 {
                 fps = Cfg.motionAnalysisBoostFPS
@@ -345,46 +342,6 @@ final class MotionDetector {
     private func boostMotionAnalysis(until pts: CMTime) {
         if let current = motionAnalysisBoostUntilPTS, CMTimeCompare(current, pts) >= 0 { return }
         motionAnalysisBoostUntilPTS = pts
-    }
-
-    // MARK: Calibration
-
-    private func collectCalibration(frame: SmallFrame, referenceFrame: SmallFrame?, pts: CMTime) {
-        if calibrationStartedPTS == nil { calibrationStartedPTS = pts }
-
-        if let base = referenceFrame, base.width == frame.width, base.height == frame.height {
-            calibrationSamples.append(
-                CalibrationSample(energy: cvSearchRegionDiffScore(frame: frame, base: base))
-            )
-        }
-
-        guard duration(from: calibrationStartedPTS, to: pts) >= Cfg.motionCountdownSeconds else { return }
-        guard !calibrationSamples.isEmpty else { return }
-        finishCalibration()
-    }
-
-    private func finishCalibration() {
-        let samples = calibrationSamples
-        guard !samples.isEmpty else { return }
-
-        let energies = samples.map { $0.energy }
-        let med = median(energies)
-        let mad = median(energies.map { abs($0 - med) })
-        let threshold = med + Swift.max(Cfg.motionCalibrationMinOutlierDelta, Cfg.motionCalibrationMADFactor * Swift.max(mad, 0.0001))
-        let accepted = samples.filter { $0.energy <= threshold }
-        let used = accepted.isEmpty ? samples : accepted
-
-        let regionBaseline = median(used.map { $0.energy })
-
-        calibration = Calibration(regionBaseline: regionBaseline)
-
-        state = .waiting
-        calibrationStartedPTS = nil
-        calibrationSamples.removeAll()
-
-        debug(String(format: "🧪 rolling CV region base ready: lag=%d samples=%d accepted=%d rejected=%d baseline=%.3f regionHeight=%.2f",
-                     Cfg.motionCVComparisonFrameLag, samples.count, used.count, samples.count - used.count,
-                     Double(regionBaseline), Double(Cfg.motionCVRegionAboveMatHeightRatio)))
     }
 
     // MARK: State Machine
@@ -425,15 +382,15 @@ final class MotionDetector {
 
         lastPoseSeenPTS = pts
         poseTrackingStartedPTS = nil
-        let lowestAboveMat = isAboveMatLine(lowestPoint, tolerance: Cfg.motionPoseMatCrossingTolerance)
+        let lowestAboveStartBoundary = isAboveStartBoundary(lowestPoint)
 
         switch state {
         case .tracking:
-            // CV 이후 첫 pose에서 이미 가장 낮은 점이 매트 위라면 즉시 start로 잡습니다.
-            // 아니면 아래→위 crossing 순간을 start로 잡습니다.
+            // CV 이후 첫 pose에서 이미 가장 낮은 점이 매트선보다 화면 높이의 3% 위라면 즉시 start로 잡습니다.
+            // 아니면 시작 경계의 아래→위 crossing 순간을 start로 잡습니다.
             let firstValidPose = lastLowestAboveMat == nil
-            let crossedUp = lowestAboveMat && (lastLowestAboveMat != true)
-            lastLowestAboveMat = lowestAboveMat
+            let crossedUp = lowestAboveStartBoundary && (lastLowestAboveMat != true)
+            lastLowestAboveMat = lowestAboveStartBoundary
             guard crossedUp else { return }
 
             // Store only the original crossing time. Review padding is added after all short-range
@@ -446,15 +403,16 @@ final class MotionDetector {
 
         case .climbing:
             updateFinishReferenceMoment(snapshot: snapshot, pts: pts)
-            lastLowestAboveMat = lowestAboveMat
+            lastLowestAboveMat = lowestAboveStartBoundary
 
-            // 가장 낮은 pose 점이 매트 아래로 다시 내려온 순간, 등반 구간을 닫습니다.
-            guard !lowestAboveMat else { return }
+            // 종료 판정에는 오차나 추가 보정을 적용하지 않습니다.
+            // 가장 낮은 pose 점이 실제 매트 경계선 아래로 내려온 순간 등반 구간을 닫습니다.
+            guard isBelowActualMatLine(lowestPoint) else { return }
 
             let finishBasePTS = bestFinishReferencePTS() ?? pts
             emitFinish(
                 finishBasePTS,
-                reason: "lowest pose point returned below mat; raw end from \(finishReferenceDescription())"
+                reason: "lowest pose point crossed below actual mat line; raw end from \(finishReferenceDescription())"
             )
 
         default:
@@ -695,14 +653,16 @@ final class MotionDetector {
         }
     }
 
-    private func isAboveMatLine(_ point: CGPoint, tolerance: CGFloat) -> Bool {
-        // CV 탐색 영역 변경과 무관하게 기존 start 통과 기준은 유지합니다.
-        // 가장 낮은 pose 점이 매트선보다 화면 높이의 5% 위로 올라와야 start로 인정합니다.
-        let stricterBoundary = Swift.max(
+    private func isAboveStartBoundary(_ point: CGPoint) -> Bool {
+        let startBoundary = Swift.max(
             0.0,
-            lineY(at: point.x) - Swift.max(0.02, Cfg.motionPoseStartAboveMatOffsetRatio)
+            lineY(at: point.x) - Cfg.motionPoseStartAboveMatOffsetRatio
         )
-        return point.y <= stricterBoundary + tolerance
+        return point.y <= startBoundary
+    }
+
+    private func isBelowActualMatLine(_ point: CGPoint) -> Bool {
+        point.y > lineY(at: point.x)
     }
 
     private func updateFinishReferenceMoment(snapshot: PoseSnapshot, pts: CMTime) {
@@ -928,9 +888,6 @@ final class MotionDetector {
         state = .idle
         lastAnalyzedPTS = nil
         motionAnalysisBoostUntilPTS = nil
-        calibrationStartedPTS = nil
-        calibrationSamples.removeAll()
-        calibration = nil
         cvFrameHistory.removeAll(keepingCapacity: true)
         lastPosePTS = nil
         lastPoseSeenPTS = nil
@@ -968,14 +925,6 @@ final class MotionDetector {
     private func duration(from start: CMTime?, to end: CMTime) -> TimeInterval {
         guard let start else { return 0 }
         return Swift.max(0, CMTimeGetSeconds(end - start))
-    }
-
-    private func median(_ values: [CGFloat]) -> CGFloat {
-        guard !values.isEmpty else { return 0 }
-        let sorted = values.sorted()
-        let mid = sorted.count / 2
-        if sorted.count % 2 == 0 { return (sorted[mid - 1] + sorted[mid]) * 0.5 }
-        return sorted[mid]
     }
 
     private func clamped(_ rect: CGRect) -> CGRect { expanded(rect, by: 0) }

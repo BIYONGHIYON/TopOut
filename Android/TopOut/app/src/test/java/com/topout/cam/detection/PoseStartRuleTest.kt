@@ -6,56 +6,41 @@ import org.junit.Test
 
 class PoseStartRuleTest {
     @Test
-    fun unverifiedPoseNeverStarts() {
-        assertFalse(
-            PoseStartRule.shouldStart(
-                lowestAboveMat = true,
-                previousLowestAboveMat = null,
-                humanMotionVerified = false
-            )
-        )
-    }
-
-    @Test
-    fun firstVerifiedPoseAlreadyAboveMatStartsImmediately() {
+    fun firstReliablePoseAlreadyAboveMatStartsImmediately() {
         assertTrue(
             PoseStartRule.shouldStart(
                 lowestAboveMat = true,
-                previousLowestAboveMat = null,
-                humanMotionVerified = true
+                previousLowestAboveMat = null
             )
         )
     }
 
     @Test
-    fun firstVerifiedPoseBelowMatDoesNotStart() {
+    fun firstReliablePoseBelowMatDoesNotStart() {
         assertFalse(
             PoseStartRule.shouldStart(
                 lowestAboveMat = false,
-                previousLowestAboveMat = null,
-                humanMotionVerified = true
+                previousLowestAboveMat = null
             )
         )
     }
 
     @Test
-    fun verifiedBelowToAboveCrossingStarts() {
+    fun belowToAboveCrossingStarts() {
         assertTrue(
             PoseStartRule.shouldStart(
                 lowestAboveMat = true,
-                previousLowestAboveMat = false,
-                humanMotionVerified = true
+                previousLowestAboveMat = false
             )
         )
     }
 
     @Test
-    fun verifiedRemainingAboveDoesNotStartAgain() {
+    fun remainingAboveDoesNotStartAgain() {
         assertFalse(
             PoseStartRule.shouldStart(
                 lowestAboveMat = true,
-                previousLowestAboveMat = true,
-                humanMotionVerified = true
+                previousLowestAboveMat = true
             )
         )
     }

@@ -40,7 +40,7 @@ extension HoldVC {
     }
 
     func startRecorderAfterCountdown() {
-        let seconds = max(0, Int(ceil(Cfg.motionCountdownSeconds)))
+        let seconds = max(0, Int(ceil(Cfg.recordingCountdownSeconds)))
 
         for i in 0...seconds {
             let item = DispatchWorkItem { [weak self] in
@@ -48,9 +48,7 @@ extension HoldVC {
 
                 let remain = seconds - i
                 if remain > 0 {
-                    let countdownText = self.isAutoClipDetectionEnabled
-                        ? "\(remain)초 후 녹화 시작 · 매트 보정 중"
-                        : "\(remain)초 후 녹화 시작"
+                    let countdownText = "\(remain)초 후 녹화 시작"
                     self.setRecordingStatusText(countdownText)
                     if !self.isDeveloperModeEnabled {
                         self.showPowerSavingCountdown(remain)
@@ -60,6 +58,9 @@ extension HoldVC {
                 }
 
                 self.recorder.start()
+                if self.isAutoClipDetectionEnabled {
+                    self.motionDetector.markRecordingStarted()
+                }
                 self.manualStopBtn.isEnabled = true
                 self.setRecordingStatusText(self.defaultActiveRecordingStatusText())
                 self.startRecordingElapsedTimer()
@@ -343,6 +344,7 @@ extension HoldVC {
     ) -> [ReviewClipRange] {
         let minimumDetectionDuration = Cfg.motionShortClipMinimumDetectionSeconds
         let mergeGap = Cfg.motionShortClipMergeGapSeconds
+        let adjacentMergeGap = Cfg.motionAdjacentClipMergeGapSeconds
         let padding = Cfg.motionClipBoundaryPaddingSeconds
         var working = ranges
             .filter { $0.unpaddedEndSeconds > $0.unpaddedStartSeconds }
@@ -390,7 +392,10 @@ extension HoldVC {
             }
         }
 
-        // Only after every short-range merge/removal is complete do we add review context.
+        // Compare the unpadded boundaries. A pause of one second or less belongs to the same clip.
+        working = mergeAdjacentRawRanges(working, maximumGap: adjacentMergeGap)
+
+        // Only after every raw-range merge/removal is complete do we add review context.
         return working.compactMap { raw in
             let rawStart = raw.unpaddedStartSeconds
             let rawEnd = raw.unpaddedEndSeconds
@@ -404,6 +409,25 @@ extension HoldVC {
                 unpaddedEndSeconds: rawEnd
             )
         }
+    }
+
+    private func mergeAdjacentRawRanges(
+        _ sortedRanges: [ReviewClipRange],
+        maximumGap: TimeInterval
+    ) -> [ReviewClipRange] {
+        guard let first = sortedRanges.first else { return [] }
+
+        var merged: [ReviewClipRange] = [first]
+        for next in sortedRanges.dropFirst() {
+            let previous = merged[merged.count - 1]
+            let gap = Swift.max(0, next.unpaddedStartSeconds - previous.unpaddedEndSeconds)
+            if gap <= maximumGap {
+                merged[merged.count - 1] = rawUnion(previous, next)
+            } else {
+                merged.append(next)
+            }
+        }
+        return merged
     }
 
     private func rawUnion(_ lhs: ReviewClipRange, _ rhs: ReviewClipRange) -> ReviewClipRange {

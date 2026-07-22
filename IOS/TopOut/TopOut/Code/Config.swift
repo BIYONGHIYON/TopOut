@@ -46,6 +46,7 @@ enum Cfg {
     static let matSearchTopY: CGFloat = 0.50
     static let matSearchBottomY: CGFloat = 0.96
     static let matDefaultY: CGFloat = 0.75
+    static let matDetectedLineDownwardOffsetPixels: CGFloat = 10
     static let matMinEdgeScore: CGFloat = 8
     static let matLowerUniformityTol: CGFloat = 15
     static let matBoundaryBins = 10
@@ -62,16 +63,13 @@ enum Cfg {
 
     // MARK: Motion Detection
     static let motionDebugLog = false
-    static let motionAnalysisCalibrationFPS: Double = 8
     static let motionAnalysisIdleFPS: Double = 6
     static let motionAnalysisBoostFPS: Double = 12
     static let motionAnalysisBoostSeconds: TimeInterval = 1.2
     static let motionFrameWidth = 160
     static let motionCVComparisonFrameLag = 3
     static let motionPixelDiff: UInt8 = 20
-    static let motionCountdownSeconds: TimeInterval = 3.0
-    static let motionCalibrationMADFactor: CGFloat = 2.8
-    static let motionCalibrationMinOutlierDelta: CGFloat = 0.035
+    static let recordingCountdownSeconds: TimeInterval = 3.0
     // CV 탐색 영역: 매트 경계선 바로 위쪽부터 화면 높이의 40%
     static let motionCVRegionAboveMatHeightRatio: CGFloat = 0.40
     // 전체 탐색 영역에서 기준 노이즈를 제외한 변화 픽셀 비율
@@ -87,7 +85,8 @@ enum Cfg {
     static let motionClipBoundaryPaddingSeconds: TimeInterval = 3.0
     static let motionShortClipMinimumDetectionSeconds: TimeInterval = 2.0
     static let motionShortClipMergeGapSeconds: TimeInterval = 3.0
-    // 기존 start 판정 유지: 가장 낮은 관절이 매트선보다 화면 높이의 5% 위로 올라오면 시작
-    static let motionPoseStartAboveMatOffsetRatio: CGFloat = 0.05
-    static let motionPoseMatCrossingTolerance: CGFloat = 0.02
+    // 짧은 구간 정리 후, 패딩 전 원본 구간 사이가 1초 이하면 하나로 병합
+    static let motionAdjacentClipMergeGapSeconds: TimeInterval = 1.0
+    // 시작 판정: 가장 낮은 관절이 실제 매트선보다 화면 높이의 3% 위에 있어야 함
+    static let motionPoseStartAboveMatOffsetRatio: CGFloat = 0.03
 }

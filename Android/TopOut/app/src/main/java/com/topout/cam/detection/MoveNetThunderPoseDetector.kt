@@ -1,12 +1,6 @@
 package com.topout.cam.detection
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Matrix
-import android.graphics.Paint
-import android.graphics.PorterDuff
 import android.graphics.RectF
 import androidx.camera.core.ImageProxy
 import com.topout.cam.model.TopOutConfig
@@ -33,16 +27,10 @@ internal class MoveNetThunderPoseDetector(context: Context) : AutoCloseable {
         .order(ByteOrder.nativeOrder())
     private val outputFloatBuffer = outputBuffer.asFloatBuffer()
     private val outputValues = FloatArray(PoseLandmark.COUNT * OUTPUT_VALUES_PER_KEYPOINT)
-    private val resizedBitmap = Bitmap.createBitmap(inputSize, inputSize, Bitmap.Config.ARGB_8888)
-    private val resizedCanvas = Canvas(resizedBitmap)
-    private val resizePaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
-        isFilterBitmap = true
-        isAntiAlias = true
-    }
-    private val resizeMatrix = Matrix()
-    private val cropRect = RectF()
-    private val inputRect = RectF(0f, 0f, inputSize.toFloat(), inputSize.toFloat())
-    private val resizedPixels = IntArray(inputSize * inputSize)
+    private val displaySampleX = FloatArray(inputSize)
+    private val displaySampleY = FloatArray(inputSize)
+    private val validSampleX = BooleanArray(inputSize)
+    private val validSampleY = BooleanArray(inputSize)
 
     private var interpreter: Interpreter? = null
     private var previousCropRegion: MoveNetCropRegion? = null
@@ -51,45 +39,19 @@ internal class MoveNetThunderPoseDetector(context: Context) : AutoCloseable {
     private var cachedImageHeight = 0
     @Volatile private var closed = false
 
-    @Synchronized
-    fun detect(bitmap: Bitmap, useTrackingAssociation: Boolean): PoseResult? {
-        check(!closed) { "MoveNet 실행기가 이미 종료되었습니다." }
-        require(bitmap.width > 0 && bitmap.height > 0) { "포즈 분석 이미지가 올바르지 않습니다." }
-
-        val runtime = ensureInterpreterLocked()
-        val initialCrop = initialCropRegion(bitmap.width, bitmap.height)
-        val crop = if (useTrackingAssociation) previousCropRegion ?: initialCrop else initialCrop
-        prepareInput(bitmap, crop)
-        outputBuffer.clear()
-        runtime.run(inputBuffer, outputBuffer)
-        outputFloatBuffer.rewind()
-        outputFloatBuffer.get(outputValues)
-
-        val pose = MoveNetPoseOutputParser.parse(outputValues, crop)
-        previousCropRegion = if (pose != null && useTrackingAssociation) {
-            MoveNetPoseOutputParser.nextCropRegion(
-                pose = pose,
-                imageWidth = bitmap.width,
-                imageHeight = bitmap.height,
-                minimumKeypointScore = TopOutConfig.MoveNetCropKeypointConfidence
-            )
-        } else {
-            null
-        }
-        return pose
-    }
-
     /**
      * Converts only the active smart-crop region from CameraX YUV_420_888 directly into the
-     * 256x256 MoveNet RGB tensor. This avoids creating the intermediate 512px RGB Bitmap on every
-     * tracked frame. The viewport coordinates are normalized in display orientation.
+     * 256x256 MoveNet RGB tensor without an intermediate full-frame RGB bitmap. The viewport
+     * coordinates are normalized in display orientation.
      */
     @Synchronized
     fun detectTrackedYuv(
         image: ImageProxy,
         viewportInDisplay: RectF,
         sourceWidth: Int,
-        sourceHeight: Int
+        sourceHeight: Int,
+        updateTrackingRegion: Boolean = true,
+        retainCropOnMissing: Boolean = false
     ): PoseResult? {
         check(!closed) { "MoveNet 실행기가 이미 종료되었습니다." }
         require(sourceWidth > 0 && sourceHeight > 0) { "포즈 분석 영역 크기가 올바르지 않습니다." }
@@ -110,20 +72,32 @@ internal class MoveNetThunderPoseDetector(context: Context) : AutoCloseable {
         outputFloatBuffer.get(outputValues)
 
         val pose = MoveNetPoseOutputParser.parse(outputValues, crop)
-        previousCropRegion = if (pose != null) {
-            MoveNetPoseOutputParser.nextCropRegion(
+        previousCropRegion = when {
+            !updateTrackingRegion -> crop
+            pose != null -> MoveNetPoseOutputParser.nextCropRegion(
                 pose = pose,
                 imageWidth = sourceWidth,
                 imageHeight = sourceHeight,
                 minimumKeypointScore = TopOutConfig.MoveNetCropKeypointConfidence
             )
-        } else {
-            null
+            retainCropOnMissing -> crop
+            else -> null
         }
         return pose
     }
 
-    /** Seeds the next inference crop only after the caller has verified real joint motion. */
+    /** Seeds a fixed motion-derived crop before reliable joints are available. */
+    @Synchronized
+    fun primeTrackingCrop(crop: MoveNetCropRegion) {
+        if (closed) return
+        if (!crop.xMin.isFinite() || !crop.yMin.isFinite() ||
+            !crop.width.isFinite() || !crop.height.isFinite() ||
+            crop.width <= 0f || crop.height <= 0f
+        ) return
+        previousCropRegion = crop
+    }
+
+    /** Seeds the next inference crop after the caller has verified reliable human joints. */
     @Synchronized
     fun primeTracking(pose: PoseResult, imageWidth: Int, imageHeight: Int) {
         if (closed || imageWidth <= 0 || imageHeight <= 0) return
@@ -148,7 +122,6 @@ internal class MoveNetThunderPoseDetector(context: Context) : AutoCloseable {
         cachedInitialCropRegion = null
         runCatching { interpreter?.close() }
         interpreter = null
-        runCatching { resizedBitmap.recycle() }
     }
 
     private fun initialCropRegion(width: Int, height: Int): MoveNetCropRegion {
@@ -229,41 +202,6 @@ internal class MoveNetThunderPoseDetector(context: Context) : AutoCloseable {
         )
     }
 
-    private fun prepareInput(bitmap: Bitmap, crop: MoveNetCropRegion) {
-        cropRect.set(
-            crop.xMin * bitmap.width,
-            crop.yMin * bitmap.height,
-            (crop.xMin + crop.width) * bitmap.width,
-            (crop.yMin + crop.height) * bitmap.height
-        )
-        resizeMatrix.reset()
-        check(resizeMatrix.setRectToRect(cropRect, inputRect, Matrix.ScaleToFit.FILL)) {
-            "MoveNet 입력 crop 크기가 올바르지 않습니다: $crop"
-        }
-
-        // Keep padded crop areas black and use bilinear filtering instead of nearest-neighbour
-        // sampling so small wrist/ankle features survive the downscale more reliably.
-        resizedCanvas.drawColor(Color.BLACK, PorterDuff.Mode.SRC)
-        resizedCanvas.drawBitmap(bitmap, resizeMatrix, resizePaint)
-        resizedBitmap.getPixels(
-            resizedPixels,
-            0,
-            inputSize,
-            0,
-            0,
-            inputSize,
-            inputSize
-        )
-
-        inputBuffer.clear()
-        for (color in resizedPixels) {
-            inputBuffer.put((color ushr 16).toByte())
-            inputBuffer.put((color ushr 8).toByte())
-            inputBuffer.put(color.toByte())
-        }
-        inputBuffer.rewind()
-    }
-
     private fun prepareInputFromYuv(
         image: ImageProxy,
         viewportInDisplay: RectF,
@@ -281,100 +219,180 @@ internal class MoveNetThunderPoseDetector(context: Context) : AutoCloseable {
         val rotation = normalizedRotation(image.imageInfo.rotationDegrees)
         val rawWidth = image.width
         val rawHeight = image.height
+        val rawWidthScale = (rawWidth - 1).toFloat()
+        val rawHeightScale = (rawHeight - 1).toFloat()
         val chromaWidth = (rawWidth + 1) / 2
         val chromaHeight = (rawHeight + 1) / 2
+        val viewportWidth = viewportInDisplay.width()
+        val viewportHeight = viewportInDisplay.height()
 
-        inputBuffer.clear()
+        for (targetX in 0 until inputSize) {
+            val sourceX = crop.xMin + crop.width * (targetX + 0.5f) / inputSize
+            validSampleX[targetX] = sourceX in 0f..1f
+            displaySampleX[targetX] = viewportInDisplay.left + sourceX * viewportWidth
+        }
         for (targetY in 0 until inputSize) {
             val sourceY = crop.yMin + crop.height * (targetY + 0.5f) / inputSize
-            for (targetX in 0 until inputSize) {
-                val sourceX = crop.xMin + crop.width * (targetX + 0.5f) / inputSize
+            validSampleY[targetY] = sourceY in 0f..1f
+            displaySampleY[targetY] = viewportInDisplay.top + sourceY * viewportHeight
+        }
 
-                // MoveNet's square crop may extend beyond the viewport. Match resize-with-pad by
-                // writing black rather than clamping those samples to an image edge.
-                if (sourceX !in 0f..1f || sourceY !in 0f..1f) {
-                    inputBuffer.put(0)
-                    inputBuffer.put(0)
-                    inputBuffer.put(0)
-                    continue
-                }
-
-                val displayX = (viewportInDisplay.left + sourceX * viewportInDisplay.width())
-                    .coerceIn(0f, 1f)
-                val displayY = (viewportInDisplay.top + sourceY * viewportInDisplay.height())
-                    .coerceIn(0f, 1f)
-                val rawNormalizedX: Float
-                val rawNormalizedY: Float
-                when (rotation) {
-                    90 -> {
-                        rawNormalizedX = displayY
-                        rawNormalizedY = 1f - displayX
-                    }
-                    180 -> {
-                        rawNormalizedX = 1f - displayX
-                        rawNormalizedY = 1f - displayY
-                    }
-                    270 -> {
-                        rawNormalizedX = 1f - displayY
-                        rawNormalizedY = displayX
-                    }
-                    else -> {
-                        rawNormalizedX = displayX
-                        rawNormalizedY = displayY
+        inputBuffer.clear()
+        when (rotation) {
+            90 -> {
+                for (targetY in 0 until inputSize) {
+                    val rowValid = validSampleY[targetY]
+                    val rawX = displaySampleY[targetY].coerceIn(0f, 1f) * rawWidthScale
+                    for (targetX in 0 until inputSize) {
+                        if (!rowValid || !validSampleX[targetX]) {
+                            putBlackPixel()
+                            continue
+                        }
+                        val rawY = (1f - displaySampleX[targetX].coerceIn(0f, 1f)) * rawHeightScale
+                        putYuvPixel(
+                            yBuffer, uBuffer, vBuffer,
+                            yBase, uBase, vBase,
+                            yPlane.rowStride, yPlane.pixelStride,
+                            uPlane.rowStride, uPlane.pixelStride,
+                            vPlane.rowStride, vPlane.pixelStride,
+                            rawX, rawY, rawWidth, rawHeight, chromaWidth, chromaHeight
+                        )
                     }
                 }
-                val rawX = rawNormalizedX * (rawWidth - 1)
-                val rawY = rawNormalizedY * (rawHeight - 1)
-
-                val yy = samplePlaneBilinear(
-                    buffer = yBuffer,
-                    base = yBase,
-                    rowStride = yPlane.rowStride,
-                    pixelStride = yPlane.pixelStride,
-                    x = rawX,
-                    y = rawY,
-                    width = rawWidth,
-                    height = rawHeight,
-                    fallback = 16f
-                )
-                // Chroma is already half-resolution in YUV_420_888. Nearest chroma sampling
-                // avoids eight extra buffer reads per model pixel while bilinear luma preserves
-                // the fine edges that matter most for wrists and ankles.
-                val uu = samplePlaneNearest(
-                    buffer = uBuffer,
-                    base = uBase,
-                    rowStride = uPlane.rowStride,
-                    pixelStride = uPlane.pixelStride,
-                    x = rawX * 0.5f,
-                    y = rawY * 0.5f,
-                    width = chromaWidth,
-                    height = chromaHeight,
-                    fallback = 128f
-                )
-                val vv = samplePlaneNearest(
-                    buffer = vBuffer,
-                    base = vBase,
-                    rowStride = vPlane.rowStride,
-                    pixelStride = vPlane.pixelStride,
-                    x = rawX * 0.5f,
-                    y = rawY * 0.5f,
-                    width = chromaWidth,
-                    height = chromaHeight,
-                    fallback = 128f
-                )
-
-                val c = max(0f, yy - 16f)
-                val d = uu - 128f
-                val e = vv - 128f
-                val red = (1.164f * c + 1.596f * e).roundToInt().coerceIn(0, 255)
-                val green = (1.164f * c - 0.392f * d - 0.813f * e).roundToInt().coerceIn(0, 255)
-                val blue = (1.164f * c + 2.017f * d).roundToInt().coerceIn(0, 255)
-                inputBuffer.put(red.toByte())
-                inputBuffer.put(green.toByte())
-                inputBuffer.put(blue.toByte())
+            }
+            180 -> {
+                for (targetY in 0 until inputSize) {
+                    val rowValid = validSampleY[targetY]
+                    val rawY = (1f - displaySampleY[targetY].coerceIn(0f, 1f)) * rawHeightScale
+                    for (targetX in 0 until inputSize) {
+                        if (!rowValid || !validSampleX[targetX]) {
+                            putBlackPixel()
+                            continue
+                        }
+                        val rawX = (1f - displaySampleX[targetX].coerceIn(0f, 1f)) * rawWidthScale
+                        putYuvPixel(
+                            yBuffer, uBuffer, vBuffer,
+                            yBase, uBase, vBase,
+                            yPlane.rowStride, yPlane.pixelStride,
+                            uPlane.rowStride, uPlane.pixelStride,
+                            vPlane.rowStride, vPlane.pixelStride,
+                            rawX, rawY, rawWidth, rawHeight, chromaWidth, chromaHeight
+                        )
+                    }
+                }
+            }
+            270 -> {
+                for (targetY in 0 until inputSize) {
+                    val rowValid = validSampleY[targetY]
+                    val rawX = (1f - displaySampleY[targetY].coerceIn(0f, 1f)) * rawWidthScale
+                    for (targetX in 0 until inputSize) {
+                        if (!rowValid || !validSampleX[targetX]) {
+                            putBlackPixel()
+                            continue
+                        }
+                        val rawY = displaySampleX[targetX].coerceIn(0f, 1f) * rawHeightScale
+                        putYuvPixel(
+                            yBuffer, uBuffer, vBuffer,
+                            yBase, uBase, vBase,
+                            yPlane.rowStride, yPlane.pixelStride,
+                            uPlane.rowStride, uPlane.pixelStride,
+                            vPlane.rowStride, vPlane.pixelStride,
+                            rawX, rawY, rawWidth, rawHeight, chromaWidth, chromaHeight
+                        )
+                    }
+                }
+            }
+            else -> {
+                for (targetY in 0 until inputSize) {
+                    val rowValid = validSampleY[targetY]
+                    val rawY = displaySampleY[targetY].coerceIn(0f, 1f) * rawHeightScale
+                    for (targetX in 0 until inputSize) {
+                        if (!rowValid || !validSampleX[targetX]) {
+                            putBlackPixel()
+                            continue
+                        }
+                        val rawX = displaySampleX[targetX].coerceIn(0f, 1f) * rawWidthScale
+                        putYuvPixel(
+                            yBuffer, uBuffer, vBuffer,
+                            yBase, uBase, vBase,
+                            yPlane.rowStride, yPlane.pixelStride,
+                            uPlane.rowStride, uPlane.pixelStride,
+                            vPlane.rowStride, vPlane.pixelStride,
+                            rawX, rawY, rawWidth, rawHeight, chromaWidth, chromaHeight
+                        )
+                    }
+                }
             }
         }
         inputBuffer.rewind()
+    }
+
+    private fun putBlackPixel() {
+        inputBuffer.put(0)
+        inputBuffer.put(0)
+        inputBuffer.put(0)
+    }
+
+    private fun putYuvPixel(
+        yBuffer: ByteBuffer,
+        uBuffer: ByteBuffer,
+        vBuffer: ByteBuffer,
+        yBase: Int,
+        uBase: Int,
+        vBase: Int,
+        yRowStride: Int,
+        yPixelStride: Int,
+        uRowStride: Int,
+        uPixelStride: Int,
+        vRowStride: Int,
+        vPixelStride: Int,
+        rawX: Float,
+        rawY: Float,
+        rawWidth: Int,
+        rawHeight: Int,
+        chromaWidth: Int,
+        chromaHeight: Int
+    ) {
+        val yy = samplePlaneBilinear(
+            buffer = yBuffer,
+            base = yBase,
+            rowStride = yRowStride,
+            pixelStride = yPixelStride,
+            x = rawX,
+            y = rawY,
+            width = rawWidth,
+            height = rawHeight,
+            fallback = 16f
+        )
+        val uu = samplePlaneNearest(
+            buffer = uBuffer,
+            base = uBase,
+            rowStride = uRowStride,
+            pixelStride = uPixelStride,
+            x = rawX * 0.5f,
+            y = rawY * 0.5f,
+            width = chromaWidth,
+            height = chromaHeight,
+            fallback = 128f
+        )
+        val vv = samplePlaneNearest(
+            buffer = vBuffer,
+            base = vBase,
+            rowStride = vRowStride,
+            pixelStride = vPixelStride,
+            x = rawX * 0.5f,
+            y = rawY * 0.5f,
+            width = chromaWidth,
+            height = chromaHeight,
+            fallback = 128f
+        )
+
+        val c = max(0f, yy - 16f)
+        val d = uu - 128f
+        val e = vv - 128f
+        inputBuffer.put((1.164f * c + 1.596f * e).roundToInt().coerceIn(0, 255).toByte())
+        inputBuffer.put((1.164f * c - 0.392f * d - 0.813f * e).roundToInt().coerceIn(0, 255).toByte())
+        inputBuffer.put((1.164f * c + 2.017f * d).roundToInt().coerceIn(0, 255).toByte())
     }
 
     private fun samplePlaneNearest(
@@ -420,22 +438,29 @@ internal class MoveNetThunderPoseDetector(context: Context) : AutoCloseable {
         val tx = clampedX - x0
         val ty = clampedY - y0
 
-        fun valueAt(sampleX: Int, sampleY: Int): Float {
-            val index = base + sampleY * rowStride + sampleX * pixelStride
-            return if (index in 0 until buffer.limit()) {
-                (buffer.get(index).toInt() and 0xFF).toFloat()
-            } else {
-                fallback
-            }
-        }
-
-        val topLeft = valueAt(x0, y0)
-        val topRight = valueAt(x1, y0)
-        val bottomLeft = valueAt(x0, y1)
-        val bottomRight = valueAt(x1, y1)
+        val topLeft = planeValue(buffer, base, rowStride, pixelStride, x0, y0, fallback)
+        val topRight = planeValue(buffer, base, rowStride, pixelStride, x1, y0, fallback)
+        val bottomLeft = planeValue(buffer, base, rowStride, pixelStride, x0, y1, fallback)
+        val bottomRight = planeValue(buffer, base, rowStride, pixelStride, x1, y1, fallback)
         val top = topLeft + (topRight - topLeft) * tx
         val bottom = bottomLeft + (bottomRight - bottomLeft) * tx
         return top + (bottom - top) * ty
+    }
+
+
+    private fun planeValue(
+        buffer: ByteBuffer,
+        base: Int,
+        rowStride: Int,
+        pixelStride: Int,
+        x: Int,
+        y: Int,
+        fallback: Float
+    ): Float {
+        val index = base + y * rowStride + x * pixelStride
+        return if (index in 0 until buffer.limit()) {
+            (buffer.get(index).toInt() and 0xFF).toFloat()
+        } else fallback
     }
 
     private fun normalizedRotation(degrees: Int): Int = ((degrees % 360) + 360) % 360

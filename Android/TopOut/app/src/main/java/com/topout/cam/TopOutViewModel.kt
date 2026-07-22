@@ -257,8 +257,12 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             val mat = if (settings.autoClipDetectionEnabled) {
-                mobileSam.detectMatBoundary(frame).getOrElse {
+                val detected = mobileSam.detectMatBoundary(frame).getOrElse {
                     listOf(Offset(0.06f, TopOutConfig.MatDefaultY), Offset(0.94f, TopOutConfig.MatDefaultY))
+                }
+                val downwardOffset = TopOutConfig.MatDetectedLineDownwardOffsetPixels / frame.height.toFloat()
+                detected.map { point ->
+                    Offset(point.x, (point.y + downwardOffset).coerceIn(0f, 1f))
                 }
             } else {
                 emptyList()
@@ -391,12 +395,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     MotionFinishReference.CLOSEST_TOP_HOLD
                 } else {
                     MotionFinishReference.HIGHEST_POSE_POINT
-                },
-                referenceImage = state.frozenFrame,
-                horizontalBinCount = settings.aspectRatio.adaptiveHorizontalBinCount(
-                    TopOutConfig.MatBoundaryBins,
-                    state.isLandscape
-                )
+                }
             )
             poseAnalyzer.resetForRecording()
         } else {
@@ -412,7 +411,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 recordingState = RecordingState.STARTING,
                 frozenFrame = null,
                 recordingElapsedSeconds = 0.0,
-                recordingCountdown = TopOutConfig.MotionCountdownSeconds.toInt(),
+                recordingCountdown = TopOutConfig.RecordingCountdownSeconds.toInt(),
                 detectedRanges = emptyList(),
                 isBusy = false,
                 livePreviewEnabled = settings.livePreviewDuringRecordingEnabled,
@@ -422,7 +421,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         cameraEngine.setPreviewRenderingEnabled(settings.livePreviewDuringRecordingEnabled)
 
         countdownJob = viewModelScope.launch {
-            for (remaining in TopOutConfig.MotionCountdownSeconds.toInt() downTo 1) {
+            for (remaining in TopOutConfig.RecordingCountdownSeconds.toInt() downTo 1) {
                 _uiState.update {
                     it.copy(
                         recordingCountdown = remaining,

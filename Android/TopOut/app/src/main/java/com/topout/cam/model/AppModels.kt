@@ -260,52 +260,44 @@ object TopOutConfig {
 
     const val MatDefaultY = 0.75f
     const val MatBoundaryBins = 10
+    const val MatDetectedLineDownwardOffsetPixels = 10f
+    /** The lowest reliable joint must clear the edited mat line by 3% of frame height. */
+    const val PoseStartAboveMatMarginRatio = 0.03f
 
-    const val MotionAnalysisCalibrationFps = 8.0
-    const val MotionAnalysisIdleFps = 6.0
-    const val MotionAnalysisBoostFps = 12.0
-    const val MotionAnalysisBoostSeconds = 1.2
+    /** Motion waiting, ROI seeding, and pose tracking all run every 0.5 seconds. */
     const val MotionFrameWidth = 160
-    const val MotionCVComparisonFrameLag = 3
+    const val MotionCVComparisonFrameLag = 2
     const val MotionCVRegionAboveMatHeightRatio = 0.40f
-    const val MotionCVRegionActiveThreshold = 0.04f
+    /** With the 2.5% base margin, motion now wakes at roughly 4.5% raw changed pixels. */
+    const val MotionCVRegionActiveThreshold = 0.02f
     const val MotionPixelDifference = 20
-    const val MotionCountdownSeconds = 3.0
-    const val MotionCalibrationMadFactor = 2.8f
-    const val MotionCalibrationMinOutlierDelta = 0.035f
-    const val MotionMatBandHeightRatio = 0.05f
-    const val MotionBinThreshold = 0.08f
+    const val RecordingCountdownSeconds = 3.0
     const val MotionBaseDiffMargin = 0.025f
-    const val MotionBoundaryPrimaryMaxBins = 3
-    const val MotionBoundaryNoiseMaxBins = 2
-    const val MotionBoundaryNoiseEnergyRatio = 0.55f
-    const val MotionBoundaryDominanceRatio = 2.2f
-    const val MotionBoundaryDominanceMargin = 0.10f
 
-    const val PoseStartVerificationIntervalSeconds = 0.5
-    const val PoseIntervalSeconds = 0.5
-    /** Used only before smart crop is unlocked; tracked frames go YUV directly to 256x256. */
-    const val PoseInputMaxLongSide = 512
+    const val AnalysisIntervalSeconds = 0.5
+    const val PoseIntervalSeconds = AnalysisIntervalSeconds
     const val MoveNetPoseInputSize = 256
     const val MoveNetCropKeypointConfidence = 0.15f
-    const val SmartCropMotionVerificationFrames = 3
-    const val SmartCropMinimumMovedLandmarks = 3
-    const val SmartCropMinimumMovementRatio = 0.05f
-    const val SmartCropPostUnlockConfirmationFrames = 2
-    const val SmartCropConsecutiveMissingFramesBeforeReset = 2
-    // Retained for the dormant PicoDet/RTMPose fallback implementation.
-    const val PosePersonConfidence = 0.25f
-    const val PoseNmsIou = 0.45f
-    const val PoseNoPoseRetrySeconds = 6.0
+    const val MotionSeedGridColumns = 8
+    const val MotionSeedCropAreaRatio = 0.25f
+    const val MotionSeedMaximumSelectedCells = 8
+    const val MotionSeedRelativeCellThreshold = 0.45f
+    const val MotionSeedMinimumCellChangedRatio = 0.02f
+    const val ClimbingPoseMissingTimeoutSeconds = 6.0
+    const val PostClimbTrackingMaxSeconds = 6.0
     const val ClipBoundaryPaddingSeconds = 3.0
+    /** Minimum MoveNet confidence for a joint to participate in human validation and climb logic. */
     const val PoseConfidence = 0.25f
-    const val PoseMinimumReliableLandmarks = 4
-    const val PoseMinimumCoreLandmarks = 2
-    const val PoseMatTolerance = 0.02f
+    const val PoseMinimumShoulders = 1
+    const val PoseMinimumHips = 1
+    const val PoseMinimumElbows = 1
+    const val PoseMinimumKnees = 1
     /** Raw detected climbs shorter than this are treated as short candidates before padding. */
     const val ShortClipMinimumDetectionSeconds = 2.0
     /** A short raw range may merge only when its raw gap to a neighbour is at most this value. */
     const val ShortClipMergeGapSeconds = 3.0
+    /** Adjacent cleaned raw ranges are combined before padding when their gap is at most this value. */
+    const val AdjacentClipMergeGapSeconds = 1.0
 
     const val FineAdjustmentStep = 0.1
     const val FineAdjustmentEnterSpeed = 35f

@@ -40,7 +40,8 @@ internal class DetectedClipRangeStore {
  * Order is intentional and shared with iOS:
  * 1) keep raw start/end times while recording;
  * 2) remove or merge raw ranges shorter than two seconds using raw gaps of at most three seconds;
- * 3) after cleanup is complete, add three seconds of review padding to both sides.
+ * 3) merge every adjacent cleaned raw range whose unpadded gap is at most one second;
+ * 4) after cleanup is complete, add three seconds of review padding to both sides.
  */
 internal object ClipRangeNormalizer {
     fun normalize(
@@ -48,7 +49,8 @@ internal object ClipRangeNormalizer {
         recordingDurationSeconds: Double? = null,
         minimumDetectionDurationSeconds: Double = TopOutConfig.ShortClipMinimumDetectionSeconds,
         boundaryPaddingSeconds: Double = TopOutConfig.ClipBoundaryPaddingSeconds,
-        shortRangeMergeGapSeconds: Double = TopOutConfig.ShortClipMergeGapSeconds
+        shortRangeMergeGapSeconds: Double = TopOutConfig.ShortClipMergeGapSeconds,
+        adjacentRangeMergeGapSeconds: Double = TopOutConfig.AdjacentClipMergeGapSeconds
     ): List<ClipRange> {
         val durationLimit = recordingDurationSeconds?.coerceAtLeast(0.0)
         val working = input.mapNotNull { range ->
@@ -110,7 +112,9 @@ internal object ClipRangeNormalizer {
             }
         }
 
-        return working.mapNotNull { raw ->
+        val mergedAdjacent = mergeAdjacentRanges(working, adjacentRangeMergeGapSeconds)
+
+        return mergedAdjacent.mapNotNull { raw ->
             val paddedStart = max(0.0, raw.startSeconds - boundaryPaddingSeconds)
             val paddedEndUnclamped = raw.endSeconds + boundaryPaddingSeconds
             val paddedEnd = durationLimit?.let { min(it, paddedEndUnclamped) } ?: paddedEndUnclamped
@@ -130,6 +134,25 @@ internal object ClipRangeNormalizer {
         val endSeconds: Double
     ) {
         val durationSeconds: Double get() = (endSeconds - startSeconds).coerceAtLeast(0.0)
+    }
+
+    private fun mergeAdjacentRanges(
+        sortedRanges: List<RawRange>,
+        maximumGapSeconds: Double
+    ): List<RawRange> {
+        if (sortedRanges.isEmpty()) return emptyList()
+
+        val merged = mutableListOf(sortedRanges.first())
+        for (next in sortedRanges.drop(1)) {
+            val previous = merged.last()
+            val gap = max(0.0, next.startSeconds - previous.endSeconds)
+            if (gap <= maximumGapSeconds) {
+                merged[merged.lastIndex] = union(previous, next)
+            } else {
+                merged += next
+            }
+        }
+        return merged
     }
 
     private fun union(first: RawRange, second: RawRange): RawRange = RawRange(

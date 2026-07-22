@@ -53,7 +53,7 @@ class TopOutCopyIosParityTest {
     @Test
     fun recordingCopyMatchesIos() {
         assertEquals(
-            "3초 후 녹화 시작 · 매트 보정 중",
+            "3초 후 녹화 시작",
             TopOutCopy.countdownStatus(settings(auto = true, mask = false), 3)
         )
         assertEquals(

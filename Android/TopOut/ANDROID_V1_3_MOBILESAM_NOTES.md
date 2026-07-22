@@ -21,14 +21,14 @@
 ## Motion gate above the mat
 
 - Motion is measured only from the detected/edited mat boundary upward by 40% of frame height.
-- The current throttled CV frame is compared with the frame three CV-analysis samples earlier.
+- The current throttled CV frame is compared with the frame two CV-analysis samples earlier.
 - No pixels on or below the mat line contribute to the wake-up signal.
-- Calibration uses the same rolling region, reducing false triggers from camera exposure drift.
+- No environment-baseline calibration is performed.
 
 ## Pose tracking
 
-- During an active climb, temporary pose loss is tolerated for 6 seconds instead of 5 seconds.
-- Existing smart-crop and consecutive-human verification behavior is preserved.
+- During an active climb, temporary pose loss is tolerated for 6 seconds.
+- One reliable pose immediately enables joint-based tracking; the former two-pose verification gate is removed.
 
 ## Version
 

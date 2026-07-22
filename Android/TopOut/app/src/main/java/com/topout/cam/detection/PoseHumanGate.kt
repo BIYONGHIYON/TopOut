@@ -2,31 +2,42 @@ package com.topout.cam.detection
 
 import com.topout.cam.model.TopOutConfig
 
-/**
- * Rejects sparse MoveNet pose outputs before they can start or finish a climb.
- *
- * Climbing footage is commonly back-facing, distant, partially occluded, and motion-blurred. The gate
- * therefore uses a moderate MoveNet threshold while still requiring body structure: enough reliable
- * joints overall, at least two torso joints, and at least one shoulder plus one hip.
- */
+/** Rejects sparse or anatomically incomplete MoveNet outputs before climb logic can use them. */
 object PoseHumanGate {
-    private val shoulderTypes = setOf(
-        PoseLandmark.LEFT_SHOULDER,
-        PoseLandmark.RIGHT_SHOULDER
-    )
-    private val hipTypes = setOf(
-        PoseLandmark.LEFT_HIP,
-        PoseLandmark.RIGHT_HIP
-    )
-    private val coreTypes = shoulderTypes + hipTypes
-
-    fun isValid(reliableLandmarkTypes: Set<Int>): Boolean {
-        if (reliableLandmarkTypes.size < TopOutConfig.PoseMinimumReliableLandmarks) return false
-        if (reliableLandmarkTypes.count { it in coreTypes } < TopOutConfig.PoseMinimumCoreLandmarks) {
-            return false
-        }
-        if (reliableLandmarkTypes.none { it in shoulderTypes }) return false
-        if (reliableLandmarkTypes.none { it in hipTypes }) return false
+    fun isValid(
+        shoulderCount: Int,
+        hipCount: Int,
+        elbowCount: Int,
+        kneeCount: Int
+    ): Boolean {
+        if (shoulderCount < TopOutConfig.PoseMinimumShoulders) return false
+        if (hipCount < TopOutConfig.PoseMinimumHips) return false
+        if (elbowCount < TopOutConfig.PoseMinimumElbows) return false
+        if (kneeCount < TopOutConfig.PoseMinimumKnees) return false
         return true
+    }
+
+    /** Compatibility overload retained for unit tests and small pure callers. */
+    fun isValid(reliableLandmarkTypes: Set<Int>): Boolean {
+        var shoulderCount = 0
+        var hipCount = 0
+        var elbowCount = 0
+        var kneeCount = 0
+
+        for (type in reliableLandmarkTypes) {
+            when (type) {
+                PoseLandmark.LEFT_SHOULDER, PoseLandmark.RIGHT_SHOULDER -> shoulderCount++
+                PoseLandmark.LEFT_HIP, PoseLandmark.RIGHT_HIP -> hipCount++
+                PoseLandmark.LEFT_ELBOW, PoseLandmark.RIGHT_ELBOW -> elbowCount++
+                PoseLandmark.LEFT_KNEE, PoseLandmark.RIGHT_KNEE -> kneeCount++
+            }
+        }
+
+        return isValid(
+            shoulderCount = shoulderCount,
+            hipCount = hipCount,
+            elbowCount = elbowCount,
+            kneeCount = kneeCount
+        )
     }
 }

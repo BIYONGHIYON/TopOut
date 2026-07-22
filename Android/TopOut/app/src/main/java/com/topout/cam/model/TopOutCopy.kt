@@ -41,17 +41,9 @@ object TopOutCopy {
 
     fun countdownStatus(settings: AppSettings, remaining: Int? = null): String {
         if (remaining != null && remaining > 0) {
-            return if (settings.autoClipDetectionEnabled) {
-                "${remaining}초 후 녹화 시작 · 매트 보정 중"
-            } else {
-                "${remaining}초 후 녹화 시작"
-            }
+            return "${remaining}초 후 녹화 시작"
         }
-        return if (settings.autoClipDetectionEnabled) {
-            "녹화 준비 중 · 매트 보정 중"
-        } else {
-            "녹화 준비 중"
-        }
+        return "녹화 준비 중"
     }
 
     fun activeRecordingStatus(settings: AppSettings): String =

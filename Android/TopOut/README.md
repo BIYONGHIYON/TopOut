@@ -1,14 +1,14 @@
-# TopOut Android v1.3 (build 4)
+# TopOut Android v1.4 (build 5)
 
 TopOut records climbing video with audio and automatically proposes climb ranges.
 
 ## Automatic detection
 
-The Android release uses MoveNet SinglePose Thunder FP16 through TensorFlow Lite. MobileSAM proposes the mat boundary from automatic prompts at 80%, 85%, and 90%. A rolling luma-motion gate analyzes only the region above that edited boundary, and the active climb uses MoveNet's temporal smart crop to remain focused on the same person. The existing pose schedule is unchanged: inference runs at most every 0.5 seconds, while the FP16 model receives a 256×256 RGB input.
+The Android release uses MoveNet SinglePose Thunder FP16 through TensorFlow Lite. MobileSAM proposes the mat boundary from automatic prompts at 80%, 85%, and 90%. A rolling luma-motion gate compares the current frame with the frame two analysis samples earlier inside the 40%-high region above the edited mat line. When that gate wakes pose search, the strongest immediate-frame changes seed a pixel-square ROI covering approximately one quarter of the screen area; if that immediate difference cannot form a crop, the two-frame trigger difference is used instead. One reliable human pose immediately switches the detector to joint-based tracking. Motion analysis and pose inference use one fixed 2 Hz schedule, and pose inference runs at most every 0.5 seconds with a 256×256 RGB input.
 
 ## Pose preprocessing and power use
 
-The 512px oriented RGB path is used only while finding and verifying a moving person. After smart crop is unlocked, the active crop is read directly from CameraX YUV_420_888 into MoveNet Thunder's 256×256 RGB tensor. This removes the recurring intermediate Bitmap and full-frame RGB conversion during the longer tracking phase.
+Pose inference never uses a full-frame 512px RGB fallback. A usable motion-seeded ROI is required before MoveNet runs, and both the initial quarter-frame crop and later joint-based crop are sampled directly from CameraX YUV_420_888 into MoveNet Thunder's 256×256 RGB tensor. If neither the immediate difference nor the two-frame trigger difference can form a usable ROI, the analyzer stays in motion waiting.
 
 ## Clip ranges
 
