@@ -12,5 +12,5 @@
 - Reliable pose still requires confidence >= 0.25 and at least one shoulder, hip, elbow, and knee.
 - Start: lowest reliable joint is at least 3% of frame height above the mat line.
 - Finish: lowest reliable joint moves below the actual mat line.
-- During a climb, pose recovery can continue for up to 5 seconds.
+- During a climb, pose recovery can continue for up to 6 seconds.
 - After a normal finish, the first pose miss switches to motion recovery; the second consecutive miss resets to initial motion search. Visible post-climb tracking has no time limit; only two consecutive pose misses reset to initial motion search.

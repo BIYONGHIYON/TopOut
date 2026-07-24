@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -232,6 +233,7 @@ fun ReviewScreen(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth(if (isLandscape) 0.94f else 1f)
                 .widthIn(max = if (isLandscape) 900.dp else 680.dp)
+                .navigationBarsPadding()
                 .padding(
                     start = if (isLandscape) 10.dp else 18.dp,
                     top = if (isLandscape) 8.dp else 14.dp,

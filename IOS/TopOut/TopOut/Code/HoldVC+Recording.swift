@@ -344,7 +344,6 @@ extension HoldVC {
     ) -> [ReviewClipRange] {
         let minimumDetectionDuration = Cfg.motionShortClipMinimumDetectionSeconds
         let mergeGap = Cfg.motionShortClipMergeGapSeconds
-        let adjacentMergeGap = Cfg.motionAdjacentClipMergeGapSeconds
         let padding = Cfg.motionClipBoundaryPaddingSeconds
         var working = ranges
             .filter { $0.unpaddedEndSeconds > $0.unpaddedStartSeconds }
@@ -392,10 +391,8 @@ extension HoldVC {
             }
         }
 
-        // Compare the unpadded boundaries. A pause of one second or less belongs to the same clip.
-        working = mergeAdjacentRawRanges(working, maximumGap: adjacentMergeGap)
-
-        // Only after every raw-range merge/removal is complete do we add review context.
+        // Keep every remaining valid climb separate, even when the next climb starts within one second.
+        // Only after short-range cleanup is complete do we add review context.
         return working.compactMap { raw in
             let rawStart = raw.unpaddedStartSeconds
             let rawEnd = raw.unpaddedEndSeconds
@@ -409,25 +406,6 @@ extension HoldVC {
                 unpaddedEndSeconds: rawEnd
             )
         }
-    }
-
-    private func mergeAdjacentRawRanges(
-        _ sortedRanges: [ReviewClipRange],
-        maximumGap: TimeInterval
-    ) -> [ReviewClipRange] {
-        guard let first = sortedRanges.first else { return [] }
-
-        var merged: [ReviewClipRange] = [first]
-        for next in sortedRanges.dropFirst() {
-            let previous = merged[merged.count - 1]
-            let gap = Swift.max(0, next.unpaddedStartSeconds - previous.unpaddedEndSeconds)
-            if gap <= maximumGap {
-                merged[merged.count - 1] = rawUnion(previous, next)
-            } else {
-                merged.append(next)
-            }
-        }
-        return merged
     }
 
     private func rawUnion(_ lhs: ReviewClipRange, _ rhs: ReviewClipRange) -> ReviewClipRange {

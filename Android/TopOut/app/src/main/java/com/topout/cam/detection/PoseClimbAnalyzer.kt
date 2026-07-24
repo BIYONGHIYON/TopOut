@@ -339,7 +339,7 @@ class PoseClimbAnalyzer(
 
         val lowest = reliable.points.maxByOrNull { it.y } ?: return
         val lowestAboveStartBoundary = isAboveStartBoundary(lowest)
-        val lowestAtOrAboveMatLine = isAtOrAboveMatLine(lowest)
+        val lowestAtOrAboveFinishBoundary = isAtOrAboveFinishBoundary(lowest)
 
         if (!isClimbing) {
             val shouldStart = PoseStartRule.shouldStart(
@@ -360,7 +360,7 @@ class PoseClimbAnalyzer(
 
         updateFinishReferenceMoment(reliable.points, seconds)
         lastLowestAboveMat = lowestAboveStartBoundary
-        if (lowestAtOrAboveMatLine) return
+        if (lowestAtOrAboveFinishBoundary) return
 
         activeStartSeconds ?: return
         val rawEnd = bestFinishReferenceSeconds() ?: seconds
@@ -370,7 +370,7 @@ class PoseClimbAnalyzer(
 
     /**
      * One unreliable pose always hands ROI placement back to immediate-frame motion. During a climb
-     * this recovery may continue for five seconds. After a normal finish, visible pose tracking may
+     * this recovery may continue for six seconds. After a normal finish, visible pose tracking may
      * continue without a time limit; two consecutive misses reset to initial mat-region motion search.
      */
     private fun handlePoseMiss(
@@ -443,16 +443,19 @@ class PoseClimbAnalyzer(
         return if (finishBase > start) ClipRange(start, finishBase) else null
     }
 
-    /** Start requires a 3%-of-frame clearance above the edited mat line. */
+    /** Start requires a 4%-of-frame clearance above the edited mat line. */
     private fun isAboveStartBoundary(point: Offset): Boolean {
         val startBoundary = (lineY(point.x) - TopOutConfig.PoseStartAboveMatMarginRatio)
             .coerceAtLeast(0f)
         return point.y <= startBoundary
     }
 
-    /** Climb completion still uses the actual edited mat line without the start margin. */
-    private fun isAtOrAboveMatLine(point: Offset): Boolean =
-        point.y <= lineY(point.x)
+    /** Finish uses a boundary 2% of frame height above the edited mat line. */
+    private fun isAtOrAboveFinishBoundary(point: Offset): Boolean {
+        val finishBoundary = (lineY(point.x) - TopOutConfig.PoseFinishAboveMatMarginRatio)
+            .coerceAtLeast(0f)
+        return point.y <= finishBoundary
+    }
 
     private fun updateFinishReferenceMoment(points: List<Offset>, seconds: Double) {
         when (finishReference) {

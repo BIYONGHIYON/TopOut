@@ -252,9 +252,10 @@ object TopOutConfig {
     const val ContourMinPoints = 8
 
     const val MatDefaultY = 0.75f
-    const val MatDetectedLineDownwardOffsetPixels = 10f
-    /** The lowest reliable joint must clear the edited mat line by 3% of frame height. */
-    const val PoseStartAboveMatMarginRatio = 0.03f
+    /** The lowest reliable joint must clear the edited mat line by 4% of frame height. */
+    const val PoseStartAboveMatMarginRatio = 0.04f
+    /** Finish when the lowest reliable joint drops below a boundary 2% above the edited mat line. */
+    const val PoseFinishAboveMatMarginRatio = 0.02f
 
     /** Initial motion search and active climbing remain at 2 fps. */
     const val MotionFrameWidth = 160
@@ -275,7 +276,7 @@ object TopOutConfig {
     const val MotionSeedMaximumSelectedCells = 8
     const val MotionSeedRelativeCellThreshold = 0.45f
     const val MotionSeedMinimumCellChangedRatio = 0.02f
-    const val ClimbingPoseMissingTimeoutSeconds = 5.0
+    const val ClimbingPoseMissingTimeoutSeconds = 6.0
     const val ClipBoundaryPaddingSeconds = 3.0
     /** Minimum MoveNet confidence for a joint to participate in human validation and climb logic. */
     const val PoseConfidence = 0.25f
@@ -287,8 +288,6 @@ object TopOutConfig {
     const val ShortClipMinimumDetectionSeconds = 2.0
     /** A short raw range may merge only when its raw gap to a neighbour is at most this value. */
     const val ShortClipMergeGapSeconds = 3.0
-    /** Adjacent cleaned raw ranges are combined before padding when their gap is at most this value. */
-    const val AdjacentClipMergeGapSeconds = 1.0
 
     const val FineAdjustmentStep = 0.1
     const val FineAdjustmentEnterSpeed = 35f

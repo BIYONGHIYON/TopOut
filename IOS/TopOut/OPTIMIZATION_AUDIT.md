@@ -31,7 +31,7 @@ The original optimization pass kept behavior unchanged. This package also includ
 ## Later platform alignment
 
 - Initial motion analysis and active climbing remain at 2 fps and use only the immediately previous motion frame.
-- Reliable pre-start/post-climb pose tracking and pose-loss recovery run at 4 fps; recovery timeout is 5 seconds.
+- Reliable pre-start/post-climb pose tracking and pose-loss recovery run at 4 fps; recovery timeout is 6 seconds.
 - Motion activation is aligned to the Android 2.5% noise margin plus 2% adjusted threshold.
-- Vision observations are reduced to one selected person: motion-nearest initially, previous-position-nearest afterward.
+- Vision observations are combined into one non-face joint set, matching the earlier iOS pose behavior; the removed person-selection and body-group validation code no longer adds state or per-frame distance calculations.
 - Two consecutive misses after a normal finish return to initial motion search.

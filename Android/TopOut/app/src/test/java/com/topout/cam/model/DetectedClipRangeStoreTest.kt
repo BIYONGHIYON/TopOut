@@ -64,7 +64,7 @@ class DetectedClipRangeStoreTest {
     }
 
     @Test
-    fun adjacentRawRangesWithOneSecondGapMergeBeforePadding() {
+    fun adjacentValidRangesStaySeparateEvenWhenGapIsOneSecond() {
         val result = ClipRangeNormalizer.normalize(
             input = listOf(
                 ClipRange(10.0, 15.0),
@@ -73,31 +73,16 @@ class DetectedClipRangeStoreTest {
             recordingDurationSeconds = 30.0
         )
         assertEquals(
-            listOf(ClipRange(7.0, 24.0, 10.0, 21.0)),
-            result
-        )
-    }
-
-    @Test
-    fun adjacentRawRangesBeyondOneSecondStaySeparateEvenWhenPaddingOverlaps() {
-        val result = ClipRangeNormalizer.normalize(
-            input = listOf(
-                ClipRange(10.0, 15.0),
-                ClipRange(16.25, 21.0)
-            ),
-            recordingDurationSeconds = 30.0
-        )
-        assertEquals(
             listOf(
                 ClipRange(7.0, 18.0, 10.0, 15.0),
-                ClipRange(13.25, 24.0, 16.25, 21.0)
+                ClipRange(13.0, 24.0, 16.0, 21.0)
             ),
             result
         )
     }
 
     @Test
-    fun chainedAdjacentRangesMergeIntoOneRawRange() {
+    fun adjacentValidRangesStaySeparateEvenWhenPaddingOverlaps() {
         val result = ClipRangeNormalizer.normalize(
             input = listOf(
                 ClipRange(10.0, 15.0),
@@ -107,7 +92,11 @@ class DetectedClipRangeStoreTest {
             recordingDurationSeconds = 40.0
         )
         assertEquals(
-            listOf(ClipRange(7.0, 28.0, 10.0, 25.0)),
+            listOf(
+                ClipRange(7.0, 18.0, 10.0, 15.0),
+                ClipRange(12.5, 23.0, 15.5, 20.0),
+                ClipRange(18.0, 28.0, 21.0, 25.0)
+            ),
             result
         )
     }

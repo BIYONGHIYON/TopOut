@@ -11,7 +11,7 @@ import CoreML
 /// 4. 남은 후보 중 윗경계가 화면에서 가장 높은 후보를 선택합니다.
 /// 5. 후보가 없거나 추론에 실패하면 화면 높이 75% 기본선을 사용합니다.
 ///
-/// 최종 10px 아래 보정은 HoldVC+UI에서 원본 캡처 이미지 높이를 기준으로 적용합니다.
+/// 검출된 경계는 별도의 수직 보정 없이 원본 위치 그대로 사용합니다.
 extension HoldVC {
     private struct SAMMatCandidate {
         let topY: CGFloat

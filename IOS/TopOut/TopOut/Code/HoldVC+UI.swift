@@ -658,14 +658,9 @@ extension HoldVC {
                       self.mode == .select,
                       self.frameImage === image else { return }
 
-                let downwardOffset = Cfg.matDetectedLineDownwardOffsetPixels / max(image.size.height, 1)
-                let adjustedLine = detectedLine.map { point in
-                    CGPoint(x: point.x, y: min(max(point.y + downwardOffset, 0), 1))
-                }
-
                 self.isBusy = false
-                self.matLinePoints = adjustedLine
-                self.matLineView.setPoints(adjustedLine)
+                self.matLinePoints = detectedLine
+                self.matLineView.setPoints(detectedLine)
                 self.matLineView.isHidden = false
                 self.setLoading(false)
 
@@ -676,7 +671,7 @@ extension HoldVC {
                 } else {
                     self.selectHint.text = "파란 점으로 매트 경계를 보정한 뒤 녹화 시작을 눌러주세요"
                     self.selectTipLabel.text = "Tip. 파란 점은 위아래로 움직일 수 있어요"
-                    self.recordBtn.isEnabled = adjustedLine.count >= 2
+                    self.recordBtn.isEnabled = detectedLine.count >= 2
                 }
             }
         } else {

@@ -50,20 +50,13 @@ final class MotionDetector {
     private struct CVRegionMotion {
         let rawSignal: CGFloat
         let adjustedSignal: CGFloat
-        let center: CGPoint
-    }
-
-    private struct PoseCandidate {
-        let points: [CGPoint]
-        let center: CGPoint
     }
 
     private struct PoseSnapshot {
         let observationCount: Int
         let allReliablePoints: [CGPoint]
-        let center: CGPoint?
 
-        var hasPose: Bool { observationCount > 0 && !allReliablePoints.isEmpty && center != nil }
+        var hasPose: Bool { observationCount > 0 && !allReliablePoints.isEmpty }
     }
 
     var onEvent: ((MotionEvent) -> Void)?
@@ -77,8 +70,8 @@ final class MotionDetector {
 
     private let poseRequest = VNDetectHumanBodyPoseRequest()
     private let poseCIContext = CIContext(options: [.useSoftwareRenderer: false])
+    // 시작/종료/완등 판단에는 얼굴 관절을 사용하지 않습니다.
     private let reliablePoseJoints: [VNHumanBodyPoseObservation.JointName] = [
-        .nose,
         .leftShoulder, .rightShoulder,
         .leftElbow, .rightElbow,
         .leftWrist, .rightWrist,
@@ -107,7 +100,6 @@ final class MotionDetector {
     private var activeBestTopHoldDistance: CGFloat?
     private var activeHighestPosePTS: CMTime?
     private var activeHighestPoseY: CGFloat?
-    private var trackedPersonCenter: CGPoint?
     private var isPostClimbTracking = false
     private var postClimbConsecutivePoseMisses = 0
     private var hasSeenReliablePose = false
@@ -255,10 +247,10 @@ final class MotionDetector {
         var latestPose: PoseSnapshot?
         var poseReason = "-"
 
-        func runPose(reason: String, selectionTarget: CGPoint?) -> PoseSnapshot? {
+        func runPose(reason: String) -> PoseSnapshot? {
             guard canRunPose(at: pts, interval: Cfg.motionPoseStartVerificationInterval) else { return nil }
             lastPosePTS = pts
-            let snapshot = detectPose(in: pixelBuffer, selectionTarget: selectionTarget)
+            let snapshot = detectPose(in: pixelBuffer)
             latestPose = snapshot
             poseReason = reason
             return snapshot
@@ -282,7 +274,7 @@ final class MotionDetector {
         guard canRunPose(at: pts, interval: interval) else { return }
 
         lastPosePTS = pts
-        let snapshot = detectPose(in: pixelBuffer, selectionTarget: trackedPersonCenter)
+        let snapshot = detectPose(in: pixelBuffer)
         handlePoseTrackingSnapshot(snapshot, pts: pts)
 
         if Cfg.motionDebugLog {
@@ -349,7 +341,7 @@ final class MotionDetector {
     private func handleWaitingCVRegion(
         _ motion: CVRegionMotion?,
         pts: CMTime,
-        pose: (_ reason: String, _ selectionTarget: CGPoint?) -> PoseSnapshot?
+        pose: (_ reason: String) -> PoseSnapshot?
     ) {
         guard let motion else { return }
 
@@ -357,8 +349,7 @@ final class MotionDetector {
             at: pts,
             reason: String(format: "CV region changed adjusted=%.3f", Double(motion.adjustedSignal))
         )
-        trackedPersonCenter = motion.center
-        guard let snapshot = pose("cvMotionPose", motion.center) else { return }
+        guard let snapshot = pose("cvMotionPose") else { return }
         handlePoseTrackingSnapshot(snapshot, pts: pts)
     }
 
@@ -369,7 +360,6 @@ final class MotionDetector {
         lastPoseSeenPTS = nil
         lastLowestAboveMat = nil
         activeStartPTS = nil
-        trackedPersonCenter = nil
         isPostClimbTracking = false
         postClimbConsecutivePoseMisses = 0
         hasSeenReliablePose = false
@@ -390,13 +380,12 @@ final class MotionDetector {
         poseTrackingStartedPTS = nil
         hasSeenReliablePose = true
         isPoseLossRecovery = false
-        trackedPersonCenter = snapshot.center
         postClimbConsecutivePoseMisses = 0
         let lowestAboveStartBoundary = isAboveStartBoundary(lowestPoint)
 
         switch state {
         case .tracking:
-            // CV 이후 첫 pose에서 이미 가장 낮은 점이 매트선보다 화면 높이의 3% 위라면 즉시 start로 잡습니다.
+            // CV 이후 첫 pose에서 이미 가장 낮은 점이 매트선보다 화면 높이의 6% 위라면 즉시 start로 잡습니다.
             // 아니면 시작 경계의 아래→위 crossing 순간을 start로 잡습니다.
             let firstValidPose = lastLowestAboveMat == nil
             let crossedUp = lowestAboveStartBoundary && (lastLowestAboveMat != true)
@@ -415,14 +404,16 @@ final class MotionDetector {
             updateFinishReferenceMoment(snapshot: snapshot, pts: pts)
             lastLowestAboveMat = lowestAboveStartBoundary
 
-            // 종료 판정에는 오차나 추가 보정을 적용하지 않습니다.
-            // 가장 낮은 pose 점이 실제 매트 경계선 아래로 내려온 순간 등반 구간을 닫습니다.
-            guard isBelowActualMatLine(lowestPoint) else { return }
+            // 종료선은 실제 매트 경계보다 화면 높이의 2% 위에 둡니다.
+            // 가장 낮은 pose 점이 이 종료선 아래로 내려온 순간 등반 구간을 닫습니다.
+            guard isBelowFinishBoundary(lowestPoint) else { return }
 
-            let finishBasePTS = bestFinishReferencePTS() ?? pts
+            // 완등 후보가 START와 같은 프레임에만 잡힌 경우에는 현재 매트 하강 시각을 사용합니다.
+            // 0.1초를 인위적으로 더하지 않으면서도 FINISH가 무시된 채 CLIMBING에 고착되는 것을 막습니다.
+            let finishBasePTS = validFinishReference(after: activeStartPTS, fallback: pts) ?? pts
             emitFinish(
                 finishBasePTS,
-                reason: "lowest pose point crossed below actual mat line; raw end from \(finishReferenceDescription())",
+                reason: "lowest pose point crossed below finish boundary; raw end from \(finishReferenceDescription())",
                 normalFinish: true
             )
 
@@ -476,7 +467,6 @@ final class MotionDetector {
         poseTrackingStartedPTS = nil
         lastLowestAboveMat = nil
         activeStartPTS = nil
-        trackedPersonCenter = nil
         isPostClimbTracking = false
         postClimbConsecutivePoseMisses = 0
         hasSeenReliablePose = false
@@ -488,9 +478,11 @@ final class MotionDetector {
         guard state == .climbing else { return nil }
         guard let startPTS = activeStartPTS else { return nil }
 
-        // Keep the best raw finish-reference time. Padding is deferred to finalization.
-        let finishBasePTS = bestFinishReferencePTS() ?? lastPoseSeenPTS
-        guard let finishBasePTS, CMTimeCompare(finishBasePTS, startPTS) > 0 else { return nil }
+        // 완등 후보가 START 시각과 같거나 더 이르면 마지막 유효 pose 시각으로 대체합니다.
+        // 별도의 +0.1초 보정은 사용하지 않습니다.
+        guard let finishBasePTS = validFinishReference(after: startPTS, fallback: lastPoseSeenPTS) else {
+            return nil
+        }
 
         debug("📌 raw open clip range salvaged: \(reason)")
         return ClipRange(startPTS: startPTS, endPTS: finishBasePTS)
@@ -519,7 +511,6 @@ final class MotionDetector {
         poseTrackingStartedPTS = nil
         lastLowestAboveMat = nil
         activeStartPTS = nil
-        trackedPersonCenter = nil
         isPostClimbTracking = false
         postClimbConsecutivePoseMisses = 0
         hasSeenReliablePose = false
@@ -564,7 +555,7 @@ final class MotionDetector {
         case fullFrame
     }
 
-    private func detectPose(in pixelBuffer: CVPixelBuffer, selectionTarget: CGPoint?) -> PoseSnapshot {
+    private func detectPose(in pixelBuffer: CVPixelBuffer) -> PoseSnapshot {
         autoreleasepool {
             let coordinateSpace: PoseCoordinateSpace
             let handler: VNImageRequestHandler
@@ -588,45 +579,29 @@ final class MotionDetector {
                 return emptyPoseSnapshot()
             }
 
-            return makePoseSnapshot(
-                from: observations,
-                coordinateSpace: coordinateSpace,
-                selectionTarget: selectionTarget
-            )
+            return makePoseSnapshot(from: observations, coordinateSpace: coordinateSpace)
         }
     }
 
     private func makePoseSnapshot(
         from observations: [VNHumanBodyPoseObservation],
-        coordinateSpace: PoseCoordinateSpace,
-        selectionTarget: CGPoint?
+        coordinateSpace: PoseCoordinateSpace
     ) -> PoseSnapshot {
-        let candidates: [PoseCandidate] = observations.compactMap { observation in
-            let points = reliablePoseJoints.compactMap {
-                recognizedPoint($0, in: observation, coordinateSpace: coordinateSpace)
+        var points: [CGPoint] = []
+
+        // 기존 방식 유지: Vision이 반환한 모든 사람의 신뢰 가능한 관절을 하나의 판단 집합으로 사용합니다.
+        // 코는 reliablePoseJoints에 포함하지 않아 시작/종료/완등 판단에서 제외됩니다.
+        for observation in observations {
+            for joint in reliablePoseJoints {
+                if let point = recognizedPoint(joint, in: observation, coordinateSpace: coordinateSpace) {
+                    points.append(point)
+                }
             }
-            guard !points.isEmpty else { return nil }
-            let center = CGPoint(
-                x: points.reduce(0) { $0 + $1.x } / CGFloat(points.count),
-                y: points.reduce(0) { $0 + $1.y } / CGFloat(points.count)
-            )
-            return PoseCandidate(points: points, center: center)
         }
 
-        let selected: PoseCandidate?
-        if let selectionTarget {
-            selected = candidates.min {
-                squaredDistance($0.center, selectionTarget) < squaredDistance($1.center, selectionTarget)
-            }
-        } else {
-            selected = candidates.max { $0.points.count < $1.points.count }
-        }
-
-        guard let selected else { return emptyPoseSnapshot(observationCount: observations.count) }
         return PoseSnapshot(
             observationCount: observations.count,
-            allReliablePoints: selected.points,
-            center: selected.center
+            allReliablePoints: uniquePoints(points)
         )
     }
 
@@ -657,11 +632,10 @@ final class MotionDetector {
         )
     }
 
-    private func emptyPoseSnapshot(observationCount: Int = 0) -> PoseSnapshot {
+    private func emptyPoseSnapshot() -> PoseSnapshot {
         PoseSnapshot(
-            observationCount: observationCount,
-            allReliablePoints: [],
-            center: nil
+            observationCount: 0,
+            allReliablePoints: []
         )
     }
 
@@ -719,8 +693,12 @@ final class MotionDetector {
         return point.y <= startBoundary
     }
 
-    private func isBelowActualMatLine(_ point: CGPoint) -> Bool {
-        point.y > lineY(at: point.x)
+    private func isBelowFinishBoundary(_ point: CGPoint) -> Bool {
+        let finishBoundary = Swift.max(
+            0.0,
+            lineY(at: point.x) - Cfg.motionPoseFinishAboveMatOffsetRatio
+        )
+        return point.y > finishBoundary
     }
 
     private func updateFinishReferenceMoment(snapshot: PoseSnapshot, pts: CMTime) {
@@ -750,6 +728,18 @@ final class MotionDetector {
         case .highestPosePoint:
             return activeHighestPosePTS
         }
+    }
+
+    private func validFinishReference(after startPTS: CMTime?, fallback: CMTime?) -> CMTime? {
+        guard let startPTS else { return fallback }
+
+        if let best = bestFinishReferencePTS(), CMTimeCompare(best, startPTS) > 0 {
+            return best
+        }
+        if let fallback, CMTimeCompare(fallback, startPTS) > 0 {
+            return fallback
+        }
+        return nil
     }
 
     private func finishReferenceDescription() -> String {
@@ -789,16 +779,22 @@ final class MotionDetector {
     }
 
 
-    private func squaredDistance(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
-        let dx = lhs.x - rhs.x
-        let dy = lhs.y - rhs.y
-        return dx * dx + dy * dy
+    private func uniquePoints(_ points: [CGPoint]) -> [CGPoint] {
+        var result: [CGPoint] = []
+        result.reserveCapacity(points.count)
+        for point in points {
+            let exists = result.contains {
+                abs($0.x - point.x) < 0.0001 && abs($0.y - point.y) < 0.0001
+            }
+            if !exists { result.append(point) }
+        }
+        return result
     }
 
     // MARK: CV Search Region
 
     /// 매트 경계선 바로 위쪽에서 화면 높이의 40%만큼을 전 너비로 비교합니다.
-    /// 현재 프레임과 직전 2fps 분석 프레임의 변화량과 변화 중심을 반환합니다.
+    /// 현재 프레임과 직전 2fps 분석 프레임의 변화량을 반환합니다.
     private func cvSearchRegionMotion(frame: SmallFrame, base: SmallFrame) -> CVRegionMotion? {
         guard frame.width == base.width, frame.height == base.height else { return nil }
 
@@ -809,8 +805,6 @@ final class MotionDetector {
 
         var changed = 0
         var total = 0
-        var changedXSum: CGFloat = 0
-        var changedYSum: CGFloat = 0
 
         for x in 0..<width {
             let xNorm = (CGFloat(x) + 0.5) / CGFloat(width)
@@ -826,8 +820,6 @@ final class MotionDetector {
                 let idx = y * width + x
                 if abs(Int(frame.luma[idx]) - Int(base.luma[idx])) >= threshold {
                     changed += 1
-                    changedXSum += xNorm
-                    changedYSum += (CGFloat(y) + 0.5) / CGFloat(height)
                 }
                 total += 1
             }
@@ -837,14 +829,7 @@ final class MotionDetector {
         let rawSignal = CGFloat(changed) / CGFloat(total)
         let adjustedSignal = Swift.max(0, rawSignal - Cfg.motionBaseDiffMargin)
         guard adjustedSignal >= Cfg.motionCVRegionActiveThreshold else { return nil }
-        return CVRegionMotion(
-            rawSignal: rawSignal,
-            adjustedSignal: adjustedSignal,
-            center: CGPoint(
-                x: changedXSum / CGFloat(changed),
-                y: changedYSum / CGFloat(changed)
-            )
-        )
+        return CVRegionMotion(rawSignal: rawSignal, adjustedSignal: adjustedSignal)
     }
 
     // MARK: Region Geometry
@@ -932,7 +917,6 @@ final class MotionDetector {
         poseTrackingStartedPTS = nil
         lastLowestAboveMat = nil
         activeStartPTS = nil
-        trackedPersonCenter = nil
         isPostClimbTracking = false
         postClimbConsecutivePoseMisses = 0
         hasSeenReliablePose = false

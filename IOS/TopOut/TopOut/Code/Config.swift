@@ -43,7 +43,6 @@ enum Cfg {
 
     // MARK: Mat Detection
     static let matDefaultY: CGFloat = 0.75
-    static let matDetectedLineDownwardOffsetPixels: CGFloat = 10
 
     // MARK: Mat Line UI
     static let matLineWidth: CGFloat = 3
@@ -68,12 +67,12 @@ enum Cfg {
     static let motionPoseFastTrackingInterval: TimeInterval = 0.25
     static let motionPoseInputMaxLongSide: CGFloat = 384
     static let motionPoseMinConfidence: Float = 0.25
-    static let motionPoseNoPoseRetrySeconds: TimeInterval = 5.0
+    static let motionPoseNoPoseRetrySeconds: TimeInterval = 6.0
     static let motionClipBoundaryPaddingSeconds: TimeInterval = 3.0
     static let motionShortClipMinimumDetectionSeconds: TimeInterval = 2.0
     static let motionShortClipMergeGapSeconds: TimeInterval = 3.0
-    // 짧은 구간 정리 후, 패딩 전 원본 구간 사이가 1초 이하면 하나로 병합
-    static let motionAdjacentClipMergeGapSeconds: TimeInterval = 1.0
-    // 시작 판정: 가장 낮은 관절이 실제 매트선보다 화면 높이의 3% 위에 있어야 함
-    static let motionPoseStartAboveMatOffsetRatio: CGFloat = 0.03
+    // 시작 판정: 가장 낮은 관절이 실제 매트선보다 화면 높이의 6% 위에 있어야 함
+    static let motionPoseStartAboveMatOffsetRatio: CGFloat = 0.06
+    // 종료 판정: 가장 낮은 관절이 실제 매트선보다 화면 높이의 2% 위에 설정한 종료선을 아래로 통과하면 종료
+    static let motionPoseFinishAboveMatOffsetRatio: CGFloat = 0.02
 }

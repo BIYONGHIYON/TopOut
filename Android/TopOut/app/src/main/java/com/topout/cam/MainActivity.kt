@@ -2,12 +2,15 @@ package com.topout.cam
 
 import android.Manifest
 import android.content.Intent
+import android.graphics.Color as AndroidColor
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -19,7 +22,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,7 +64,15 @@ class MainActivity : ComponentActivity() {
         // FLAG_KEEP_SCREEN_ON is scoped to this Activity, so Android resumes the normal timeout
         // automatically when TopOut is no longer visible.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Keep the gesture-navigation area transparent when content intentionally draws
+            // edge-to-edge. Insets are applied by the individual Compose controls.
+            window.isNavigationBarContrastEnforced = false
+        }
 
         // Resolve the ViewModel before composing the one-second brand thumbnail. Its init block
         // preloads MobileSAM immediately, while no CameraPreview/CameraX use case exists yet.
@@ -165,6 +179,7 @@ private fun PermissionGate(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(34.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center

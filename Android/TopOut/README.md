@@ -22,6 +22,8 @@ Detected ranges are not limited to 10. All ranges are retained through the recor
 - in-app privacy policy and open-source license notices
 - MobileSAM sessions preload behind the startup thumbnail before CameraX is created
 - automatic MobileSAM mat boundary detection with a 75% fallback
+- climb start boundary: 4% of frame height above the x-interpolated mat line
+- climb finish boundary: 2% of frame height above the x-interpolated mat line
 - six-second pose-loss grace period during an active climb
 - preview and selection do not create a recording file; recording starts only after the record action and countdown
 - latest-frame-only pose analysis via CameraX `STRATEGY_KEEP_ONLY_LATEST`

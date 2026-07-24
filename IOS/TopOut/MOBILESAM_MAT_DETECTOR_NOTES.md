@@ -11,7 +11,7 @@ The iOS automatic mat-line detector now mirrors the Android v1.4 build 5 rule.
    - the least-squares upper-boundary line tilts no more than 15 degrees.
 5. Select the valid component whose upper edge is highest on screen.
 6. Convert the fitted upper edge to the editable x = 6% and x = 94% mat-line points.
-7. `HoldVC+UI.swift` applies the existing 10-pixel downward correction using the original captured-image height.
+7. `HoldVC+UI.swift` uses the detected boundary at its original position without a downward correction.
 8. If no candidate survives, use the 75% fallback line.
 
 No straightness/inlier ratio, area score, multi-height consensus, side prompts, or candidate scoring is used.

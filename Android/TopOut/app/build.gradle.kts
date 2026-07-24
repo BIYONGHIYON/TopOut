@@ -170,9 +170,11 @@ dependencies {
     implementation("androidx.media3:media3-transformer:$media3")
     implementation("androidx.media3:media3-effect:$media3")
 
-    // MobileSAM continues to use ONNX Runtime; pose inference uses MoveNet through TensorFlow Lite.
+    // MobileSAM continues to use ONNX Runtime. MoveNet uses the 16 KB-page-compatible
+    // LiteRT 1.x runtime while keeping the established org.tensorflow.lite Interpreter API.
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.27.0")
-    implementation("org.tensorflow:tensorflow-lite:2.17.0")
+    implementation("com.google.ai.edge.litert:litert-api:1.4.1")
+    implementation("com.google.ai.edge.litert:litert:1.4.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
     testImplementation("junit:junit:4.13.2")

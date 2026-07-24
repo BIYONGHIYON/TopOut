@@ -47,5 +47,5 @@
 - Initial search and pose-loss recovery now share one immediate previous-frame motion path; no older-frame fallback remains.
 - There is no full-frame 512px RGB pose fallback; without a usable ROI the analyzer stays in WAITING.
 - One reliable human pose immediately starts pose-derived tracking. An unreliable first result returns directly to WAITING.
-- During CLIMBING only, temporary pose loss is tolerated for five seconds. Recovery runs at 4 fps while current-vs-previous luma motion refreshes the quarter-frame ROI until reliable joints return.
+- During CLIMBING only, temporary pose loss is tolerated for six seconds. Recovery runs at 4 fps while current-vs-previous luma motion refreshes the quarter-frame ROI until reliable joints return.
 - After a normal finish, continuously visible joints remain tracked without a time limit; two consecutive missing reliable poses return to WAITING.

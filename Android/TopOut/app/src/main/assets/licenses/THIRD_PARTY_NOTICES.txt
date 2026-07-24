@@ -37,13 +37,15 @@ inside the Android application. Camera images and detected keypoints remain on
 the device.
 
 
-TensorFlow Lite runtime
+LiteRT runtime
 
-TopOut includes org.tensorflow:tensorflow-lite:2.17.0 to execute the MoveNet
-model on Android.
+TopOut includes com.google.ai.edge.litert:litert-api:1.4.1 and
+com.google.ai.edge.litert:litert:1.4.1 to execute the MoveNet model on Android.
+This runtime replaces the legacy TensorFlow Lite 2.17.0 AAR so the packaged native
+libraries are compatible with Android devices that use 16 KB memory pages.
 
 Project:
-https://github.com/tensorflow/tensorflow
+https://github.com/google-ai-edge/LiteRT
 
 License:
 Apache License 2.0

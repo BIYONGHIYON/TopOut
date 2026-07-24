@@ -260,10 +260,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 val detected = mobileSam.detectMatBoundary(frame).getOrElse {
                     listOf(Offset(0.06f, TopOutConfig.MatDefaultY), Offset(0.94f, TopOutConfig.MatDefaultY))
                 }
-                val downwardOffset = TopOutConfig.MatDetectedLineDownwardOffsetPixels / frame.height.toFloat()
-                detected.map { point ->
-                    Offset(point.x, (point.y + downwardOffset).coerceIn(0f, 1f))
-                }
+                detected
             } else {
                 emptyList()
             }

@@ -1,15 +1,42 @@
-# 🧗‍♂️ TopOut
+# 🧗‍♂️ TopOut — Internal README
 
-> **등반 시작부터 완등 순간까지, 자동으로 찾아주는 클라이밍 촬영 앱**
+> **등반 시작부터 완등 후보 순간까지 자동으로 찾아주는 온디바이스 클라이밍 촬영 앱**
 
-**TopOut**은 실내 클라이머를 위한 iOS·Android 영상 기록 앱입니다.  
-사용자가 촬영 구도와 매트 경계선을 설정하면 앱이 매트 주변의 움직임과 사람의 Pose를 분석해 등반 구간을 자동으로 찾습니다. 탑홀드 마스킹을 활성화한 경우에는 사용자가 선택한 탑홀드에 가장 가까웠던 순간을, 비활성화한 경우에는 등반 중 신체가 가장 높이 올라간 순간을 기준으로 자동 편집 구간을 제안합니다.
+이 문서는 TopOut iOS·Android 비공개 저장소의 개발, 유지보수 및 탐지 기준 정합성 확인을 위한 기술 README입니다.
 
-녹화는 구간이 감지되어도 즉시 종료되지 않으며, 사용자가 종료 버튼을 누를 때까지 하나의 원본 영상으로 계속 진행됩니다. 한 번의 녹화 안에서 여러 번의 등반 시도를 감지할 수 있고, 촬영 종료 후 자동 선택된 구간을 확인하거나 직접 미세 조정해 저장할 수 있습니다.
+- Marketing Version: **1.4**
+- Build / Version Code: **5**
+- Bundle / Application ID: `com.topout.cam`
+- iOS 최소 버전: **iOS 16.0**
+- Android 최소 버전: **Android 8.0 · API 26**
+- Android Target SDK: **36**
+- 기준 패키지:
+  - `TopOut_iOS_v1.4_build5_Start6_Finish2_Recovery6s`
+  - `TopOut_Android_v1.4_build5_Start4_Finish2_Recovery6s`
 
 ---
 
-## 📁 프로젝트 구조
+## 1. 제품 동작 요약
+
+TopOut은 자동 구간이 감지되어도 원본 녹화를 중단하지 않습니다. 사용자가 녹화를 직접 종료할 때까지 하나의 원본 영상을 계속 기록하고, 원본 내부에서 여러 등반 시도의 시작·종료 후보만 저장합니다.
+
+```text
+모델 준비
+→ 촬영 포맷 및 구도 설정
+→ 매트 경계 자동 탐지·수동 보정
+→ 선택적으로 탑홀드 마스킹
+→ 3초 카운트다운 후 연속 녹화
+→ Motion / Pose 기반 다중 시도 감지
+→ 짧은 원본 구간 정리
+→ 각 구간에 앞뒤 3초 편집 여백 적용
+→ 결과 확인·정밀 편집·저장
+```
+
+3초 카운트다운은 사용자 준비를 위한 UX입니다. 별도의 환경 기준 영상 보정 단계는 수행하지 않습니다.
+
+---
+
+## 2. 저장소 구조
 
 ```text
 TopOut/
@@ -19,247 +46,454 @@ TopOut/
 │       └── TopOut/
 │           ├── Code/
 │           ├── MobileSAM/
-│           └── Assets.xcassets/
+│           ├── Assets.xcassets/
+│           └── Licenses/
 ├── Android/
 │   └── TopOut/
 │       ├── app/
+│       │   └── src/main/
+│       │       ├── java/com/topout/cam/
+│       │       ├── assets/
+│       │       └── res/
 │       ├── docs/
 │       ├── gradle/
 │       └── settings.gradle.kts
 └── README.md
 ```
 
-- `IOS/TopOut`: UIKit·AVFoundation·Core ML 기반 iOS 구현
-- `Android/TopOut`: Jetpack Compose·CameraX·MoveNet Thunder·TensorFlow Lite·ONNX Runtime 기반 Android 구현
-- Android 버전은 iOS 구현의 기능과 주요 동작 조건을 기준으로 정합성을 맞췄습니다.
-
----
-
-## ✨ 핵심 기능
-
-### 🎥 연속 녹화와 다중 시도 감지
-
-TopOut은 완등 후보 시점을 찾았다는 이유만으로 녹화를 자동 종료하지 않습니다. 정상 촬영 중에는 사용자가 직접 종료할 때까지 전체 원본 영상을 계속 기록하며, 하나의 녹화 안에서 여러 등반 시도를 각각 감지해 결과 화면에 제공합니다.
-
-### 🟦 매트 경계선 자동 탐지 및 보정
-
-앱은 벽과 매트가 만나는 경계를 자동으로 탐지합니다. 탐지 결과가 실제 환경과 다르면 사용자가 화면의 파란 조절점을 드래그해 경계선을 직접 수정할 수 있습니다.
-
-### 🎯 MobileSAM 기반 탑홀드 선택
-
-탑홀드 마스킹을 활성화하면 촬영 전 목표 홀드를 선택할 수 있습니다. 작은 홀드는 확대 화면에서 더 정밀하게 지정할 수 있으며, MobileSAM이 선택 영역을 분할해 외곽선으로 표시합니다.
-
-- iOS: Core ML 형식의 MobileSAM Encoder·Decoder
-- Android: ONNX Runtime 형식의 MobileSAM Encoder·Decoder
-
-### 🧍 Motion Detection → Pose Detection 단계형 분석
-
-등반 시작 전부터 고비용 Pose 모델을 계속 실행하지 않습니다.
-
-1. 녹화 시작 후 3초 동안 매트 주변의 기준 영상을 보정합니다.
-2. 매트 경계선 주변에서 경량 Motion Detection을 수행합니다.
-3. 의미 있는 움직임이 발견될 때만 Android에서는 MoveNet Thunder FP16 Pose Detection을 시작합니다.
-4. 초기 탐지는 긴 변 최대 512px의 전체 화면을 사용하고, 신뢰 가능한 관절 4개 이상과 어깨·골반 중심 관절을 추가 검증합니다.
-5. 연속 3개 Pose 프레임에서 최소 3개 관절이 사람 크기의 5% 이상 이동하면 실제 사람 움직임으로 판단하고 Smart Crop을 활성화합니다.
-6. Smart Crop 영역에서 유효한 사람 Pose가 2프레임 연속 확인되면 등반 시작 판정을 허용합니다.
-7. 신뢰 가능한 관절점 중 화면상 가장 낮은 점이 매트 위로 올라가면 등반 시작으로 기록합니다.
-
-Smart Crop 활성화 이후 Android는 전체 512px RGB 이미지를 다시 만들지 않고, 이전 Pose에서 계산한 사람 ROI를 CameraX YUV 프레임에서 바로 256×256 MoveNet 입력으로 변환합니다. 밝기 채널은 bilinear 보간하고 색상 채널은 nearest sampling을 사용해 발열과 배터리 소모를 줄입니다.
-
-### 🏁 설정에 따른 종료 기준 선택
-
-자동 구간 탐지와 탑홀드 마스킹은 서로 독립적으로 사용할 수 있습니다.
-
-| 자동 구간 탐지 | 탑홀드 마스킹 | 동작 |
-|---|---|---|
-| OFF | OFF | 별도의 선택 과정 없이 일반 녹화 |
-| ON | OFF | 매트 경계선을 보정하고 **등반 중 가장 높은 Pose 시점**을 종료 기준으로 사용 |
-| OFF | ON | 탑홀드를 선택한 뒤 일반 녹화 및 마스크 오버레이 사용 |
-| ON | ON | 매트와 탑홀드를 설정하고 **탑홀드에 가장 가까웠던 Pose 시점**을 종료 기준으로 사용 |
-
-등반 중 가장 낮은 관절점이 다시 매트 아래로 내려오거나 Pose가 일정 시간 이상 사라지면 해당 시도를 마무리합니다. 최종 자동 구간은 감지 시점 그대로가 아니라 시작 전·종료 후 여백을 포함해 저장됩니다.
-
-### ✂️ 자동 구간 선택과 정밀 편집
-
-녹화 종료 후 앱이 감지한 구간을 자동으로 선택합니다.
-
-- 감지된 여러 구간 전환
-- 시작점·끝점 수동 조정
-- 느린 드래그 시 0.1초 단위 정밀 조정
-- 탑홀드 외곽선 포함 여부 선택
-- 선택 구간만 기기 갤러리에 저장
-
-짧은 구간은 인접 구간과의 간격을 확인해 병합하거나 제외하며, 최근 감지 구간을 최대 10개까지 유지합니다.
-
-### 🛡️ 촬영 중단 및 저장공간 보호
-
-다음 상황에서는 파일 손상을 방지하기 위해 현재 녹화를 안전하게 마무리합니다.
-
-- 앱이 백그라운드로 이동한 경우
-- 전화 수신이나 다른 앱의 카메라·마이크 사용 등으로 촬영 세션이 중단된 경우
-- 카메라 세션 오류가 발생한 경우
-- 남은 저장공간이 안전 기준보다 부족한 경우
-
-저장공간은 녹화 시작 직후와 녹화 중 1분 간격으로 확인합니다. 안전 기준은 **최소 1GB**와 현재 촬영 포맷 기준 **약 2분 분량의 예상 영상 용량 + 256MB 마무리 여유 공간** 중 더 큰 값을 사용합니다.
-
----
-
-## ⚙️ 기본 설정
-
-첫 실행 기본값은 두 플랫폼에서 동일합니다.
-
-| 항목 | 기본값 |
-|---|---|
-| 해상도 | FHD |
-| 프레임 | 60fps |
-| 화면 비율 | 9:16 |
-| 자동 구간 탐지 | ON |
-| 탑홀드 마스킹 | OFF |
-| 도움말 | ON |
-| 녹화 중 실시간 화면 | OFF |
-
-지원 후보:
-
-- 해상도: FHD, 4K
-- 프레임: 30fps, 60fps
-- 화면 비율: 9:16, 4:5, 3:4, 1:1
-- 세로·가로 촬영 지원
-
-실제 선택 가능한 해상도와 프레임 조합은 기기의 후면 카메라 성능에 따라 달라집니다. 저장된 설정이 현재 기기에서 지원되지 않으면 가능한 조합으로 자동 보정됩니다.
-
----
-
-## 🔄 작동 흐름
-
-### 1. 모델 로딩
-
-앱 실행 시 MobileSAM 모델을 온디바이스로 준비합니다. 모델 로딩 중에는 시스템 테마에 맞는 런치 이미지를 표시합니다.
-
-### 2. 촬영 포맷 및 구도 설정
-
-사용자는 촬영 해상도·프레임·화면 비율과 자동 탐지 옵션을 설정한 뒤 벽, 매트, 클라이머가 모두 보이도록 카메라 구도를 맞춥니다.
-
-### 3. 매트 경계선 및 탑홀드 설정
-
-- 자동 구간 탐지 ON: 매트 경계선을 자동 탐지하고 필요하면 수동 보정
-- 탑홀드 마스킹 ON: 목표 홀드를 탭해 MobileSAM 영역 선택
-
-### 4. 녹화 및 기준 영상 보정
-
-3초 카운트다운과 함께 매트 주변 기준 영상을 수집합니다. 이후에는 경량 CV 분석으로 매트 경계의 움직임을 감시합니다.
-
-### 5. 등반 시작 감지
-
-경계 부근의 의미 있는 움직임이 확인되면 Pose Detection으로 전환합니다. Android에서는 전체 화면 Pose 3프레임의 관절 움직임을 검증한 뒤 Smart Crop을 활성화하고, Crop 영역에서 유효한 사람 Pose가 2프레임 연속 확인되어야 시작 판정을 허용합니다. 이후 가장 낮은 신체 관절점이 매트 기준선을 아래에서 위로 통과하면 등반 시작으로 기록합니다.
-
-### 6. 종료 후보 시점 갱신
-
-- 탑홀드 마스킹 ON: 주요 관절과 탑홀드 영역의 거리가 가장 가까웠던 시점
-- 탑홀드 마스킹 OFF: 주요 관절 중 가장 높은 점이 화면에서 가장 높았던 시점
-
-해당 시점을 등반 중 계속 갱신합니다.
-
-### 7. 시도 종료 및 다음 시도 대기
-
-클라이머가 다시 매트 아래로 내려오거나 Pose가 일정 시간 사라지면 현재 구간을 종료합니다. 녹화는 계속 유지되며 앱은 다음 등반 시작을 다시 탐색합니다.
-
-### 8. 결과 확인 및 저장
-
-사용자가 녹화를 종료하면 자동 감지 구간이 적용된 결과 화면으로 이동합니다. 구간을 선택·수정한 뒤 원하는 부분만 저장할 수 있습니다.
-
----
-
-## 🧠 플랫폼별 구현
-
-| 영역 | iOS | Android |
-|---|---|---|
-| UI | UIKit | Jetpack Compose · Material 3 |
-| 카메라 | AVFoundation | CameraX · Camera2 |
-| 원본 녹화 | AVAssetWriter · MOV | CameraX Recorder · MP4 |
-| Pose | Vision Human Body Pose | MoveNet SinglePose Thunder FP16 · TensorFlow Lite |
-| MobileSAM | Core ML | ONNX Runtime |
-| 영상 재생 | AVPlayer | Media3 ExoPlayer |
-| 트리밍·내보내기 | AVAssetExportSession · Photos | Media3 Transformer · MediaStore |
-| 설정 저장 | UserDefaults | DataStore Preferences |
-| 앱 상태 | UIViewController 기반 상태 관리 | ViewModel · StateFlow |
-| 저장 위치 | iOS 사진 앱 | `Movies/TopOut` |
-
-### Pose 분석 차이
-
-두 플랫폼은 동일한 상태 전환과 구간 계산 구조를 사용하지만 Pose 엔진이 다르므로 관절 좌표와 추론 결과가 완전히 동일하지는 않습니다.
-
-- iOS
-  - Vision Human Body Pose Detection
-  - 입력 영상 긴 변 최대 384px
-  - 관절 confidence 기준 0.25
-- Android
-  - MoveNet SinglePose Thunder FP16
-  - TensorFlow Lite XNNPACK, CPU 최대 2스레드
-  - 모델 입력 256×256, Pose 분석 간격 0.5초
-  - 초기 전체 화면 탐지에서 긴 변 최대 512px 이미지 사용
-  - Smart Crop 활성화 후 CameraX YUV에서 사람 ROI를 256×256 RGB 입력으로 직접 변환
-  - 사람 판정: confidence 0.25 이상 관절 4개 이상, 몸통 관절 2개 이상, 어깨·골반 각각 최소 1개
-  - Smart Crop 계산에는 confidence 0.15 이상 관절 사용
-  - 연속 3개 Pose 프레임에서 최소 3개 관절이 사람 크기의 5% 이상 이동하면 Smart Crop 활성화
-  - Smart Crop 활성화 후 유효한 사람 Pose 2프레임 연속 확인 뒤 시작 판정 허용
-  - Smart Crop 상태에서 사람 형태가 2회 연속 부정확하면 전체 화면 탐지로 복귀
-  - Pose가 최대 6초간 누락되어도 일시적인 가림으로 보고 기존 시도를 유지
-
-### 공통 구간 처리 기준
-
-- 시작 감지 전 여백: 3초
-- 종료 기준 시점 이후 여백: 3초
-- Pose 분석 간격: 0.5초
-- Pose 미검출 허용 시간: 6초
-- 원본 감지 구간이 2초 미만이면 인접 구간과의 간격이 3초 이내일 때 병합하고, 병합할 수 없으면 제외
-- 최대 감지 구간 수: 최근 10개
-
-> `2초 미만`은 시작·종료의 각 3초 여백을 추가하기 전의 원본 감지 구간 길이를 기준으로 합니다.
-
----
-
-## 🧩 주요 파일 대응
+### 주요 파일 대응
 
 | 기능 | iOS | Android |
 |---|---|---|
 | 메인 촬영 화면·상태 | `HoldVC.swift`, `HoldVC+UI.swift`, `HoldVC+Recording.swift` | `TopOutApp.kt`, `TopOutViewModel.kt` |
 | 카메라·녹화 | `Camera.swift`, `Recorder.swift` | `CameraEngine.kt`, `CameraPreview.kt` |
 | 촬영 설정 | `RecordingSettingsVC.swift`, `RecordingFormat.swift` | `SettingsDialog.kt`, `SettingsRepository.kt`, `AppModels.kt` |
-| MobileSAM | `SAM.swift`, `Mask.swift`, `Pipeline.swift` | `OnnxMobileSamSegmenter.kt`, `HoldSegmenter.kt` |
-| 매트 탐지 | `MatDetector.swift`, `MatLineView.swift` | `MatBoundaryDetector.kt`, `SelectionEditor.kt` |
-| 움직임·Pose | `MotionDetector.swift` | `PoseClimbAnalyzer.kt`, `MoveNetThunderPoseDetector.kt`, `PoseHumanGate.kt`, `PoseStartRule.kt` |
+| MobileSAM 탑홀드 | `SAM.swift`, `Mask.swift`, `Pipeline.swift` | `OnnxMobileSamSegmenter.kt`, `HoldSegmenter.kt` |
+| 매트 경계 탐지 | `MobileSAMMatDetector.swift`, `MatLineView.swift` | `MobileSamMatBoundaryDetector.kt`, `SelectionEditor.kt` |
+| 움직임·Pose | `MotionDetector.swift`, `HoldVC+Motion.swift` | `PoseClimbAnalyzer.kt`, `MoveNetThunderPoseDetector.kt`, `PoseHumanGate.kt` |
+| 구간 정리 | `HoldVC+Recording.swift` | `DetectedClipRangeStore.kt` |
 | 결과 편집 | `ReviewVC.swift` | `ReviewScreen.kt`, `PrecisionTrimSlider.kt` |
 | 저장공간·중단 보호 | `HoldVC+Stability.swift` | `StorageMonitor.kt`, `TopOutViewModel.kt`, `CameraEngine.kt` |
 | 영상 내보내기 | `Recorder.swift` | `VideoExporter.kt` |
 
 ---
 
-## 🚀 실행 방법
+## 3. 기본 촬영 설정
+
+| 항목 | 기본값 |
+|---|---|
+| 해상도 | FHD |
+| 프레임률 | 60fps |
+| 화면 비율 | 9:16 |
+| 자동 구간 탐지 | ON |
+| 탑홀드 마스킹 | OFF |
+| 도움말 | ON |
+| 녹화 중 실시간 프리뷰 | OFF |
+
+지원 후보:
+
+- 해상도: FHD, 4K
+- 프레임률: 30fps, 60fps
+- 화면 비율: 9:16, 4:5, 3:4, 1:1
+- 세로·가로 방향
+
+기기에서 지원하지 않는 해상도·프레임 조합은 가능한 조합으로 보정합니다.
+
+---
+
+## 4. MobileSAM 매트 경계 탐지
+
+두 플랫폼은 동일한 자동 후보 규칙을 사용합니다.
+
+### 입력 프롬프트
+
+- Positive X: `50%`
+- Positive Y: `70%`, `80%`, `90%`, `95%`
+- Negative point: `x = 50%`, `y = 28%`
+- 하나의 이미지 임베딩을 네 높이에서 재사용
+
+### 후보 구성 및 필터
+
+각 디코더 채널에서 positive point와 연결된 성분만 사용합니다.
+
+```text
+가로 점유 폭 ≥ 화면 너비 40%
+마스크 최상단 Y ≥ 화면 높이 50%
+상단 경계 직선 기울기 ≤ 15°
+```
+
+유효 후보 중 상단 경계가 화면에서 가장 높은 후보를 선택합니다. 같은 높이라면 가로폭이 더 넓은 후보를 우선합니다.
+
+### 최종 경계
+
+- 연결 성분의 열별 최상단 픽셀을 추출
+- 최소제곱 직선 피팅
+- `x = 6%`, `x = 94%`의 두 점으로 편집 가능한 선 생성
+- **별도의 10px 하향 보정을 적용하지 않고 검출 위치 그대로 사용**
+- 후보가 없거나 모델 실행에 실패하면 `y = 75%` 수평 기본선 사용
+- 자동 탐지 후 사용자가 두 조절점을 직접 수정 가능
+
+현재 규칙에는 직선 inlier 비율, 마스크 면적 점수, 좌우 추가 프롬프트, 후보 간 합의 점수를 사용하지 않습니다.
+
+### 기울어진 매트 처리
+
+저장된 매트선은 단일 평균 Y가 아니라 x 위치별 선형 보간값으로 사용합니다.
+
+```text
+관절 x 위치
+→ 해당 x에서의 매트 경계 y 계산
+→ 그 위치의 시작선·종료선·Motion 탐색 범위 계산
+```
+
+따라서 최대 15°까지 허용된 완만한 기울기는 시작·종료 및 초기 Motion 영역에 반영됩니다. iOS의 6%·2%, Android의 4%·2% 오프셋은 선에 수직인 거리가 아니라 화면 세로축 Y 방향으로 차감합니다.
+
+---
+
+## 5. 공통 Motion 분석 기준
+
+- 별도 환경 보정 없음
+- 분석 프레임 너비: `160px`
+- 기본 분석 주기: `2fps`, 즉 `0.5초`
+- 현재 분석 프레임과 **직전 분석 프레임** 비교
+- 픽셀 밝기 차이 기준: `20`
+- 초기 탐색 영역: 각 x의 매트 경계 바로 위쪽부터 화면 높이 최대 `40%`
+- 기본 노이즈 보정: `2.5%`
+- 보정 후 활성 기준: `2%`
+- 원본 변화 픽셀 비율 약 `4.5%`부터 활성 가능
+
+```text
+rawSignal = 변화 픽셀 / 탐색 영역 픽셀
+adjustedSignal = max(0, rawSignal - 0.025)
+활성 = adjustedSignal ≥ 0.02
+```
+
+초기 Motion 탐색은 기울어진 매트선의 x별 경계를 따라 수행합니다.
+
+---
+
+## 6. 분석 주기
+
+| 상태 | iOS | Android |
+|---|---:|---:|
+| 초기 Motion 탐색 | 2fps | 2fps |
+| 움직임 직후, 아직 유효 Pose를 한 번도 못 잡음 | 2fps | 2fps |
+| 유효 Pose 확보 후, 아직 등반 시작 전 | 4fps | 4fps |
+| 정상 등반 중 Pose 추적 | 2fps | 2fps |
+| 이전에 본 Pose 유실 복구 | 4fps | 4fps |
+| 정상 종료 후 다음 시작 대기 | 4fps | 4fps |
+
+- 기본 간격: `0.5초`
+- 고속 간격: `0.25초`
+- 활성 등반 중 Pose 유실 복구 제한: `6초`
+- 정상 종료 후 Pose가 계속 보이면 시간 제한 없이 다음 시작을 탐색
+- 정상 종료 후 Pose가 `2프레임 연속` 미검출되면 초기 Motion 탐색으로 복귀
+
+---
+
+## 7. 플랫폼별 시작·공통 종료 기준
+
+### 시작 경계
+
+가장 낮은 신뢰 관절의 x 위치에서 매트선을 계산한 뒤 플랫폼별 시작 오프셋을 적용합니다.
+
+```text
+iOS:
+startBoundaryY(x) = matLineY(x) - 0.06
+
+Android:
+startBoundaryY(x) = matLineY(x) - 0.04
+
+가장 낮은 관절 Y ≤ startBoundaryY(x)
+→ START
+```
+
+즉, iOS는 매트선보다 화면 높이의 `6%` 위, Android는 `4%` 위에서 시작을 판정합니다. 첫 유효 Pose가 이미 시작선 위에 있다면 즉시 시작할 수 있으며, 그렇지 않으면 시작선 아래→위 crossing을 사용합니다.
+
+### 종료 경계
+
+가장 낮은 신뢰 관절의 x 위치에서 매트선을 계산한 뒤, 화면 높이의 `2%` 위에 종료선을 둡니다.
+
+```text
+finishBoundaryY(x) = matLineY(x) - 0.02
+가장 낮은 관절 Y > finishBoundaryY(x)
+→ 정상 복귀 확인
+```
+
+즉, 실제 매트선까지 완전히 내려오기를 기다리지 않고 매트선보다 2% 위의 종료선을 아래로 통과하면 현재 시도를 닫습니다.
+
+### 종료 후보 시점
+
+탑홀드 설정에 따라 달라집니다.
+
+- 탑홀드 마스킹 ON: 신뢰 관절이 탑홀드 사각 영역에 가장 가까웠던 시점
+- 탑홀드 마스킹 OFF: 신뢰 관절 중 가장 높은 점의 Y가 전체 등반에서 가장 작았던 시점
+
+정상 복귀 프레임은 등반 종료를 확정하는 신호이며, 실제 자동 편집 종료 후보는 위의 최적 시점을 우선 사용합니다.
+
+---
+
+## 8. iOS 탐지 구조
+
+### Pose 엔진
+
+- Apple Vision `VNDetectHumanBodyPoseRequest`
+- 선택된 촬영 영역(active crop) 전체를 입력으로 사용
+- 입력 긴 변 최대 `384px`
+- 관절 confidence 기준 `0.25`
+- 관절 기반 동적 Vision ROI는 사용하지 않음
+- 변환 실패 시 원본 `CVPixelBuffer`를 Vision에 전달하고 active crop 좌표로 환산
+
+### iOS 신뢰 관절
+
+시작·종료·최고점·탑홀드 판단에 사용하는 관절:
+
+- 어깨
+- 팔꿈치
+- 손목
+- 골반
+- 무릎
+- 발목
+
+**코 및 얼굴 관절은 판단에서 제외**합니다.
+
+### iOS 다중 인물 처리 — 기존 방식 복원
+
+현재 iOS는 사람 한 명을 선택하거나 프레임 간 동일 인물을 추적하지 않습니다.
+
+```text
+Vision이 반환한 모든 VNHumanBodyPoseObservation
+→ confidence 0.25 이상인 비얼굴 관절 수집
+→ 모든 사람의 관절을 하나의 판단 배열로 합침
+→ 배열에 관절이 하나 이상 있으면 유효 Pose
+```
+
+다음 강화 로직은 롤백되어 현재 사용하지 않습니다.
+
+- Motion 중심과 가장 가까운 사람 1명 선택
+- 이전 프레임 위치와 가장 가까운 사람 1명 추적
+- 사람 중심 거리 제한
+- 어깨·골반·팔꿈치·무릎이 각각 1개 이상이어야 하는 anatomical gate
+
+현장 테스트에서 기존 방식의 구간 정확도가 더 높아 복원한 상태입니다. 여러 사람이 동시에 화면에 들어오면 서로 다른 사람의 관절이 같은 판단 집합에 포함될 수 있다는 점은 현재 iOS 로직의 의도된 트레이드오프입니다.
+
+### iOS 상태 흐름
+
+```text
+WAITING
+직전 프레임 차이 기반 Motion 탐색
+    ↓ Motion 활성
+TRACKING
+Vision Pose 확인 및 시작선 crossing 탐색
+    ↓ START
+CLIMBING
+Pose·완등 후보 갱신
+    ↓ 종료선 아래 복귀 또는 6초 유실
+TRACKING
+다음 등반 시작 탐색
+```
+
+### iOS 정상 종료 시각 보호
+
+완등 후보가 시작 프레임과 같거나 START보다 이른 경우, 해당 후보를 그대로 사용하면 FINISH가 무효가 될 수 있습니다. 현재 코드는 종료 후보가 START보다 실제로 늦은지 검증합니다.
+
+- 정상 복귀 종료: 유효한 완등 후보가 없으면 실제 종료선 crossing 시각 사용
+- 6초 Pose 유실 종료: 유효한 완등 후보가 없으면 마지막 유효 Pose 시각 사용
+- `START + 0.1초` 같은 인위적 보정은 사용하지 않음
+
+### iOS Pose 유실
+
+- 유효 Pose를 본 뒤 유실되면 `4fps`로 복구
+- 등반 전 `6초` 동안 복구되지 않으면 초기 Motion 탐색 복귀
+- 등반 중 `6초` 동안 복구되지 않으면 유효 종료 후보 또는 마지막 유효 Pose 시각으로 시도 종료
+- 정상 종료 후에는 `2프레임 연속` 미검출 시 초기 Motion 탐색 복귀
+
+---
+
+## 9. Android 탐지 구조
+
+### Pose 엔진 및 런타임
+
+- MoveNet SinglePose Thunder FP16
+- 모델 입력: `256 × 256`
+- LiteRT `1.4.1`
+- 기존 `org.tensorflow.lite.Interpreter` API 사용
+- CameraX `ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST`
+- 한 번의 추론에서 한 사람만 반환
+
+### Android Motion ROI → Pose ROI 흐름
+
+```text
+초기 MOTION
+→ 매트선 위 40% 영역에서 직전 프레임 차이 확인
+→ 변화 픽셀을 포함하는 화면 면적 25% 정사각형 ROI 생성
+→ ROI에서 MoveNet 실행
+
+유효 Pose
+→ POSE 모드
+→ 관절 좌표로 추적 ROI 갱신
+
+Pose 1회 미검출
+→ 즉시 MOTION 모드
+→ 직전 분석 프레임 변화 영역으로 ROI 복구
+
+유효 Pose 재검출
+→ POSE 모드 복귀
+```
+
+초기 사람 탐색은 매트 위 탐색 영역으로 제한합니다. 유효한 사람을 한 번 본 뒤의 복구 Motion ROI는 화면 전체에서 이동할 수 있습니다.
+
+CameraX YUV 프레임의 ROI를 직접 `256 × 256` RGB 입력으로 샘플링하며, 전체 화면 512px RGB fallback은 사용하지 않습니다.
+
+### Android 유효 Pose 조건
+
+confidence `0.25` 이상인 동일 SinglePose 결과에서 다음 영역이 각각 하나 이상 있어야 합니다.
+
+- 어깨 ≥ 1
+- 골반 ≥ 1
+- 팔꿈치 ≥ 1
+- 무릎 ≥ 1
+
+시작·종료·완등 후보에는 어깨, 팔꿈치, 손목, 골반, 무릎, 발목을 사용하고 코는 사용하지 않습니다.
+
+추적 ROI 계산에는 confidence `0.15` 이상 keypoint를 사용할 수 있지만, 시작·종료 판단은 `0.25` 기준과 anatomical gate를 통과해야 합니다.
+
+### Android Pose 유실
+
+- 등반 중: 마지막 유효 Pose 이후 최대 `6초` 동안 Motion ROI 복구
+- 6초 이내 복구: 같은 등반 계속
+- 6초 복구 실패: 유효한 종료 후보가 START보다 늦으면 해당 구간 저장, 아니면 Retry
+- 정상 종료 후: Pose 추적을 시간 제한 없이 유지
+- 정상 종료 후 `2프레임 연속` 미검출: 초기 Motion 탐색 복귀
+- `start + 0.1초` 인위적 보정 없음
+
+### Android 정상 종료 저장 조건
+
+정상 종료 시에는 저장된 완등 후보를 우선하고, 후보가 없으면 종료선 crossing 시각을 사용합니다. ViewModel은 `finish > start`인 경우에만 원본 구간을 저장합니다.
+
+---
+
+## 10. 구간 정리 및 병합
+
+모든 정리는 먼저 **패딩 없는 원본 감지 구간**으로 수행합니다.
+
+1. 원본 구간을 시작 시각 순으로 정렬
+2. 원본 길이가 `2초 미만`인 짧은 구간 확인
+3. 앞뒤 이웃 중 원본 간격이 `3초 이내`인 가장 가까운 구간과 병합
+4. 병합할 이웃이 없으면 짧은 구간 제외
+5. 남은 모든 유효 등반은 다음 등반과의 간격과 관계없이 별도 구간으로 유지
+6. 각 원본 구간에 앞뒤 `3초` 편집 여백 적용
+7. 전체 녹화 길이 범위로 clamp
+
+### 삭제된 일반 인접 구간 병합
+
+다음 로직은 iOS·Android 모두 삭제되었습니다.
+
+```text
+구간 A 종료 후 1초 이내 구간 B 시작
+→ A와 B를 하나로 병합
+```
+
+이제 A와 B는 각각 별도 감지 구간으로 유지됩니다. 단, 앞뒤 3초 패딩 때문에 결과 화면의 두 구간 범위가 서로 겹칠 수는 있습니다.
+
+감지 구간 수는 최근 N개로 제한하지 않고 녹화 중 발생한 모든 원본 구간을 보관합니다.
+
+---
+
+## 11. 촬영과 저장 안정성
+
+다음 상황에서는 원본 파일 손상을 줄이기 위해 녹화를 안전하게 마무리합니다.
+
+- 앱 백그라운드 이동
+- 전화 수신 또는 다른 앱의 카메라·마이크 점유
+- 카메라 세션 오류
+- 저장공간 안전 기준 미달
+
+저장공간 기준:
+
+```text
+max(
+  1GB,
+  현재 포맷 기준 약 2분 예상 영상 용량 + 256MB 마무리 여유
+)
+```
+
+저장공간은 녹화 시작 직후와 녹화 중 1분 간격으로 확인합니다.
+
+---
+
+## 12. 플랫폼 기술 스택
+
+| 영역 | iOS | Android |
+|---|---|---|
+| 최소 OS | iOS 16.0 | Android 8.0 · API 26 |
+| UI | UIKit | Jetpack Compose · Material 3 |
+| 언어 | Swift 5 | Kotlin 2.3 · JVM 17 |
+| 카메라 | AVFoundation | CameraX 1.6.1 · Camera2 |
+| 원본 녹화 | AVAssetWriter · MOV | CameraX Recorder · MP4 |
+| Pose | Apple Vision | MoveNet Thunder FP16 · LiteRT 1.4.1 |
+| MobileSAM | Core ML | ONNX Runtime 1.27.0 |
+| 영상 재생 | AVPlayer | Media3 1.10.1 |
+| 내보내기 | AVAssetExportSession · Photos | Media3 Transformer · MediaStore |
+| 설정 저장 | UserDefaults | DataStore Preferences |
+
+### Android 빌드 도구
+
+- compileSdk: `36`
+- targetSdk: `36`
+- minSdk: `26`
+- Android Gradle Plugin: `8.13.2`
+- Gradle Wrapper: `8.14.5`
+- Kotlin: `2.3.20`
+- Java / JVM Target: `17`
+
+### Android 15 Edge-to-Edge
+
+- `enableEdgeToEdge()` 명시 적용
+- 투명 상태바·내비게이션 바
+- Compose `safeDrawing` / `navigationBarsPadding` 인셋 적용
+- Android 10 이상 내비게이션 바 자동 대비 스크림 비활성화
+- 지원 중단된 시스템 바 색상 테마 속성에 의존하지 않음
+
+### Android 16KB 메모리 페이지 구성
+
+- LiteRT `1.4.1` 사용
+- ONNX Runtime Android `1.27.0`
+- `jniLibs.useLegacyPackaging = false`
+- `onnx`, `tflite` 리소스 비압축 유지
+
+최종 Play 배포 전에는 실제 release AAB를 빌드해 네이티브 라이브러리 정렬과 16KB 페이지 호환성을 별도로 확인해야 합니다.
+
+---
+
+## 13. 빌드
 
 ### iOS
 
-1. Xcode에서 `IOS/TopOut/TopOut.xcodeproj`를 엽니다.
-2. `Signing & Capabilities`에서 개발 팀과 Bundle Identifier를 현재 계정에 맞게 설정합니다.
-3. `MobileSAM_Encoder.mlmodel`, `MobileSAM_Decoder.mlmodel`, `PrivacyInfo.xcprivacy`의 Target Membership을 확인합니다.
-4. 카메라·마이크·사진 보관함 권한 문구가 앱 타깃에 포함되어 있는지 확인합니다.
-5. 카메라와 Core ML 동작을 확인하려면 실제 iPhone 또는 iPad에서 실행합니다.
+1. `IOS/TopOut/TopOut.xcodeproj` 열기
+2. 개발 팀과 Bundle Identifier 확인
+3. 아래 파일의 Target Membership 확인
+   - `MobileSAM_Encoder.mlmodel`
+   - `MobileSAM_Decoder.mlmodel`
+   - `PrivacyInfo.xcprivacy`
+4. 카메라·마이크·사진 보관함 권한 문구 확인
+5. 실제 iPhone 또는 iPad에서 실행
 
-업로드된 Xcode 프로젝트의 Deployment Target이 현재 설치된 SDK와 맞지 않으면, 프로젝트 설정에서 사용 가능한 iOS 버전으로 조정합니다.
+프로젝트 설정:
+
+- Deployment Target: `iOS 16.0`
+- Swift: `5.0`
+- Marketing Version: `1.4`
+- Current Project Version: `5`
 
 ### Android
 
-1. Android Studio에서 `Android/TopOut` 폴더를 프로젝트 루트로 엽니다.
-2. Gradle JDK를 **JDK 17** 또는 Android Studio Embedded JDK로 설정합니다.
-3. `Sync Project with Gradle Files`를 실행합니다.
-4. 필요하면 `Clean Project` 후 `Rebuild Project`를 실행합니다.
-5. 카메라와 ML 추론을 확인하려면 실제 Android 기기에서 실행합니다.
+1. Android Studio에서 `Android/TopOut` 열기
+2. Gradle JDK를 JDK 17 또는 Embedded JDK로 설정
+3. Gradle Sync 실행
+4. MoveNet 모델 다운로드 태스크가 정상 완료되는지 확인
+5. 실제 기기에서 CameraX, MoveNet, MobileSAM 및 Media3 동작 확인
 
-Android 기본 환경:
-
-- `minSdk 26`
-- `targetSdk 36`
-- Gradle 8.13
-- Kotlin/JVM 17
+MoveNet 모델은 빌드 전 공식 모델 URL에서 다운로드해 Gradle 캐시에 검증·저장한 뒤 앱 assets에 복사합니다. 오프라인 빌드에서는 유효한 캐시 파일이 필요합니다.
 
 MobileSAM 모델 경로:
 
@@ -268,46 +502,72 @@ Android/TopOut/app/src/main/assets/models/mobile_sam_encoder.onnx
 Android/TopOut/app/src/main/assets/models/mobile_sam_decoder.onnx
 ```
 
-Android Pose 모델은 MoveNet SinglePose Thunder FP16을 사용하며, 모델 입력 크기는 256×256입니다. 초기 전체 화면 탐지에는 긴 변 최대 512px 이미지를 사용하고, Smart Crop이 활성화된 이후에는 CameraX YUV 프레임에서 사람 ROI를 직접 MoveNet 입력 버퍼로 변환합니다.
-
 ---
 
-## 🔐 권한 및 개인정보 관련 설정
+## 14. 회귀 테스트 체크리스트
+
+### 공통
+
+- [ ] 자동 매트 경계가 원래 검출 위치에 표시되고 10px 아래로 이동하지 않는가
+- [ ] 수평·완만한 경사 매트에서 두 조절점과 x별 보간이 정상인가
+- [ ] 초기 Motion이 2fps, 현재↔직전 분석 프레임 비교로 동작하는가
+- [ ] 원본 변화 약 4.5% 수준에서 Motion이 활성화되는가
+- [ ] iOS 시작선이 매트보다 6% 위, Android 시작선이 4% 위이며 두 플랫폼 종료선이 2% 위인가
+- [ ] 등반 전 Pose와 Pose 유실 복구가 4fps인가
+- [ ] 정상 등반 중 추적이 2fps인가
+- [ ] 활성 등반 Pose 유실 6초 후 올바르게 종료 또는 Retry 되는가
+- [ ] 정상 종료 후 2프레임 연속 미검출 시 초기 Motion으로 복귀하는가
+- [ ] 유효한 연속 등반이 1초 이내 시작돼도 별도 구간으로 남는가
+- [ ] 2초 미만 고립 구간만 정리되고 모든 정상 구간이 유지되는가
 
 ### iOS
 
-- 카메라 접근
-- 마이크 접근
-- 사진 보관함 저장 접근
-- `PrivacyInfo.xcprivacy`
-  - 디스크 공간 확인 API 사용 사유
-  - UserDefaults 사용 사유
+- [ ] `HoldVC+UI.swift`에 미정의 `adjustedLine` 참조가 없는가
+- [ ] 코가 시작·종료·완등 판단에서 제외되는가
+- [ ] 모든 Vision observation의 비얼굴 관절이 합쳐지는 기존 방식인가
+- [ ] 단일 인물 선택·이전 위치 추적·anatomical gate 코드가 다시 들어오지 않았는가
+- [ ] 완등 후보가 START와 같을 때 실제 종료선 crossing 또는 마지막 유효 Pose로 fallback 되는가
 
 ### Android
 
-- `android.permission.CAMERA`
-- `android.permission.RECORD_AUDIO`
-- Android 9 이하 저장을 위한 제한적 `WRITE_EXTERNAL_STORAGE`
-
-Android 10 이상에서는 MediaStore를 통해 `Movies/TopOut`에 영상을 저장합니다.
-
----
-
-## 📌 플랫폼 차이와 한계
-
-기능 흐름과 주요 수치는 iOS·Android에서 최대한 동일하게 맞췄지만, 다음 요소는 플랫폼 프레임워크와 기기 제조사 차이로 완전히 동일한 결과를 보장하지 않습니다.
-
-- Apple Vision과 MoveNet Thunder의 Pose 관절 좌표 및 confidence
-- Core ML, TensorFlow Lite, ONNX Runtime의 추론·부동소수점 결과
-- AVFoundation과 CameraX의 렌즈 전환 및 지원 포맷 판정
-- MOV와 MP4의 코덱 프로파일, GOP, 오디오 세부 사양
-- AVAssetExportSession과 Media3 Transformer의 재인코딩 결과
-- Android 제조사별 카메라 해상도·프레임·고속 촬영 지원 범위
+- [ ] 어깨·골반·팔꿈치·무릎이 각각 1개 이상이어야 유효 Pose인가
+- [ ] Motion ROI 면적이 화면의 25% 정사각형인가
+- [ ] Android 15 Edge-to-Edge에서 권한·촬영·리뷰 화면 인셋이 안전한가
+- [ ] release AAB의 네이티브 라이브러리가 16KB 페이지 환경에 적합한가
 
 ---
 
-## 📌 프로젝트 특징
+## 15. 현재 빌드 변경 요약
 
-TopOut은 단순한 카메라 앱이 아니라, 클라이밍 영상에서 사용자가 실제로 필요한 **등반 시작부터 최고 지점까지의 구간**을 자동으로 제안하는 온디바이스 비디오 도구입니다.
+### v1.4 · build 5
 
-경량 Motion Detection으로 시작 후보를 좁힌 뒤에만 Pose Detection을 실행하고, MobileSAM을 통해 사용자가 선택한 탑홀드를 정밀하게 표시합니다. 촬영이 끝난 뒤에는 자동 구간 선택과 수동 미세 조정을 함께 제공해 클라이머가 긴 원본 영상을 직접 돌려보며 시작·완등 순간을 찾는 시간을 줄입니다.
+- 자동 매트 경계 10px 하향 보정 삭제
+- 기울어진 매트선의 x별 경계 보간 유지
+- 시작 경계: iOS는 매트선보다 화면 높이 `6%` 위, Android는 `4%` 위
+- 종료 경계: 매트선보다 화면 높이 `2%` 위
+- 초기 Motion: 고정 `2fps`, 직전 분석 프레임 비교
+- Motion 기준: 노이즈 `2.5%` 보정 + 활성 `2%`
+- 등반 전 Pose·Pose 유실 복구: `4fps`
+- 정상 등반 추적: `2fps`
+- Pose 유실 복구 제한: `6초`
+- 정상 종료 후 `2프레임 연속` 미검출 시 초기 탐색 복귀
+- 유효 구간 간 1초 이내 일반 병합 로직 삭제
+- iOS 단일 인물 선택 및 anatomical gate 롤백
+- iOS 코 제외 유지 및 관련 코드 정리
+- iOS invalid finish-reference fallback 유지
+- Android 15 Edge-to-Edge 및 LiteRT 기반 16KB 페이지 대응 구성
+
+---
+
+## 16. 알려진 플랫폼 차이
+
+- iOS는 여러 Vision observation의 관절을 하나의 판단 집합으로 합칩니다.
+- Android는 MoveNet SinglePose 결과 한 명만 사용하며 anatomical gate를 적용합니다.
+- Apple Vision과 MoveNet의 관절 좌표·confidence는 동일하지 않습니다.
+- iOS는 active crop 전체 Vision 입력을 사용하고, Android는 Motion/Pose ROI를 동적으로 갱신합니다.
+- Core ML, LiteRT 및 ONNX Runtime의 부동소수점 결과와 처리 시간은 기기별로 달라질 수 있습니다.
+- 카메라 해상도·프레임률·렌즈 전환 지원 범위는 기기 하드웨어에 따라 달라집니다.
+
+---
+
+> 자동 탐지는 편집 후보를 제안하기 위한 기능입니다. 릴리스 전에는 다양한 암장, 촬영 각도, 조도, 매트 색상, 다중 인물 환경과 실제 기기에서 회귀 테스트해야 합니다.

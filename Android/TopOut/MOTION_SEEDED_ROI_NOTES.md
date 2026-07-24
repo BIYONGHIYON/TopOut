@@ -20,8 +20,8 @@
 ## Climbing and finish
 
 - While climbing, update the closest-top-hold or highest-pose finish candidate on each reliable pose.
-- Missing pose is tolerated for up to five seconds only while CLIMBING. On the first miss, joint-based crop tracking switches to a 4 fps motion-seeded quarter-frame ROI.
-- During that five-second window, each current 160px luma frame is compared with the immediately previous pose-analysis frame; a usable motion crop replaces the previous ROI before MoveNet runs.
+- Missing pose is tolerated for up to six seconds only while CLIMBING. On the first miss, joint-based crop tracking switches to a 4 fps motion-seeded quarter-frame ROI.
+- During that six-second window, each current 160px luma frame is compared with the immediately previous pose-analysis frame; a usable motion crop replaces the previous ROI before MoveNet runs.
 - When a reliable pose returns, joint-based crop tracking resumes from that pose. If no usable motion crop exists, the most recent crop is retained until a later frame provides motion or the timeout expires.
 - A reliable pose whose lowest trusted joint moves below the mat ends the climb.
 - After a normal finish, keep the current joint crop and follow continuously visible joints without a time limit.

@@ -16,7 +16,7 @@ import kotlin.math.max
  * 3. Reject a candidate when its fitted upper boundary tilts more than 15 degrees.
  * 4. Pick the valid mask whose upper edge is highest on screen.
  * 5. Convert that upper edge to the editable two-point line. The shared ViewModel then applies the
- *    existing 10-pixel downward correction in the original captured-image coordinate system.
+ *    detected boundary directly in the original captured-image coordinate system.
  *
  * No straightness, area, consensus, or multi-prompt scoring rule is used here.
  */
