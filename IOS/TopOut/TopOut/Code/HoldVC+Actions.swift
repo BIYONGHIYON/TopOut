@@ -26,7 +26,6 @@ extension HoldVC {
                     matLine: selectedMatLine,
                     topBox: normalizedTopBox,
                     finishReference: .closestTopHold,
-                    referenceImage: referenceImage,
                     activeCropRect: activeSourceCropRect
                 )
             } else {
@@ -40,7 +39,6 @@ extension HoldVC {
                     matLine: selectedMatLine,
                     topBox: nil,
                     finishReference: .highestPosePoint,
-                    referenceImage: referenceImage,
                     activeCropRect: activeSourceCropRect
                 )
             } else {

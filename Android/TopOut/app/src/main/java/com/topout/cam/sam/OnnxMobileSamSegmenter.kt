@@ -62,7 +62,11 @@ class OnnxMobileSamSegmenter(
 
     /**
      * Automatic mat segmentation used by TopOut's selection screen.
-     * Positive prompts are tried at centre 80% -> 85% -> 90%, with 42%/58% x fallbacks.
+     *
+     * A single cached image embedding is decoded at centre y=70%, 80%, 90%, and 95%. The
+     * detector keeps masks that span at least 40% of the visible width, whose highest pixel
+     * stays below the 50% image-height line, and whose upper boundary tilts no more than 15 degrees.
+     * It then selects the highest remaining upper boundary.
      */
     suspend fun detectMatBoundary(bitmap: Bitmap): Result<List<Offset>> = withContext(Dispatchers.Default) {
         runCatching {
@@ -72,48 +76,18 @@ class OnnxMobileSamSegmenter(
             sessionMutex.withLock {
                 val sessions = ensureSessionsLocked()
                 val embedding = obtainEmbedding(bitmap, sessions.encoder)
-                val mediumCandidates = mutableListOf<MobileSamMatBoundaryDetector.PublicCandidate>()
-
-                for (promptY in floatArrayOf(0.80f, 0.85f, 0.90f)) {
-                    val stageMasks = mutableListOf<MobileSamMatBoundaryDetector.SamBinaryMask>()
-
-                    stageMasks += decodeMatMasks(
+                val results = floatArrayOf(0.70f, 0.80f, 0.90f, 0.95f).map { promptY ->
+                    val masks = decodeMatMasks(
                         bitmap = bitmap,
                         positive = Offset(0.50f, promptY),
                         negative = Offset(0.50f, 0.28f),
                         embedding = embedding,
                         decoder = sessions.decoder
                     )
-                    when (val central = MobileSamMatBoundaryDetector.evaluateStage(
-                        MobileSamMatBoundaryDetector.PromptResult(promptY, stageMasks),
-                        strict = true
-                    )) {
-                        is MobileSamMatBoundaryDetector.StageEvaluation.Strong -> return@withLock central.line
-                        is MobileSamMatBoundaryDetector.StageEvaluation.Medium -> Unit
-                        MobileSamMatBoundaryDetector.StageEvaluation.None -> Unit
-                    }
-
-                    for (promptX in floatArrayOf(0.42f, 0.58f)) {
-                        stageMasks += decodeMatMasks(
-                            bitmap = bitmap,
-                            positive = Offset(promptX, promptY),
-                            negative = Offset(promptX, 0.28f),
-                            embedding = embedding,
-                            decoder = sessions.decoder
-                        )
-                    }
-
-                    when (val stage = MobileSamMatBoundaryDetector.evaluateStage(
-                        MobileSamMatBoundaryDetector.PromptResult(promptY, stageMasks),
-                        strict = false
-                    )) {
-                        is MobileSamMatBoundaryDetector.StageEvaluation.Strong -> return@withLock stage.line
-                        is MobileSamMatBoundaryDetector.StageEvaluation.Medium -> mediumCandidates += stage.candidate
-                        MobileSamMatBoundaryDetector.StageEvaluation.None -> Unit
-                    }
+                    MobileSamMatBoundaryDetector.PromptResult(promptY, masks)
                 }
 
-                MobileSamMatBoundaryDetector.consensus(mediumCandidates)
+                MobileSamMatBoundaryDetector.select(results)
                     ?: MobileSamMatBoundaryDetector.defaultLine
             }
         }

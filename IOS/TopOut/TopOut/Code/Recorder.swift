@@ -46,14 +46,6 @@ final class ContinuousRecorder: @unchecked Sendable {
     private(set) var isRunning = false
     private var isStopping = false
 
-    var latestPTS: CMTime? {
-        q.sync { recordingEndPTS }
-    }
-
-    var earliestPTS: CMTime? {
-        q.sync { recordingStartPTS }
-    }
-
     // MARK: Public
 
     func configure(resolution: RecordingResolution, frameRate: RecordingFrameRate, aspectRatio: RecordingAspectRatio = .story916) {

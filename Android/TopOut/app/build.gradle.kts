@@ -17,6 +17,11 @@ val moveNetPoseModelFile = moveNetPoseAssetsDirectory.map {
 val moveNetPoseModelUrl =
     "https://tfhub.dev/google/lite-model/movenet/singlepose/thunder/tflite/float16/4?lite-format=tflite"
 
+val moveNetPoseModelCacheFile = File(
+    gradle.gradleUserHomeDir,
+    "caches/topout-models/movenet-thunder-fp16-v4.tflite"
+)
+
 android {
     namespace = "com.topout.cam"
     compileSdk = 36
@@ -28,7 +33,6 @@ android {
         versionCode = 5
         versionName = "1.4"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -95,25 +99,38 @@ val downloadMoveNetPoseModel by tasks.registering {
         val output = moveNetPoseModelFile.get().asFile
         if (isValidTflite(output)) return@doLast
 
+        val cache = moveNetPoseModelCacheFile
+        if (!isValidTflite(cache)) {
+            cache.parentFile.mkdirs()
+            val temporary = File(cache.parentFile, "${cache.name}.download")
+            temporary.delete()
+            val connection = URI(moveNetPoseModelUrl).toURL().openConnection().apply {
+                connectTimeout = 30_000
+                readTimeout = 120_000
+                setRequestProperty("User-Agent", "TopOut-Android-Gradle")
+            }
+            connection.getInputStream().buffered().use { input ->
+                temporary.outputStream().buffered().use { outputStream -> input.copyTo(outputStream) }
+            }
+            require(isValidTflite(temporary)) {
+                "MoveNet Thunder FP16 다운로드 결과가 유효한 TFLite FlatBuffer가 아닙니다."
+            }
+            Files.move(
+                temporary.toPath(),
+                cache.toPath(),
+                StandardCopyOption.REPLACE_EXISTING
+            )
+        }
+
         output.parentFile.mkdirs()
-        val temporary = File(output.parentFile, "${output.name}.download")
-        temporary.delete()
-        val connection = URI(moveNetPoseModelUrl).toURL().openConnection().apply {
-            connectTimeout = 30_000
-            readTimeout = 120_000
-            setRequestProperty("User-Agent", "TopOut-Android-Gradle")
-        }
-        connection.getInputStream().buffered().use { input ->
-            temporary.outputStream().buffered().use { outputStream -> input.copyTo(outputStream) }
-        }
-        require(isValidTflite(temporary)) {
-            "MoveNet Thunder FP16 다운로드 결과가 유효한 TFLite FlatBuffer가 아닙니다."
-        }
-        Files.move(
-            temporary.toPath(),
+        Files.copy(
+            cache.toPath(),
             output.toPath(),
             StandardCopyOption.REPLACE_EXISTING
         )
+        require(isValidTflite(output)) {
+            "MoveNet Thunder FP16 캐시 복사 결과가 유효하지 않습니다."
+        }
     }
 }
 
@@ -124,7 +141,6 @@ tasks.matching { it.name == "preBuild" }.configureEach {
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
     implementation(composeBom)
-    androidTestImplementation(composeBom)
 
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.core:core-splashscreen:1.2.0")
@@ -132,7 +148,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.4")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
     implementation("androidx.datastore:datastore-preferences:1.1.7")
 
     implementation("androidx.compose.ui:ui")
@@ -161,9 +176,5 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
     testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

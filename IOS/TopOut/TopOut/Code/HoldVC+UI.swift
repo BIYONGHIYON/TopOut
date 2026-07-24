@@ -747,11 +747,6 @@ extension HoldVC {
         recordBtn.isEnabled = false
     }
 
-    func currentMatLineInImageCoordinates() -> [CGPoint] {
-        guard let image = frameImage else { return [] }
-        return matLinePoints.map { CGPoint(x: $0.x * image.size.width, y: $0.y * image.size.height) }
-    }
-
     func setLoading(_ loading: Bool) {
         if loading {
             spinner.startAnimating()

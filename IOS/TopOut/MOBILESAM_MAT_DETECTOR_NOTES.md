@@ -1,13 +1,17 @@
 # MobileSAM Mat Boundary Detector
 
-- 새로 학습한 CNN 경계 모델은 사용하지 않습니다.
-- 앱 시작 썸네일이 보이는 동안 MobileSAM Encoder/Decoder를 먼저 로드합니다.
-- 모델 로딩이 끝나기 전에는 카메라 권한 흐름, 세션 구성, `startRunning()`을 시작하지 않습니다.
-- 자동 양성 프롬프트는 화면 중앙 기준 `80% → 85% → 90%` 순서입니다.
-- 각 높이에서 중앙을 먼저 검사하고, 신뢰도가 낮을 때만 좌우 `42% / 58%`를 추가 검사합니다.
-- 서로 다른 두 높이에서 중간 신뢰도 결과가 일치하면 합의 결과를 사용합니다.
-- 세 높이 모두 신뢰도가 낮으면 `75%` 수평선을 사용합니다.
-- 유효 매트 경계는 화면 높이 `50%~100%` 범위로 제한합니다.
-- 좌우 끝점의 높이 차이는 화면 높이의 최대 `14%`로 제한합니다.
-- MobileSAM 마스크의 연결 성분, 가로 점유율, 하단 점유율, 경계 잔차를 함께 평가합니다.
-- 추론 중에는 경계선을 숨기고 최종 결과를 한 번만 표시합니다.
+The iOS automatic mat-line detector now mirrors the Android v1.4 build 5 rule.
+
+1. Reuse one MobileSAM image embedding.
+2. Decode masks from center prompts at y = 70%, 80%, 90%, and 95%.
+3. For each decoder mask, keep only the connected component containing the positive prompt.
+4. Keep a component only when:
+   - its horizontal span is at least 40% of the visible image width;
+   - its highest pixel is at or below 50% of the visible image height;
+   - the least-squares upper-boundary line tilts no more than 15 degrees.
+5. Select the valid component whose upper edge is highest on screen.
+6. Convert the fitted upper edge to the editable x = 6% and x = 94% mat-line points.
+7. `HoldVC+UI.swift` applies the existing 10-pixel downward correction using the original captured-image height.
+8. If no candidate survives, use the 75% fallback line.
+
+No straightness/inlier ratio, area score, multi-height consensus, side prompts, or candidate scoring is used.

@@ -335,13 +335,6 @@ final class HoldVC: UIViewController {
         selectedRecordingAspectRatio.normalizedSourceCropRect(isLandscape: isActiveVideoLandscape)
     }
 
-    var activeHorizontalBinCount: Int {
-        selectedRecordingAspectRatio.adaptiveHorizontalBinCount(
-            baseCount: Cfg.matBoundaryBins,
-            isLandscape: isActiveVideoLandscape
-        )
-    }
-
     var lockedInterfaceOrientationMask: UIInterfaceOrientationMask {
         lockedVideoOrientation?.interfaceMask ?? currentInterfaceOrientationMask
     }

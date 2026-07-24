@@ -1467,10 +1467,6 @@ private final class TrimRangeSlider: UIControl {
         return totalSpan / visibleSpan
     }
 
-    func revealRange(lower: TimeInterval, upper: TimeInterval) {
-        _ = setSelectedRangeZoomFactor(zoomFactor)
-    }
-
     func ensureValueVisible(_ value: TimeInterval) {
         guard zoomFactor > 1.01 else { return }
         if value < visibleMinimumValue {
@@ -1766,17 +1762,6 @@ private final class TrimRangeSlider: UIControl {
             rounded = 10
         }
         return rounded * magnitude
-    }
-
-    private func formatTimelineTime(_ seconds: TimeInterval) -> String {
-        let totalTenths = Int((Swift.max(0, seconds) * 10).rounded())
-        let minutes = totalTenths / 600
-        let wholeSeconds = (totalTenths / 10) % 60
-        let tenths = totalTenths % 10
-        if minutes > 0 {
-            return String(format: "%d:%02d.%d", minutes, wholeSeconds, tenths)
-        }
-        return String(format: "%d.%d초", wholeSeconds, tenths)
     }
 
     private func drawThumb(center: CGPoint) {

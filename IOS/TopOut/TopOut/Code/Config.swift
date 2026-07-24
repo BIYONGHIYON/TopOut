@@ -42,19 +42,8 @@ enum Cfg {
     static let minWhiteLineWidth: CGFloat = 2.5
 
     // MARK: Mat Detection
-    static let matDetectWidth = 220
-    static let matSearchTopY: CGFloat = 0.50
-    static let matSearchBottomY: CGFloat = 0.96
     static let matDefaultY: CGFloat = 0.75
     static let matDetectedLineDownwardOffsetPixels: CGFloat = 10
-    static let matMinEdgeScore: CGFloat = 8
-    static let matLowerUniformityTol: CGFloat = 15
-    static let matBoundaryBins = 10
-    static let matBoundaryMinCoverageRatio: CGFloat = 0.75
-    static let matUpperTieScoreTolerance: CGFloat = 2.5
-    static let matSampleStripRatio: CGFloat = 0.015
-    static let matLowerSampleMultiplier: CGFloat = 2.0
-    static let matLocalRefineWindowRatio: CGFloat = 0.03
 
     // MARK: Mat Line UI
     static let matLineWidth: CGFloat = 3
@@ -63,25 +52,23 @@ enum Cfg {
 
     // MARK: Motion Detection
     static let motionDebugLog = false
-    static let motionAnalysisIdleFPS: Double = 6
-    static let motionAnalysisBoostFPS: Double = 12
-    static let motionAnalysisBoostSeconds: TimeInterval = 1.2
+    static let motionAnalysisFPS: Double = 2
     static let motionFrameWidth = 160
-    static let motionCVComparisonFrameLag = 3
     static let motionPixelDiff: UInt8 = 20
     static let recordingCountdownSeconds: TimeInterval = 3.0
     // CV 탐색 영역: 매트 경계선 바로 위쪽부터 화면 높이의 40%
     static let motionCVRegionAboveMatHeightRatio: CGFloat = 0.40
     // 전체 탐색 영역에서 기준 노이즈를 제외한 변화 픽셀 비율
-    static let motionCVRegionActiveThreshold: CGFloat = 0.04
+    static let motionCVRegionActiveThreshold: CGFloat = 0.02
     static let motionBaseDiffMargin: CGFloat = 0.025
 
     // MARK: Pose Detection
     static let motionPoseStartVerificationInterval: TimeInterval = 0.5
     static let motionPoseTrackingInterval: TimeInterval = 0.5
+    static let motionPoseFastTrackingInterval: TimeInterval = 0.25
     static let motionPoseInputMaxLongSide: CGFloat = 384
     static let motionPoseMinConfidence: Float = 0.25
-    static let motionPoseNoPoseRetrySeconds: TimeInterval = 6.0
+    static let motionPoseNoPoseRetrySeconds: TimeInterval = 5.0
     static let motionClipBoundaryPaddingSeconds: TimeInterval = 3.0
     static let motionShortClipMinimumDetectionSeconds: TimeInterval = 2.0
     static let motionShortClipMergeGapSeconds: TimeInterval = 3.0

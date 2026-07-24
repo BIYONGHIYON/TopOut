@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 
@@ -50,12 +49,6 @@ enum class RecordingAspectRatio(
 
     fun widthOverHeight(isLandscape: Boolean): Float =
         if (isLandscape) 1f / portraitWidthOverHeight else portraitWidthOverHeight
-
-    fun adaptiveHorizontalBinCount(baseCount: Int, isLandscape: Boolean): Int {
-        val base = max(1, baseCount)
-        val ratio = widthOverHeight(isLandscape) / max(portraitWidthOverHeight, 0.0001f)
-        return max(base, ceil(base * ratio).toInt())
-    }
 
     /** Exact integer ratio used by CameraX ViewPort; avoids OEM rounding of custom float ratios. */
     fun viewPortRatio(isLandscape: Boolean): IntSize {
@@ -259,14 +252,12 @@ object TopOutConfig {
     const val ContourMinPoints = 8
 
     const val MatDefaultY = 0.75f
-    const val MatBoundaryBins = 10
     const val MatDetectedLineDownwardOffsetPixels = 10f
     /** The lowest reliable joint must clear the edited mat line by 3% of frame height. */
     const val PoseStartAboveMatMarginRatio = 0.03f
 
-    /** Motion waiting, ROI seeding, and pose tracking all run every 0.5 seconds. */
+    /** Initial motion search and active climbing remain at 2 fps. */
     const val MotionFrameWidth = 160
-    const val MotionCVComparisonFrameLag = 2
     const val MotionCVRegionAboveMatHeightRatio = 0.40f
     /** With the 2.5% base margin, motion now wakes at roughly 4.5% raw changed pixels. */
     const val MotionCVRegionActiveThreshold = 0.02f
@@ -275,7 +266,8 @@ object TopOutConfig {
     const val MotionBaseDiffMargin = 0.025f
 
     const val AnalysisIntervalSeconds = 0.5
-    const val PoseIntervalSeconds = AnalysisIntervalSeconds
+    /** Pre-start pose tracking and pose-loss recovery run at 4 fps. */
+    const val FastAnalysisIntervalSeconds = 0.25
     const val MoveNetPoseInputSize = 256
     const val MoveNetCropKeypointConfidence = 0.15f
     const val MotionSeedGridColumns = 8
@@ -283,8 +275,7 @@ object TopOutConfig {
     const val MotionSeedMaximumSelectedCells = 8
     const val MotionSeedRelativeCellThreshold = 0.45f
     const val MotionSeedMinimumCellChangedRatio = 0.02f
-    const val ClimbingPoseMissingTimeoutSeconds = 6.0
-    const val PostClimbTrackingMaxSeconds = 6.0
+    const val ClimbingPoseMissingTimeoutSeconds = 5.0
     const val ClipBoundaryPaddingSeconds = 3.0
     /** Minimum MoveNet confidence for a joint to participate in human validation and climb logic. */
     const val PoseConfidence = 0.25f

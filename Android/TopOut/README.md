@@ -4,11 +4,11 @@ TopOut records climbing video with audio and automatically proposes climb ranges
 
 ## Automatic detection
 
-The Android release uses MoveNet SinglePose Thunder FP16 through TensorFlow Lite. MobileSAM proposes the mat boundary from automatic prompts at 80%, 85%, and 90%. A rolling luma-motion gate compares the current frame with the frame two analysis samples earlier inside the 40%-high region above the edited mat line. When that gate wakes pose search, the strongest immediate-frame changes seed a pixel-square ROI covering approximately one quarter of the screen area; if that immediate difference cannot form a crop, the two-frame trigger difference is used instead. One reliable human pose immediately switches the detector to joint-based tracking. Motion analysis and pose inference use one fixed 2 Hz schedule, and pose inference runs at most every 0.5 seconds with a 256×256 RGB input.
+The Android release uses MoveNet SinglePose Thunder FP16 through TensorFlow Lite. MobileSAM proposes the mat boundary from automatic prompts at 80%, 85%, and 90%. At a fixed 2 Hz schedule, luma motion always compares the current analysis frame with the immediately previous analysis frame. Initial search is limited to the 40%-high region above the edited mat line, and changed pixels seed a pixel-square ROI covering approximately one quarter of the screen area. One reliable human pose switches the detector to joint-based tracking; any unreliable pose switches ROI placement back to the same immediate-frame motion path.
 
 ## Pose preprocessing and power use
 
-Pose inference never uses a full-frame 512px RGB fallback. A usable motion-seeded ROI is required before MoveNet runs, and both the initial quarter-frame crop and later joint-based crop are sampled directly from CameraX YUV_420_888 into MoveNet Thunder's 256×256 RGB tensor. If neither the immediate difference nor the two-frame trigger difference can form a usable ROI, the analyzer stays in motion waiting.
+Pose inference never uses a full-frame 512px RGB fallback. A usable motion-seeded ROI is required before the first MoveNet inference, and both motion and joint-derived crops are sampled directly from CameraX YUV_420_888 into MoveNet Thunder's 256×256 RGB tensor. If the immediate-frame difference cannot form an initial ROI, the analyzer stays in motion search.
 
 ## Clip ranges
 

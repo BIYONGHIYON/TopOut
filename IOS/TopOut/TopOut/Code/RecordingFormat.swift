@@ -91,14 +91,6 @@ enum RecordingAspectRatio: Int, CaseIterable {
         return 1.0 / widthOverHeight
     }
 
-    /// 가로 화면에서 매트 경계 탐지 bin이 너무 넓어지는 것을 막기 위한 보정값입니다.
-    /// 예: 9:16을 16:9로 뒤집으면 가로/세로 비율이 약 3.16배 커지므로 10칸 → 32칸으로 늘립니다.
-    func adaptiveHorizontalBinCount(baseCount: Int, isLandscape: Bool) -> Int {
-        let base = max(1, baseCount)
-        let ratio = widthOverHeight(isLandscape: isLandscape) / max(widthOverHeight, 0.0001)
-        return max(base, Int(ceil(CGFloat(base) * ratio)))
-    }
-
     var pixelScaleComparedToStory: Double {
         let heightComparedToStory: Double
         switch self {

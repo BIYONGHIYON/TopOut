@@ -2,7 +2,7 @@
 
 ## Functional behavior retained
 - MoveNet SinglePose Thunder FP16 model
-- 0.5-second pose inference interval
+- Dynamic pose inference interval: 0.5 seconds normally and 0.25 seconds before start/recovery
 - Climbing-specific smart crop and pose confidence thresholds
 - Existing start/finish detection policy
 - Existing MobileSAM/ONNX behavior
@@ -41,11 +41,11 @@
 
 ## Motion-seeded pose tracking
 
-- The rolling CV wake-up condition compares the current analysis frame with the frame two samples earlier.
+- Initial CV wake-up compares the current 2 fps analysis frame with the immediately previous frame.
 - At wake-up, the full visible frame is divided into roughly square cells and scored against the immediately preceding frame.
 - Up to eight strongest related cells seed a pixel-square crop whose area is approximately one quarter of the frame.
-- If the strongest immediate pair has no usable signal, the two-frame trigger pair inside the mat search band is used as a fallback.
+- Initial search and pose-loss recovery now share one immediate previous-frame motion path; no older-frame fallback remains.
 - There is no full-frame 512px RGB pose fallback; without a usable ROI the analyzer stays in WAITING.
 - One reliable human pose immediately starts pose-derived tracking. An unreliable first result returns directly to WAITING.
-- During CLIMBING only, temporary pose loss is tolerated for six seconds; while missing, current-vs-previous luma motion refreshes the quarter-frame ROI until reliable joints return.
-- After a normal finish, continuously visible joints remain tracked for up to six seconds; two consecutive missing reliable poses return to WAITING.
+- During CLIMBING only, temporary pose loss is tolerated for five seconds. Recovery runs at 4 fps while current-vs-previous luma motion refreshes the quarter-frame ROI until reliable joints return.
+- After a normal finish, continuously visible joints remain tracked without a time limit; two consecutive missing reliable poses return to WAITING.

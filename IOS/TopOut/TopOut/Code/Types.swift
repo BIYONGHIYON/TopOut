@@ -228,7 +228,4 @@ struct ClipTimes {
     var endPTS: CMTime?
     var completedRanges: [ClipRange] = []
 
-    var latestCompletedRange: ClipRange? {
-        completedRanges.last
-    }
 }

@@ -16,11 +16,6 @@ internal data class PoseResult(
 
 /** COCO 17-keypoint indices emitted by MoveNet SinglePose. */
 object PoseLandmark {
-    const val NOSE = 0
-    const val LEFT_EYE = 1
-    const val RIGHT_EYE = 2
-    const val LEFT_EAR = 3
-    const val RIGHT_EAR = 4
     const val LEFT_SHOULDER = 5
     const val RIGHT_SHOULDER = 6
     const val LEFT_ELBOW = 7
