@@ -1,469 +1,351 @@
-<!doctype html>
+<!DOCTYPE html>
+
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="TopOut — 클라이밍 등반 구간을 자동으로 찾아주는 iOS·Android 촬영 앱 1인 개발 포트폴리오" />
-  <meta name="theme-color" content="#07100c" />
-  <title>TopOut — Product Case Study</title>
-  <link rel="stylesheet" href="styles.css" />
-  <script defer src="script.js"></script>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<meta content="TopOut — 온디바이스 비전 파이프라인으로 클라이밍 등반 구간을 자동 탐지하는 iOS·Android 앱 제품 사례 연구" name="description"/>
+<meta content="#1B222C" name="theme-color"/>
+<title>TopOut — Cross-platform Product Case Study</title>
+<link href="styles.css" rel="stylesheet"/>
+<script defer="" src="script.js"></script>
 </head>
 <body>
-  <a class="skip-link" href="#main">본문으로 바로가기</a>
+<a class="skip-link" href="#main">본문으로 바로가기</a>
+<div aria-hidden="true" class="page-progress"><span></span></div>
+<header class="site-header" id="top">
+<div class="header-inner shell">
+<a aria-label="TopOut 맨 위로 이동" class="brand" href="#top">
+<img alt="" class="brand-icon" src="assets/topout-logo.png"/>
+<span class="brand-copy">
+<strong>TOPOUT</strong>
+<small>Cross-platform Product Case Study</small>
+</span>
+</a>
+<button aria-controls="site-nav" aria-expanded="false" class="menu-button" type="button">
+<span class="sr-only">메뉴 열기</span>
+<span></span><span></span>
+</button>
+<nav aria-label="주요 메뉴" class="site-nav" id="site-nav">
+<a href="#problem">Problem</a>
+<a href="#solution">Solution</a>
+<a href="#iterations">Iterations</a>
+<a href="#technology">Technology</a>
+<a href="#result">Result</a>
+</nav>
+</div>
+</header>
+<main id="main">
+<section class="hero dark-one">
+<div class="hero-grid shell">
+<div class="hero-copy reveal">
+<p class="eyebrow">Solo Product Case Study · Strategy · UX · iOS/Android Engineering · Release</p>
+<h1>클라이밍 촬영의 반복 작업을,<br/><span>온디바이스 자동화로 줄였습니다.</span></h1>
+<p class="hero-description">TopOut은 연속 촬영 영상에서 등반의 시작과 완등 후보를 자동 추출하고, 검토·정밀 편집·재촬영을 하나의 흐름으로 연결한 iOS·Android 앱입니다.</p>
+<div class="hero-actions">
+<a class="button button-primary" href="#promo">프로모션 영상 보기</a>
+<a class="button button-secondary" href="#overview">프로젝트 살펴보기</a>
+</div>
+<dl aria-label="프로젝트 요약" class="hero-meta">
+<div><dt>Product</dt><dd>Climbing Video Automation</dd></div>
+<div><dt>Release</dt><dd>v1.4 · build 5</dd></div>
+<div><dt>Status</dt><dd>Android Closed Testing</dd></div>
+</dl>
+</div>
+<div class="hero-visual reveal" data-delay="120">
+<div class="signal-card signal-card-top">
+<span>ON-DEVICE AI</span>
+<strong>영상·관절 데이터 외부 전송 없음</strong>
+</div>
+<figure aria-label="TopOut 시작 화면" class="device hero-device">
+<div class="device-screen hero-device-screen">
+<img alt="TopOut 앱 시작 화면" height="852" src="assets/hero-launch.webp" width="393"/>
+</div>
+</figure>
+<div class="signal-card signal-card-bottom">
+<span>AUTO SEGMENT</span>
+<strong>시작 · 완등 후보 · 다음 시도 탐지</strong>
+</div>
+</div>
+</div>
+</section>
+<section class="promo dark-two" id="promo">
+<div class="promo-grid shell">
+<div class="section-heading reveal">
+<p class="eyebrow">01 · PRODUCT FILM</p>
+<h2>약 1분으로 확인하는<br/>TopOut의 핵심 경험</h2>
+<p>촬영 준비부터 자동 구간 탐지, 결과 검토와 재촬영까지 제품의 전체 사용 흐름을 세로형 프로모션 영상으로 구성했습니다.</p>
+<div class="promo-specs"><span>1080 × 1920</span><span>9:16 Vertical</span><span>약 1분</span></div>
+</div>
+<div class="video-stage reveal" data-delay="100">
+<div class="promo-video-shell">
+<video controls id="promo-video" playsinline webkit-playsinline poster="assets/promo-poster.webp" preload="metadata">
+<source src="assets/TopOutPromo.mp4" type="video/mp4" />
+      브라우저가 동영상 재생을 지원하지 않습니다.
+    </video>
+</div>
+<p class="video-caption">VERTICAL PRODUCT FILM · 1080 × 1920</p>
+</div>
+</div>
+</section>
+<section class="overview light-one" id="overview">
+<div class="shell">
+<div class="section-heading max-copy reveal">
+<p class="eyebrow">02 · OVERVIEW</p>
+<h2>기술을 시연하는 데서 끝내지 않고,<br/>촬영 전 과정을 하나의 제품 흐름으로 설계했습니다</h2>
+<p>클라이머가 반복적으로 수행하던 녹화 조작, 구간 탐색, 편집, 재촬영을 하나의 세션으로 연결했습니다. 자동화는 결과를 강제하지 않고, 사용자가 빠르게 검토하고 보정할 수 있는 편집 시작점으로 제공합니다.</p>
+</div>
+<div class="overview-cards">
+<article class="metric-card reveal">
+<span>01</span>
+<strong>Continuous Session Capture</strong>
+<p>한 번의 연속 녹화에서 여러 등반 시도의 원시 구간을 보존하고, 촬영 종료 후 개별 클립 후보로 정리합니다.</p>
+</article>
+<article class="metric-card reveal" data-delay="80">
+<span>02</span>
+<strong>On-device Vision Pipeline</strong>
+<p>MobileSAM, Motion Detection, Pose Estimation을 단계적으로 실행해 장시간 촬영의 추론 비용을 제어합니다.</p>
+</article>
+<article class="metric-card reveal" data-delay="160">
+<span>03</span>
+<strong>Human-in-the-loop Review</strong>
+<p>자동 감지 결과를 구간 확대와 0.1초 미세 조정으로 보정하고, 동일한 촬영 조건으로 즉시 재시도합니다.</p>
+</article>
+</div>
+<div class="project-facts reveal">
+<div><span>Scope</span><strong>제품 전략 · UX 설계 · iOS/Android 개발 · QA · 배포 운영</strong></div>
+<div><span>iOS</span><strong>Swift · UIKit · AVFoundation · Vision · Core ML</strong></div>
+<div><span>Android</span><strong>Kotlin · Jetpack Compose · CameraX · LiteRT · ONNX Runtime</strong></div>
+<div><span>Release</span><strong>iOS Archive · Android AAB · Closed Testing · Privacy &amp; License Compliance</strong></div>
+</div>
+</div>
+</section>
+<section aria-labelledby="journey-title" class="screen-journey light-two">
+<div class="shell">
+<div class="section-heading max-copy reveal">
+<p class="eyebrow">APP FLOW</p>
+<h2 id="journey-title">촬영 조건과 매트 경계를 확인한 뒤<br/>한 번의 연속 녹화를 시작합니다</h2>
+</div>
+<div class="phone-gallery">
+<figure class="screen-card reveal">
+<img alt="TopOut 촬영 조건 및 구도 확인 화면" loading="lazy" src="assets/setup-ready.webp"/>
+<figcaption><span>01</span><strong>촬영 조건 확인</strong></figcaption>
+</figure>
+<figure class="screen-card reveal" data-delay="60">
+<img alt="TopOut 자동 매트 경계 확인 및 수동 보정 화면" loading="lazy" src="assets/setup-mat.webp"/>
+<figcaption><span>02</span><strong>매트 경계 보정</strong></figcaption>
+</figure>
 
-  <div class="page-progress" aria-hidden="true"><span></span></div>
-
-  <header class="site-header" id="top">
-    <div class="header-inner shell">
-      <a class="brand" href="#top" aria-label="TopOut 맨 위로 이동">
-        <span class="brand-mark logo-slot" aria-hidden="true">
-          <img src="assets/topout-logo.png" alt="" />
-          <span class="logo-fallback">TO</span>
-        </span>
-        <span class="brand-copy">
-          <strong>TopOut</strong>
-          <small>Product Case Study</small>
-        </span>
-      </a>
-
-      <button class="menu-button" type="button" aria-expanded="false" aria-controls="site-nav">
-        <span class="sr-only">메뉴 열기</span>
-        <span></span><span></span>
-      </button>
-
-      <nav class="site-nav" id="site-nav" aria-label="주요 메뉴">
-        <a href="#problem">Problem</a>
-        <a href="#solution">Solution</a>
-        <a href="#iterations">Iterations</a>
-        <a href="#technology">Technology</a>
-        <a href="#result">Result</a>
-      </nav>
-    </div>
-  </header>
-
-  <main id="main">
-    <section class="hero section-dark">
-      <div class="hero-grid shell">
-        <div class="hero-copy reveal">
-          <p class="eyebrow">1인 기획 · 디자인 · iOS/Android 개발 · 테스트 · 배포</p>
-          <h1>
-            등반에만 집중하도록,<br />
-            <span>필요한 순간만 자동으로.</span>
-          </h1>
-          <p class="hero-description">
-            TopOut은 긴 클라이밍 영상에서 실제 등반 구간을 찾아주는 모바일 촬영 앱입니다.
-            한 번의 연속 촬영으로 여러 시도를 기록하고, 시작점과 완등 순간을 자동으로 제안합니다.
+<figure class="screen-card reveal" data-delay="180">
+<img alt="TopOut 녹화 시작 준비 화면" loading="lazy" src="assets/setup-selected.webp"/>
+<figcaption><span>03</span><strong>녹화 준비 완료</strong></figcaption>
+</figure>
+</div>
+</div>
+</section>
+<section class="problem light-one" id="problem">
+<div class="split-layout shell">
+<div class="sticky-copy reveal">
+<p class="eyebrow">03 · PROBLEM</p>
+<h2>클라이밍 세션의 기록 과정은<br/>여러 개의 수동 작업으로 분절돼 있었습니다</h2>
+<p>혼자 촬영하는 사용자는 매 시도마다 녹화를 조작하고, 긴 원본에서 등반 구간을 다시 찾은 뒤 편집과 재촬영을 반복해야 했습니다.</p>
+</div>
+<div class="problem-list">
+<article class="problem-item reveal"><span>01</span><div><strong>촬영 조작이 운동 흐름을 방해</strong><p>등반 전후로 휴대폰까지 이동해야 해 세션의 리듬과 집중이 끊겼습니다.</p></div></article>
+<article class="problem-item reveal"><span>02</span><div><strong>긴 원본에서 유효 구간을 수동 탐색</strong><p>대기와 이동 장면이 포함된 영상에서 각 시도의 시작과 종료를 직접 찾아야 했습니다.</p></div></article>
+<article class="problem-item reveal"><span>03</span><div><strong>분석과 재시도 사이의 컨텍스트 손실</strong><p>실패 원인을 확인한 뒤 같은 앵글로 다시 촬영하려면 매트선과 카메라 설정을 반복해야 했습니다.</p></div></article>
+</div>
+</div>
+</section>
+<section class="solution light-two" id="solution">
+<div class="shell">
+<div class="section-heading max-copy reveal">
+<p class="eyebrow">04 · SOLUTION</p>
+<h2>비용이 낮은 탐색에서 시작해,<br/>판단이 필요한 시점에만 자세 추론을 실행했습니다</h2>
+<p>매트 경계를 공간 기준으로 정의하고, 제한된 영역의 프레임 변화로 사람 후보를 찾은 뒤, 포즈와 매트의 상대 위치로 등반 상태를 검증하는 계층형 파이프라인을 설계했습니다.</p>
+</div>
+<div aria-label="TopOut 자동 감지 흐름" class="flow-diagram reveal">
+<div class="flow-node"><span>01</span><strong>MobileSAM</strong><small>70·80·90·95% 프롬프트에서 매트 후보를 분할하고 유효 경계를 선택</small></div>
+<div aria-hidden="true" class="flow-arrow">→</div>
+<div class="flow-node"><span>02</span><strong>Motion Detection</strong><small>160px luma 프레임을 직전 분석 프레임과 비교해 ROI를 생성</small></div>
+<div aria-hidden="true" class="flow-arrow">→</div>
+<div class="flow-node"><span>03</span><strong>Pose Estimation</strong><small>매트 대비 관절 위치로 시작·완등 후보·복귀·유실 상태를 판정</small></div>
+<div aria-hidden="true" class="flow-arrow">→</div>
+<div class="flow-node"><span>04</span><strong>Segment Review</strong><small>원시 구간을 보존한 뒤 사용자 검토와 정밀 트리밍으로 확정</small></div>
+</div>
+<div class="comparison-table reveal">
+<div class="comparison-head"><span>기존 방식</span><span>TopOut</span></div>
+<div><span>등반마다 녹화를 시작하고 종료</span><strong>한 세션을 연속 촬영하고 시도별 타임스탬프를 기록</strong></div>
+<div><span>대기 장면이 포함된 원본을 직접 탐색</span><strong>시작과 완등 후보를 자동 제안</strong></div>
+<div><span>짧은 간격의 시도가 하나로 합쳐짐</span><strong>유효한 원시 구간은 간격과 관계없이 개별 보존</strong></div>
+<div><span>긴 영상에서 정밀 편집이 어려움</span><strong>확대 타임라인과 0.1초 미세 조정 제공</strong></div>
+</div>
+</div>
+</section>
+<section class="iterations dark-one" id="iterations">
+<div class="shell">
+<div class="section-heading max-copy reveal">
+<p class="eyebrow">05 · ITERATIONS</p>
+<h2>필드 테스트에서 관찰한 실패를<br/>파이프라인 구조와 상태 정책에 반영했습니다</h2>
+<p>환경별 임계값을 덧붙이는 대신, 오탐과 미탐이 발생하는 원인을 분리하고 모델 선택·탐색 범위·상태 전환 규칙을 재설계했습니다.</p>
+</div>
+<div class="case-stack">
+<article class="case-card reveal">
+<div class="case-copy">
+<p class="case-index">01 · MAT DETECTION</p>
+<h3>규칙 기반 경계 탐지의 한계를 확인하고,<br/>영역 분할 기반 후보 선택으로 전환했습니다</h3>
+<div class="before-after">
+<div><span>INITIAL APPROACH</span><p>색상·밝기 차이와 하단 영역의 균일도를 이용해 경계를 추정했지만, 큰 볼륨·그림자·벽 재질 변화가 강한 경계로 오인됐습니다.</p></div>
+<div><span>FINAL DECISION</span><p>MobileSAM 임베딩을 한 번 생성한 뒤 70·80·90·95% 높이의 프롬프트를 디코딩하고, 구조적 조건을 통과한 후보 중 가장 높은 상단 경계를 선택했습니다.</p></div>
+</div>
+<ul class="detail-list">
+<li>가로 점유율 40% 이상, 최상단 위치 50% 이하, 경계 기울기 15° 이하 조건으로 후보 필터링</li>
+<li>선택된 상단 경계를 x=6%와 x=94%의 편집 가능한 2점 직선으로 변환</li>
+<li>후보가 없으면 화면 높이 75% 기본선을 사용하고 사용자가 최종 보정</li>
+</ul>
+</div>
+<div class="case-media dual-screens">
+<figure><img alt="매트 경계선 보정 화면" loading="lazy" src="assets/setup-mat.webp"/><figcaption>MobileSAM 자동 경계 이후 수동 보정</figcaption></figure>
+<figure><img alt="탑홀드와 매트 경계가 설정된 화면" loading="lazy" src="assets/setup-selected.webp"/><figcaption>보정된 경계를 촬영 판단 기준으로 적용</figcaption></figure>
+</div>
+</article>
+<article class="case-card reveal">
+<div class="case-copy">
+<p class="case-index">02 · START &amp; FINISH</p>
+<h3>화면 변화는 탐색 신호로 제한하고,<br/>등반 판단은 신체 관절 관계로 검증했습니다</h3>
+<div class="before-after">
+<div><span>INITIAL APPROACH</span><p>매트 주변 움직임을 시작, 탑홀드 주변 움직임을 종료로 해석했지만 카메라 흔들림·주변 사람·조명 변화와 실제 등반을 구분하지 못했습니다.</p></div>
+<div><span>FINAL DECISION</span><p>Motion Detection은 Pose ROI를 생성하는 트리거로만 사용하고, 시작·종료는 기울어진 매트선과 신뢰 가능한 관절의 상대 위치로 판정했습니다.</p></div>
+</div>
+<ul class="detail-list">
+<li>초기 탐색은 편집된 매트선 위 최대 화면 높이 40% 영역으로 제한</li>
+<li>iOS 시작 기준 6%, Android 4%; 종료 기준은 공통 2%로 플랫폼별 좌표 특성 보정</li>
+<li>매트 복귀는 종료 확인에 사용하고 실제 결과 후보는 최고점 또는 탑홀드 최접근 시점으로 분리</li>
+</ul>
+</div>
+<div class="case-media single-screen focus-bottom">
+<figure><img alt="주변 사람이 화면을 지나간 장면이 포함된 감지 결과 화면" loading="lazy" src="assets/review-noise.webp"/><figcaption>주변 인물과 배경 노이즈가 존재하는 필드 환경</figcaption></figure>
+</div>
+</article>
+<article class="case-card reveal">
+<div class="case-copy">
+<p class="case-index">03 · POSE RECOVERY</p>
+<h3>일시적 관절 유실을 종료로 확정하지 않고,<br/>복구 가능한 상태로 모델링했습니다</h3>
+<div class="before-after">
+<div><span>FAILURE MODE</span><p>빠른 다이노 동작, 홀드 가림, 화면 이탈로 포즈가 한 프레임만 누락돼도 하나의 시도가 여러 구간으로 분할됐습니다.</p></div>
+<div><span>RECOVERY POLICY</span><p>활성 등반에서는 최대 6초 동안 4fps 복구 모드로 전환하고, 유효 포즈가 복귀하면 동일한 시도의 관절 기반 추적을 재개합니다.</p></div>
+</div>
+<ul class="detail-list">
+<li>안정적인 등반은 2fps, 시작 전·종료 후 추적과 유실 복구는 4fps로 동적 스케줄링</li>
+<li>Android는 직전 분석 프레임의 움직임으로 25% 면적 정사각형 ROI를 재배치</li>
+<li>정상 종료 후 유효 포즈 2회 연속 미검출 시 초기 Motion 탐색으로 복귀</li>
+</ul>
+</div>
+<div class="case-media dual-screens">
+<figure><img alt="두 번째 감지 구간 결과 화면" loading="lazy" src="assets/review-segment2.webp"/><figcaption>복구 정책 적용 후 개별 구간 보존</figcaption></figure>
+<figure><img alt="세 번째 감지 구간 결과 화면" loading="lazy" src="assets/review-segment3.webp"/><figcaption>짧은 간격의 다음 시도도 별도 유지</figcaption></figure>
+</div>
+</article>
+</div>
+</div>
+</section>
+<section class="technology light-one" id="technology">
+<div class="shell">
+<div class="section-heading max-copy reveal">
+<p class="eyebrow">06 · MODEL BENCHMARK</p>
+<h2>벤치마크 정확도보다,<br/>지속 촬영 환경의 총비용을 기준으로 선택했습니다</h2>
+<p>Android 모델은 홀드 오탐, 모션 블러, 추론 지연, 발열·전력, 앱 크기, 라이선스와 후처리 복잡도를 함께 비교했습니다. 최종적으로 MoveNet SinglePose Thunder FP16을 ROI 추론과 결합했습니다.</p>
+</div>
+<div aria-label="Android 포즈 모델 비교" class="model-table reveal" role="table">
+<div class="model-row model-header" role="row"><span>Model</span><span>Strength</span><span>Issue</span><span>Decision</span></div>
+<div class="model-row" role="row"><strong>ML Kit Pose</strong><span>낮은 통합 비용</span><span>클라이밍 홀드를 관절로 인식하는 오탐</span><em>제외</em></div>
+<div class="model-row" role="row"><strong>Tiny-PP Pose</strong><span>낮은 연산량</span><span>가림과 작은 관절에서 키포인트 안정성 부족</span><em>제외</em></div>
+<div class="model-row" role="row"><strong>Tiny-PP + RTM</strong><span>경량·고정밀 결합 실험</span><span>파이프라인 복잡도 대비 유의미한 개선 부족</span><em>제외</em></div>
+<div class="model-row" role="row"><strong>MoveNet Lightning</strong><span>높은 처리량</span><span>다이노와 모션 블러에서 포즈 유실 증가</span><em>제외</em></div>
+<div class="model-row" role="row"><strong>YOLO11 Pose</strong><span>가장 안정적인 검출</span><span>지속 추론 전력과 배포 라이선스 리스크</span><em>제외</em></div>
+<div class="model-row" role="row"><strong>RTM / RTMO</strong><span>다양한 자세 표현</span><span>홀드 오탐·블러·후처리 비용</span><em>제외</em></div>
+<div class="model-row selected" role="row"><strong>MoveNet Thunder FP16</strong><span>정확도·전력·배포성의 균형</span><span>Lightning 대비 높은 연산량을 ROI로 보완</span><em>채택</em></div>
+</div>
+<div class="platform-grid">
+<article class="platform-card reveal">
+<span>iOS</span><h3>Apple Vision Human Body Pose</h3><p>Apple 하드웨어에 최적화된 Vision 결과를 활용하고, 신뢰도 0.25 이상의 비얼굴 관절을 하나의 상태 집합으로 결합했습니다.</p>
+<ul><li>384px long-side 입력</li><li>iOS 시작선 6% · 종료선 2%</li><li>복잡한 단일 인물 잠금 로직 제거</li></ul>
+</article>
+<article class="platform-card reveal" data-delay="100">
+<span>Android</span><h3>MoveNet Thunder + Motion-seeded ROI</h3><p>CameraX YUV 프레임에서 필요한 정사각형 ROI만 256×256 RGB 텐서로 직접 샘플링해 전체 화면 변환 비용을 제거했습니다.</p>
+<ul><li>LiteRT FP16 · XNNPACK</li><li>어깨·골반·팔꿈치·무릎 신뢰 관절 검증</li><li>Android 시작선 4% · 종료선 2%</li></ul>
+</article>
+</div><div class="parity-strip reveal"><span>CROSS-PLATFORM POLICY</span><strong>초기 탐색·안정 등반 2fps</strong><strong>시작 전·종료 후·복구 4fps</strong><strong>포즈 유실 허용 6초</strong><strong>리뷰 여백 앞뒤 3초</strong></div>
+</div>
+</section>
+<section class="recording accent-section">
+<div class="recording-grid shell">
+<div class="recording-visual reveal">
+<figure class="screenshot-device recording-device">
+<img alt="실시간 영상 표시를 끈 TopOut 녹화 화면" loading="lazy" src="assets/recording-dark.webp"/>
+</figure>
+</div>
+<div class="recording-copy reveal" data-delay="100">
+<p class="eyebrow">TopOut은 녹화·인코딩과 동시에 포즈 추론을 지속해야 합니다. 기본 설정에서는 실시간 프리뷰 스트림을 중단하고 촬영 시간만 표시해 GPU 렌더링 부담을 줄였으며, 현장 피드백을 반영해 프리뷰 활성화 옵션을 제공합니다.</p>
+<h2>분석 예산은 유지하고,<br/>필수적이지 않은 렌더링 비용을 줄였습니다</h2>
+<p>
+            기본 카메라와 달리 녹화 중 2fps로 포즈 모델을 계속 실행해야 했습니다. 장시간 촬영의 전력 부담을
+            줄이기 위해 기본값에서는 검은 화면과 촬영 시간만 표시합니다.
           </p>
-
-          <div class="hero-actions">
-            <a class="button button-primary" href="#promo">프로모션 영상 보기</a>
-            <a class="button button-ghost" href="#overview">프로젝트 살펴보기</a>
-          </div>
-
-          <dl class="hero-meta" aria-label="프로젝트 요약">
-            <div><dt>Platform</dt><dd>iOS · Android</dd></div>
-            <div><dt>Role</dt><dd>Solo Product Builder</dd></div>
-            <div><dt>Status</dt><dd>Private Testing</dd></div>
-          </dl>
-        </div>
-
-        <div class="hero-visual reveal" data-delay="120">
-          <div class="signal-card signal-card-top">
-            <span>ON-DEVICE AI</span>
-            <strong>영상·관절 데이터 외부 전송 없음</strong>
-          </div>
-
-          <div class="phone-shell hero-phone" aria-label="TopOut 앱 화면 예시 영역">
-            <div class="phone-camera"></div>
-            <div class="phone-screen mock-screen">
-              <div class="mock-status"><span>19:42</span><span>● ● ●</span></div>
-              <div class="mock-logo logo-slot">
-                <img src="assets/topout-logo.png" alt="TopOut 앱 로고" />
-                <span class="logo-fallback">TOP<br />OUT</span>
-              </div>
-              <div class="mock-copy">
-                <span>CLIMBING CAMERA</span>
-                <strong>Start once.<br />Climb freely.</strong>
-              </div>
-              <div class="mock-timeline">
-                <span></span><span class="active"></span><span></span><span></span>
-              </div>
-            </div>
-          </div>
-
-          <div class="signal-card signal-card-bottom">
-            <span>AUTO SEGMENT</span>
-            <strong>시작 · 완등 후보 · 다음 시도 탐지</strong>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="promo-section section-dark" id="promo">
-      <div class="shell promo-grid">
-        <div class="section-heading reveal">
-          <p class="eyebrow">01 · PRODUCT FILM</p>
-          <h2>1분 안에 보는<br />TopOut의 전체 경험</h2>
-          <p>
-            세로형 1080×1920 프로모션 영상을 위한 자리입니다. 영상 파일을 지정된 경로에 넣으면
-            모바일 디바이스 프레임 안에서 자동으로 재생됩니다.
-          </p>
-          <div class="asset-note">
-            <code>assets/topout-promo.mp4</code>
-            <span>권장 형식: MP4 · H.264 · 1080×1920</span>
-          </div>
-        </div>
-
-        <div class="video-stage reveal" data-delay="100">
-          <div class="phone-shell promo-phone">
-            <div class="phone-camera"></div>
-            <div class="phone-screen video-wrap">
-              <video id="promo-video" controls playsinline preload="metadata" poster="assets/topout-promo-poster.jpg">
-                <source src="assets/topout-promo.mp4" type="video/mp4" />
-              </video>
-              <div class="video-placeholder" id="video-placeholder">
-                <span class="placeholder-icon" aria-hidden="true">▶</span>
-                <strong>프로모션 영상 영역</strong>
-                <small>assets/topout-promo.mp4 파일을 추가하세요</small>
-              </div>
-            </div>
-          </div>
-          <div class="video-caption">01:00 · Vertical Product Film</div>
-        </div>
-      </div>
-    </section>
-
-    <section class="overview section-light" id="overview">
-      <div class="shell">
-        <div class="section-heading reveal max-copy">
-          <p class="eyebrow">02 · OVERVIEW</p>
-          <h2>기술 데모가 아닌,<br />실제 촬영 문제를 해결하는 제품</h2>
-          <p>
-            사용자는 촬영을 위해 매번 휴대폰으로 이동하고, 긴 원본에서 등반 장면을 직접 찾아야 했습니다.
-            TopOut은 촬영부터 편집까지 끊어진 과정을 하나의 흐름으로 연결합니다.
-          </p>
-        </div>
-
-        <div class="overview-cards">
-          <article class="metric-card reveal">
-            <span class="metric-index">01</span>
-            <strong>한 번의 연속 촬영</strong>
-            <p>사용자가 종료할 때까지 원본 영상을 유지하고, 여러 등반의 시각 정보만 별도로 기록합니다.</p>
-          </article>
-          <article class="metric-card reveal" data-delay="80">
-            <span class="metric-index">02</span>
-            <strong>온디바이스 자동 감지</strong>
-            <p>Motion Detection, Pose Estimation, MobileSAM을 단계적으로 사용해 필요한 순간을 찾습니다.</p>
-          </article>
-          <article class="metric-card reveal" data-delay="160">
-            <span class="metric-index">03</span>
-            <strong>자동화 이후의 UX</strong>
-            <p>완벽하지 않은 자동 결과를 0.1초 단위로 수정하고, 같은 앵글로 바로 재촬영할 수 있습니다.</p>
-          </article>
-        </div>
-
-        <div class="project-facts reveal">
-          <div><span>Role</span><strong>기획 · UX · 개발 · 테스트 · 운영</strong></div>
-          <div><span>iOS</span><strong>Swift · UIKit · AVFoundation · Vision · Core ML</strong></div>
-          <div><span>Android</span><strong>Kotlin · Compose · CameraX · LiteRT · ONNX Runtime</strong></div>
-          <div><span>Current</span><strong>iOS/Android 배포 및 Android 비공개 테스트</strong></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="problem section-stone" id="problem">
-      <div class="shell split-layout">
-        <div class="sticky-copy reveal">
-          <p class="eyebrow">03 · PROBLEM</p>
-          <h2>촬영을 남기려다<br />운동의 흐름이 끊겼습니다</h2>
-          <p>
-            혼자 운동하는 클라이머는 매 시도마다 녹화를 조작하고, 촬영이 끝난 뒤에는 대기 시간이 포함된
-            긴 영상을 다시 확인해야 합니다.
-          </p>
-        </div>
-
-        <div class="problem-list">
-          <article class="problem-item reveal">
-            <span>01</span>
-            <div><strong>매 시도마다 녹화 조작</strong><p>시작과 종료를 위해 휴대폰으로 반복 이동해야 했습니다.</p></div>
-          </article>
-          <article class="problem-item reveal">
-            <span>02</span>
-            <div><strong>긴 영상에서 수동 탐색</strong><p>대기와 이동 장면 사이에서 실제 등반 구간을 직접 찾아야 했습니다.</p></div>
-          </article>
-          <article class="problem-item reveal">
-            <span>03</span>
-            <div><strong>편집과 재시도의 단절</strong><p>실패 영상을 확인한 뒤 같은 구도로 다시 촬영하려면 설정을 반복해야 했습니다.</p></div>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="solution section-light" id="solution">
-      <div class="shell">
-        <div class="section-heading reveal max-copy">
-          <p class="eyebrow">04 · SOLUTION</p>
-          <h2>가벼운 탐색에서 시작해,<br />필요한 순간에만 AI를 실행했습니다</h2>
-          <p>
-            모든 프레임을 무거운 모델로 분석하지 않습니다. 매트 주변의 변화를 먼저 찾고, 사람일 가능성이
-            있을 때만 자세 모델을 실행합니다.
-          </p>
-        </div>
-
-        <div class="flow-diagram reveal" aria-label="TopOut 자동 감지 흐름">
-          <div class="flow-node"><span>01</span><strong>Mat Detection</strong><small>매트 경계 자동 탐지·수동 보정</small></div>
-          <div class="flow-arrow" aria-hidden="true">→</div>
-          <div class="flow-node"><span>02</span><strong>Motion Scan</strong><small>2fps로 제한 영역 변화 탐색</small></div>
-          <div class="flow-arrow" aria-hidden="true">→</div>
-          <div class="flow-node"><span>03</span><strong>Pose Tracking</strong><small>시작·복구·종료 상태 추적</small></div>
-          <div class="flow-arrow" aria-hidden="true">→</div>
-          <div class="flow-node"><span>04</span><strong>Segment Review</strong><small>자동 제안 후 정밀 편집</small></div>
-        </div>
-
-        <div class="comparison-table reveal">
-          <div class="comparison-head"><span>기존 방식</span><span>TopOut</span></div>
-          <div><span>등반마다 녹화 시작·종료</span><strong>한 번의 연속 촬영</strong></div>
-          <div><span>긴 원본을 직접 탐색</span><strong>등반 구간 자동 제안</strong></div>
-          <div><span>수동으로 시도별 분리</span><strong>여러 시도를 각각 보존</strong></div>
-          <div><span>대략적인 영상 자르기</span><strong>확대 + 0.1초 미세 조정</strong></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="iterations section-dark" id="iterations">
-      <div class="shell">
-        <div class="section-heading reveal max-copy">
-          <p class="eyebrow">05 · ITERATIONS</p>
-          <h2>필드에서 실패한 이유를 찾아<br />구조 자체를 바꿨습니다</h2>
-          <p>기능을 계속 추가하기보다, 실제 환경에서 발생한 오류의 원인을 찾아 감지 방식과 UX를 반복 수정했습니다.</p>
-        </div>
-
-        <div class="case-stack">
-          <article class="case-card reveal">
-            <div class="case-number">01</div>
-            <div class="case-title">
-              <p class="tag">MAT DETECTION</p>
-              <h3>색상 차이만으로는<br />큰 볼륨을 구분하지 못했습니다</h3>
-            </div>
-            <div class="case-content">
-              <div class="before-after">
-                <div><span>BEFORE</span><p>색상·밝기 기반 규칙으로 경계를 찾았지만 큰 볼륨, 그림자, 벽 재질 변화가 매트로 오인됐습니다.</p></div>
-                <div><span>AFTER</span><p>MobileSAM으로 여러 높이의 영역을 분할하고, 위치·면적·형태를 비교해 적절한 매트 후보를 선택했습니다.</p></div>
-              </div>
-              <ul class="detail-list">
-                <li>촬영 거리마다 다른 매트 비율을 고려해 여러 지점을 후보로 탐색</li>
-                <li>좌우 경계점을 연결해 기울어진 매트에서도 관절별 기준 높이 계산</li>
-                <li>자동 탐지가 부정확할 때 사용자가 직접 경계선을 보정</li>
-              </ul>
-            </div>
-          </article>
-
-          <article class="case-card reveal">
-            <div class="case-number">02</div>
-            <div class="case-title">
-              <p class="tag">START & FINISH</p>
-              <h3>움직임은 찾았지만,<br />그게 사람인지는 알 수 없었습니다</h3>
-            </div>
-            <div class="case-content">
-              <div class="before-after">
-                <div><span>BEFORE</span><p>매트 주변 움직임을 시작으로, 탑홀드 주변 움직임을 종료로 판단했습니다.</p></div>
-                <div><span>AFTER</span><p>Motion은 탐색 신호로만 사용하고, 사람의 관절과 매트 관계를 Pose 모델로 확인하도록 전환했습니다.</p></div>
-              </div>
-              <ul class="detail-list">
-                <li>카메라 흔들림, 주변 사람, 조명 변화로 인한 오탐 감소</li>
-                <li>가장 낮은 관절이 매트 기준선을 벗어날 때 시작 판단</li>
-                <li>매트 복귀는 종료 확인에 사용하고, 최고점·탑홀드 최접근 순간을 영상 종료 후보로 저장</li>
-              </ul>
-            </div>
-          </article>
-
-          <article class="case-card reveal">
-            <div class="case-number">03</div>
-            <div class="case-title">
-              <p class="tag">POSE RECOVERY</p>
-              <h3>순간적인 포즈 유실을<br />등반 종료로 처리하지 않았습니다</h3>
-            </div>
-            <div class="case-content">
-              <div class="before-after">
-                <div><span>BEFORE</span><p>홀드나 화면 밖으로 관절이 가려지면 하나의 등반이 여러 구간으로 분리됐습니다.</p></div>
-                <div><span>AFTER</span><p>활성 등반 중에는 최대 6초 동안 4fps로 복구를 시도하고, 다시 찾으면 같은 시도로 유지합니다.</p></div>
-              </div>
-              <ul class="detail-list">
-                <li>빠른 동작·가려짐에서 발생하는 순간 검출 실패 대응</li>
-                <li>Android는 움직임 ROI를 이용해 사람 위치 재탐색</li>
-                <li>복구 실패 시 마지막 유효 완등 후보로 안전 종료</li>
-              </ul>
-            </div>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="technology section-light" id="technology">
-      <div class="shell">
-        <div class="section-heading reveal max-copy">
-          <p class="eyebrow">06 · MODEL BENCHMARK</p>
-          <h2>가장 정확한 모델이 아니라,<br />제품 조건에 맞는 모델을 선택했습니다</h2>
-          <p>
-            Android에서는 홀드 오탐, 모션 블러, 전력 소모, 라이선스, 파이프라인 복잡도를 함께 비교했습니다.
-            최종적으로 MoveNet SinglePose Thunder FP16을 채택했습니다.
-          </p>
-        </div>
-
-        <div class="model-table reveal" role="table" aria-label="Android 포즈 모델 비교">
-          <div class="model-row model-header" role="row">
-            <span role="columnheader">Model</span><span role="columnheader">Strength</span><span role="columnheader">Issue</span><span role="columnheader">Decision</span>
-          </div>
-          <div class="model-row" role="row"><strong>ML Kit Pose</strong><span>적용 용이성</span><span>홀드 오탐이 심함</span><em>제외</em></div>
-          <div class="model-row" role="row"><strong>Tiny-PP Pose</strong><span>전력 효율</span><span>클라이밍 자세 정확도 부족</span><em>제외</em></div>
-          <div class="model-row" role="row"><strong>Tiny-PP + RTM</strong><span>경량·정확도 결합 시도</span><span>복잡도 대비 개선 미미</span><em>제외</em></div>
-          <div class="model-row" role="row"><strong>MoveNet Lightning</strong><span>속도·경량성</span><span>다이노·블러에서 검출 실패</span><em>제외</em></div>
-          <div class="model-row" role="row"><strong>YOLO11 Pose</strong><span>가장 높은 정확도</span><span>전력·라이선스 부담</span><em>제외</em></div>
-          <div class="model-row" role="row"><strong>RTM / RTMO</strong><span>다양한 자세 대응</span><span>홀드 오탐·블러·후처리 복잡도</span><em>제외</em></div>
-          <div class="model-row selected" role="row"><strong>MoveNet Thunder</strong><span>정확도와 전력의 균형</span><span>Lightning보다 무거움</span><em>채택</em></div>
-        </div>
-
-        <div class="platform-grid">
-          <article class="platform-card reveal">
-            <div class="platform-label">iOS</div>
-            <h3>Apple Vision</h3>
-            <p>Apple 하드웨어와 OS에 최적화된 정확도와 전력 효율을 활용했습니다.</p>
-            <ul>
-              <li>Human Body Pose</li>
-              <li>얼굴 관절 제외</li>
-              <li>Vision + Core ML</li>
-            </ul>
-          </article>
-          <article class="platform-card reveal" data-delay="100">
-            <div class="platform-label">Android</div>
-            <h3>MoveNet Thunder + ROI</h3>
-            <p>전체 화면 대신 움직임과 관절을 포함하는 ROI만 분석해 추론 범위를 줄였습니다.</p>
-            <ul>
-              <li>LiteRT FP16</li>
-              <li>Motion ROI → Pose ROI</li>
-              <li>포즈 유실 시 재탐색</li>
-            </ul>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="recording section-accent">
-      <div class="shell recording-grid">
-        <div class="recording-visual reveal">
-          <div class="recording-screen">
-            <div class="recording-dot"></div>
-            <span>RECORDING</span>
-            <strong>08:42</strong>
-            <small>실시간 프리뷰 OFF</small>
-          </div>
-        </div>
-        <div class="recording-copy reveal" data-delay="100">
-          <p class="eyebrow">07 · POWER EFFICIENCY</p>
-          <h2>카메라 분석은 유지하고,<br />기본 렌더링은 껐습니다</h2>
-          <p>
-            녹화·인코딩·2fps 포즈 분석·화면 렌더링이 동시에 실행되면 장시간 촬영에서 전력 부담이 커졌습니다.
-            기본 프리뷰를 검은 화면과 촬영 시간으로 대체했습니다.
-          </p>
-          <div class="choice-grid">
-            <div><span>DEFAULT</span><strong>Preview OFF</strong><small>발열·배터리 우선</small></div>
-            <div><span>OPTION</span><strong>Preview ON</strong><small>앵글 확인이 필요한 사용자</small></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="result section-light" id="result">
-      <div class="shell">
-        <div class="section-heading reveal max-copy">
-          <p class="eyebrow">08 · REVIEW EXPERIENCE</p>
-          <h2>자동 감지 이후의 편집 경험까지<br />실제 사용 행동에 맞춰 개선했습니다</h2>
-        </div>
-
-        <div class="result-grid">
-          <article class="result-card reveal">
-            <div class="result-visual precision-ui" aria-hidden="true">
-              <div class="timeline-line"><span></span><i></i><i></i><span></span></div>
-              <div class="precision-label">00:12.4 — 00:24.7</div>
-              <div class="precision-scale"><span>0.1s</span><span>Fine control</span></div>
-            </div>
-            <div class="result-copy">
-              <span class="tag">PRECISION TRIM</span>
-              <h3>느린 드래그는 0.1초 단위로</h3>
-              <p>빠른 이동은 넓게, 느린 이동은 미세하게 반응해 하나의 슬라이더에서 탐색과 정밀 편집을 함께 수행합니다.</p>
-            </div>
-          </article>
-
-          <article class="result-card reveal" data-delay="80">
-            <div class="result-visual zoom-ui" aria-hidden="true">
-              <div class="whole-track"><span></span><b></b></div>
-              <div class="zoom-track"><i></i><i></i><i></i><i></i><i></i></div>
-              <small>10:00 원본 중 12초 구간 확대</small>
-            </div>
-            <div class="result-copy">
-              <span class="tag">SEGMENT ZOOM</span>
-              <h3>10분 영상에서도 구간은 넓게</h3>
-              <p>전체 위치를 보여주는 상단 슬라이더와 선택 구간을 확대하는 하단 슬라이더를 분리했습니다.</p>
-            </div>
-          </article>
-
-          <article class="result-card reveal" data-delay="160">
-            <div class="result-visual retry-ui" aria-hidden="true">
-              <div class="retry-card"><span>실패 구간 확인</span><strong>다시 촬영</strong></div>
-              <div class="retry-arrow">↻</div>
-              <div class="retry-card"><span>앵글·매트선 유지</span><strong>다음 시도</strong></div>
-            </div>
-            <div class="result-copy">
-              <span class="tag">RETRY FLOW</span>
-              <h3>실패를 확인하고 같은 앵글로 다시</h3>
-              <p>지인 클라이머의 행동을 바탕으로, 결과 화면에서 기존 설정을 유지한 채 촬영으로 복귀하는 흐름을 추가했습니다.</p>
-            </div>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="privacy section-stone">
-      <div class="shell privacy-grid">
-        <div class="section-heading reveal">
-          <p class="eyebrow">09 · PRIVACY & RELEASE</p>
-          <h2>영상 분석부터 배포까지<br />하나의 제품으로 완성했습니다</h2>
-        </div>
-        <div class="privacy-list">
-          <div class="privacy-item reveal"><span>01</span><div><strong>On-device Processing</strong><p>영상 프레임과 신체 관절 좌표를 서버에 전송하지 않습니다.</p></div></div>
-          <div class="privacy-item reveal"><span>02</span><div><strong>Safe Recording</strong><p>백그라운드 전환·저장공간 부족·카메라 중단 시 촬영 파일을 안전하게 마무리합니다.</p></div></div>
-          <div class="privacy-item reveal"><span>03</span><div><strong>Real Release</strong><p>iOS Archive, Android AAB, 비공개 테스트, 키 관리, 개인정보 처리방침과 라이선스까지 직접 운영했습니다.</p></div></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="closing section-dark">
-      <div class="shell closing-inner reveal">
-        <div class="closing-logo logo-slot" aria-hidden="true">
-          <img src="assets/topout-logo.png" alt="" />
-          <span class="logo-fallback">TO</span>
-        </div>
-        <p class="eyebrow">TOP OUT · KEEP CLIMBING</p>
-        <h2>등반을 분석하는 기술이 아니라,<br />촬영의 번거로움을 줄이는 제품.</h2>
-        <p>
-          TopOut을 통해 문제 정의부터 모델 선택, 모바일 최적화, 필드 테스트, 배포와 운영까지
-          하나의 제품을 완성하는 전 과정을 경험했습니다.
-        </p>
-        <div class="closing-links">
-          <a href="#top">Back to top ↑</a>
-          <a href="mailto:your-email@example.com">Contact</a>
-          <a href="#" aria-label="GitHub 링크를 입력하세요">GitHub</a>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <footer class="site-footer">
-    <div class="shell">
-      <span>© <span id="year"></span> TopOut Case Study</span>
-      <span>Designed & developed as a responsive portfolio</span>
-    </div>
-  </footer>
+<div class="choice-grid">
+<div><span>DEFAULT MODE</span><strong>Preview Suspended</strong><small>녹화·분석은 유지, 화면 렌더링만 중단</small></div>
+<div><span>USER OPTION</span><strong>Live Preview</strong><small>앵글 확인이 필요한 촬영 환경 지원</small></div>
+</div>
+</div>
+</div>
+</section>
+<section class="result light-two" id="result">
+<div class="shell">
+<div class="section-heading max-copy reveal">
+<p class="eyebrow">08 · REVIEW EXPERIENCE</p>
+<h2>자동 감지의 한계를 숨기지 않고,<br/>검토 비용을 최소화하는 편집 UX로 보완했습니다</h2>
+</div>
+<div class="result-grid">
+<article class="result-card reveal">
+<figure class="result-image"><img alt="탑홀드 마스크와 감지 구간을 편집하는 결과 화면" loading="lazy" src="assets/review-mask.webp"/></figure>
+<div class="result-copy"><span>VELOCITY-SENSITIVE TRIM</span><h3>드래그 속도에 따라 0.1초 정밀 모드로 전환</h3><p>빠르게 움직일 때는 넓은 범위를 탐색하고, 일정 속도 이하로 천천히 조작하면 0.1초 단위로 시작점과 종료점을 미세 조정합니다.</p></div>
+</article>
+<article class="result-card reveal" data-delay="80">
+<figure class="result-image"><img alt="선택된 구간을 2.5배 확대해 편집하는 화면" loading="lazy" src="assets/review-zoom.webp"/></figure>
+<div class="result-copy"><span>CONTEXTUAL TIMELINE ZOOM</span><h3>긴 세션에서도 선택 구간의 조작 면적을 확보</h3><p>10분 이상의 원본에서 수초 길이의 등반 구간이 지나치게 작아지는 문제를 해결하기 위해 전체 타임라인과 확대 타임라인을 분리했습니다.</p></div>
+</article>
+<article class="result-card reveal" data-delay="160">
+<figure class="result-image focus-bottom"><img alt="감지 구간 확인과 다시 촬영 버튼이 있는 결과 화면" loading="lazy" src="assets/review-finish.webp"/></figure>
+<div class="result-copy"><span>STATE-PRESERVING RETAKE</span><h3>리뷰에서 동일한 촬영 조건으로 즉시 복귀</h3><p>실패 원인을 확인한 뒤 카메라 구도, 매트 경계, 탑홀드와 촬영 옵션을 유지한 채 다음 시도를 시작하도록 재촬영 경로를 단축했습니다.</p></div>
+</article>
+</div>
+</div>
+</section>
+<section class="privacy light-one">
+<div class="privacy-grid shell">
+<div class="section-heading reveal">
+<p class="eyebrow">09 · PRIVACY &amp; RELEASE</p>
+<h2>모델 구현뿐 아니라,<br/>데이터 처리와 배포 운영까지 제품 범위로 관리했습니다</h2>
+</div>
+<div class="privacy-list">
+<div class="privacy-item reveal"><span>01</span><div><strong>On-device Processing &amp; Data Minimization</strong><p>영상 프레임, 신체 관절 좌표와 중간 분석 결과를 외부 서버로 전송하지 않고 기기 내에서 처리합니다.</p></div></div>
+<div class="privacy-item reveal"><span>02</span><div><strong>Recording Resilience</strong><p>백그라운드 전환, 카메라 중단, 저장공간 부족과 같은 예외에서 현재 파일을 먼저 정상 종료하도록 설계했습니다.</p></div></div>
+<div class="privacy-item reveal"><span>03</span><div><strong>Production Release Operations</strong><p>iOS Archive, Android AAB, 서명 키, 비공개 테스트, Privacy Manifest, 개인정보 처리방침과 오픈소스 고지를 직접 관리했습니다.</p></div></div>
+</div>
+</div>
+</section>
+<section class="closing dark-two">
+<div class="closing-inner shell reveal">
+<img alt="TopOut — 등반 시작부터 완등 순간까지" class="closing-brand" src="assets/topout-brand.png"/>
+<p class="eyebrow">TOP OUT · KEEP CLIMBING</p>
+<h2>등반을 판별하는 알고리즘을 넘어,<br/>촬영·검토·재시도의 마찰을 줄인 제품</h2>
+<p>TopOut을 통해 문제 정의, 컴퓨터 비전 파이프라인 설계, 크로스플랫폼 구현, 성능 최적화, 필드 테스트와 배포 운영을 하나의 제품 의사결정 과정으로 연결했습니다.</p>
+<div class="closing-links"><a href="#top">Back to top ↑</a><a href="mailto:your-email@example.com">Contact</a><a href="#">GitHub</a></div>
+</div>
+</section>
+</main>
+<footer class="site-footer">
+<div class="shell"><span>© <span id="year">Solo product strategy, design and engineering</span> TopOut Case Study</span><span>Designed &amp; developed as a responsive portfolio</span></div>
+</footer>
 </body>
 </html>
