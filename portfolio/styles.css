@@ -412,3 +412,55 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(-
   .result-copy { padding: 30px 26px 36px; }
   .result-copy h3 { font-size: 28px; }
 }
+/* Mobile QA refinements — merged into styles.css during packaging */
+@media (max-width: 700px) {
+  html { scroll-padding-top: 76px; }
+  body { overflow-x: hidden; }
+  .shell { width: min(100% - 28px, 100%); }
+  .site-header.scrolled { -webkit-backdrop-filter: blur(18px); }
+  .site-nav { max-height: calc(100dvh - 88px); overflow-y: auto; overscroll-behavior: contain; }
+  .site-nav a, .menu-button, .button, .closing-links a { min-height: 44px; }
+  .hero { padding-top: 104px; }
+  .hero h1 { font-size: clamp(36px, 11vw, 48px); line-height: 1.12; letter-spacing: -.045em; }
+  .hero h1 br, .section-heading h2 br, .sticky-copy h2 br, .recording-copy h2 br, .closing h2 br, .case-copy h3 br { display: none; }
+  .hero-description { margin-top: 22px; line-height: 1.72; }
+  .hero-actions { display: grid; grid-template-columns: 1fr; }
+  .hero-actions .button { width: 100%; }
+  .hero-meta { margin-top: 42px; }
+  .hero-visual { min-height: 510px; }
+  .promo-grid, .hero-grid, .split-layout, .recording-grid, .privacy-grid { gap: 48px; }
+  .promo-video-shell { width: min(100%, 360px); border-radius: 22px; }
+  .section-heading h2, .sticky-copy h2, .recording-copy h2 { font-size: clamp(34px, 9.5vw, 42px); line-height: 1.13; }
+  .overview-cards { gap: 12px; }
+  .metric-card { min-height: 0; padding: 24px; }
+  .metric-card strong { margin-top: 42px; font-size: 23px; }
+  .project-facts div { padding: 20px; }
+  .problem-item { padding: 24px 0; }
+  .flow-node { padding: 22px; }
+  .comparison-table > div { padding: 18px; }
+  .case-stack { margin-top: 48px; }
+  .case-card { padding: 20px; border-radius: 22px; }
+  .case-copy h3 { font-size: clamp(27px, 8vw, 34px); line-height: 1.18; }
+  .detail-list { padding-left: 18px; }
+  .dual-screens { grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .dual-screens figure, .case-media figure { max-width: 100%; }
+  .model-row, .model-row.selected { min-width: 0; }
+  .parity-strip strong { line-height: 1.45; }
+  .result-copy { padding: 28px 22px 34px; }
+  .closing-links { align-items: stretch; }
+  .closing-links a { display: flex; align-items: center; overflow-wrap: anywhere; }
+}
+
+@media (max-width: 420px) {
+  :root { --shell: calc(100% - 24px); }
+  .brand-icon { width: 38px; height: 38px; }
+  .hero-visual { min-height: 455px; }
+  .hero-device { width: min(245px, 72vw); }
+  .signal-card { display: none; }
+  .promo, .overview, .screen-journey, .problem, .solution, .iterations, .technology, .recording, .result, .privacy, .closing { padding: 76px 0; }
+  .case-card { padding: 18px; }
+  .before-after > div { padding: 18px; }
+  .dual-screens { grid-template-columns: 1fr; }
+  .dual-screens figure { width: min(220px, 100%); margin-inline: auto; }
+  .result-image { padding: 18px; }
+}

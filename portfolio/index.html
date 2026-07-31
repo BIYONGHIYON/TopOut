@@ -79,7 +79,7 @@
 </div>
 <div class="video-stage reveal" data-delay="100">
 <div class="promo-video-shell">
-<video controls id="promo-video" playsinline webkit-playsinline poster="assets/promo-poster.webp" preload="metadata">
+<video controls id="promo-video" playsinline webkit-playsinline poster="assets/promo-poster-47.jpg" preload="metadata">
 <source src="assets/TopOutPromo.mp4" type="video/mp4" />
       브라우저가 동영상 재생을 지원하지 않습니다.
     </video>
@@ -147,13 +147,13 @@
 <div class="split-layout shell">
 <div class="sticky-copy reveal">
 <p class="eyebrow">03 · PROBLEM</p>
-<h2>클라이밍 세션의 기록 과정은<br/>여러 개의 수동 작업으로 분절돼 있었습니다</h2>
+<h2>클라이밍 세션의 기록 과정에는<br/>촬영과 확인을 반복하는 번거로움이 있었습니다</h2>
 <p>혼자 촬영하는 사용자는 매 시도마다 녹화를 조작하고, 긴 원본에서 등반 구간을 다시 찾은 뒤 편집과 재촬영을 반복해야 했습니다.</p>
 </div>
 <div class="problem-list">
 <article class="problem-item reveal"><span>01</span><div><strong>촬영 조작이 운동 흐름을 방해</strong><p>등반 전후로 휴대폰까지 이동해야 해 세션의 리듬과 집중이 끊겼습니다.</p></div></article>
 <article class="problem-item reveal"><span>02</span><div><strong>긴 원본에서 유효 구간을 수동 탐색</strong><p>대기와 이동 장면이 포함된 영상에서 각 시도의 시작과 종료를 직접 찾아야 했습니다.</p></div></article>
-<article class="problem-item reveal"><span>03</span><div><strong>분석과 재시도 사이의 컨텍스트 손실</strong><p>실패 원인을 확인한 뒤 같은 앵글로 다시 촬영하려면 매트선과 카메라 설정을 반복해야 했습니다.</p></div></article>
+<article class="problem-item reveal"><span>03</span><div><strong>실패 확인 후 다시 촬영하는 과정의 번거로움</strong><p>실패 영상을 확인하고 원인을 파악한 뒤에도 녹화 화면으로 돌아가 구도와 촬영 조건을 다시 맞춰야 해, 다음 시도를 바로 이어가기 어려웠습니다.</p></div></article>
 </div>
 </div>
 </section>
@@ -162,14 +162,14 @@
 <div class="section-heading max-copy reveal">
 <p class="eyebrow">04 · SOLUTION</p>
 <h2>비용이 낮은 탐색에서 시작해,<br/>판단이 필요한 시점에만 자세 추론을 실행했습니다</h2>
-<p>매트 경계를 공간 기준으로 정의하고, 제한된 영역의 프레임 변화로 사람 후보를 찾은 뒤, 포즈와 매트의 상대 위치로 등반 상태를 검증하는 계층형 파이프라인을 설계했습니다.</p>
+<p>매트 경계를 정규화 좌표의 기준선으로 정의하고, 직전 분석 프레임과의 luma 차이로 제한된 ROI를 만든 뒤, 신뢰 가능한 관절과 x 위치별 매트선의 상대 좌표를 상태 머신에 입력하는 계층형 파이프라인을 설계했습니다.</p>
 </div>
 <div aria-label="TopOut 자동 감지 흐름" class="flow-diagram reveal">
 <div class="flow-node"><span>01</span><strong>MobileSAM</strong><small>70·80·90·95% 프롬프트에서 매트 후보를 분할하고 유효 경계를 선택</small></div>
 <div aria-hidden="true" class="flow-arrow">→</div>
-<div class="flow-node"><span>02</span><strong>Motion Detection</strong><small>160px luma 프레임을 직전 분석 프레임과 비교해 ROI를 생성</small></div>
+<div class="flow-node"><span>02</span><strong>Motion-seeded ROI</strong><small>160px luma 프레임을 직전 분석 프레임과 비교하고, 변화 픽셀을 포함하는 화면 약 25% 면적의 정사각형 ROI를 생성</small></div>
 <div aria-hidden="true" class="flow-arrow">→</div>
-<div class="flow-node"><span>03</span><strong>Pose Estimation</strong><small>매트 대비 관절 위치로 시작·완등 후보·복귀·유실 상태를 판정</small></div>
+<div class="flow-node"><span>03</span><strong>Pose State Machine</strong><small>신뢰 관절과 x-보간 매트선의 상대 위치로 대기·등반·유실 복구·종료 후 추적 상태를 전이</small></div>
 <div aria-hidden="true" class="flow-arrow">→</div>
 <div class="flow-node"><span>04</span><strong>Segment Review</strong><small>원시 구간을 보존한 뒤 사용자 검토와 정밀 트리밍으로 확정</small></div>
 </div>
@@ -187,7 +187,7 @@
 <div class="section-heading max-copy reveal">
 <p class="eyebrow">05 · ITERATIONS</p>
 <h2>필드 테스트에서 관찰한 실패를<br/>파이프라인 구조와 상태 정책에 반영했습니다</h2>
-<p>환경별 임계값을 덧붙이는 대신, 오탐과 미탐이 발생하는 원인을 분리하고 모델 선택·탐색 범위·상태 전환 규칙을 재설계했습니다.</p>
+<p>환경마다 임계값을 추가하는 방식은 예외를 늘릴 뿐이었습니다. 필드 영상에서 실패 장면을 재현하고, 입력 영역·모델 출력·상태 전이를 분리해 로그와 프레임 단위로 원인을 좁힌 뒤 파이프라인 구조를 수정했습니다.</p>
 </div>
 <div class="case-stack">
 <article class="case-card reveal">
@@ -195,7 +195,7 @@
 <p class="case-index">01 · MAT DETECTION</p>
 <h3>규칙 기반 경계 탐지의 한계를 확인하고,<br/>영역 분할 기반 후보 선택으로 전환했습니다</h3>
 <div class="before-after">
-<div><span>INITIAL APPROACH</span><p>색상·밝기 차이와 하단 영역의 균일도를 이용해 경계를 추정했지만, 큰 볼륨·그림자·벽 재질 변화가 강한 경계로 오인됐습니다.</p></div>
+<div><span>INITIAL APPROACH</span><p>색상·밝기 차이와 하단 영역의 균일도를 이용해 경계를 추정했습니다. 그러나 큰 볼륨의 외곽선, 조명 그림자, 벽과 매트의 유사한 색상이 실제 접점보다 강한 에지로 검출돼 촬영 환경별 보정값이 계속 늘어났습니다.</p></div>
 <div><span>FINAL DECISION</span><p>MobileSAM 임베딩을 한 번 생성한 뒤 70·80·90·95% 높이의 프롬프트를 디코딩하고, 구조적 조건을 통과한 후보 중 가장 높은 상단 경계를 선택했습니다.</p></div>
 </div>
 <ul class="detail-list">
@@ -214,7 +214,7 @@
 <p class="case-index">02 · START &amp; FINISH</p>
 <h3>화면 변화는 탐색 신호로 제한하고,<br/>등반 판단은 신체 관절 관계로 검증했습니다</h3>
 <div class="before-after">
-<div><span>INITIAL APPROACH</span><p>매트 주변 움직임을 시작, 탑홀드 주변 움직임을 종료로 해석했지만 카메라 흔들림·주변 사람·조명 변화와 실제 등반을 구분하지 못했습니다.</p></div>
+<div><span>INITIAL APPROACH</span><p>매트 주변 움직임을 시작, 탑홀드 주변 움직임을 종료로 해석했습니다. 필드 테스트에서는 카메라 흔들림, 지나가는 사람, 자동 노출 변화가 동일한 픽셀 변화로 나타나 실제 등반과 구분되지 않았고, 짧은 정지 동작도 종료로 오인됐습니다.</p></div>
 <div><span>FINAL DECISION</span><p>Motion Detection은 Pose ROI를 생성하는 트리거로만 사용하고, 시작·종료는 기울어진 매트선과 신뢰 가능한 관절의 상대 위치로 판정했습니다.</p></div>
 </div>
 <ul class="detail-list">
@@ -232,7 +232,7 @@
 <p class="case-index">03 · POSE RECOVERY</p>
 <h3>일시적 관절 유실을 종료로 확정하지 않고,<br/>복구 가능한 상태로 모델링했습니다</h3>
 <div class="before-after">
-<div><span>FAILURE MODE</span><p>빠른 다이노 동작, 홀드 가림, 화면 이탈로 포즈가 한 프레임만 누락돼도 하나의 시도가 여러 구간으로 분할됐습니다.</p></div>
+<div><span>FAILURE MODE</span><p>빠른 다이노 동작의 모션 블러, 팔과 몸통의 겹침, 홀드에 의한 관절 가림, 순간적인 화면 이탈로 포즈가 누락됐습니다. 누락을 즉시 종료로 처리하자 하나의 시도가 여러 클립으로 쪼개지고 다음 시도까지 탐색 상태가 불안정해졌습니다.</p></div>
 <div><span>RECOVERY POLICY</span><p>활성 등반에서는 최대 6초 동안 4fps 복구 모드로 전환하고, 유효 포즈가 복귀하면 동일한 시도의 관절 기반 추적을 재개합니다.</p></div>
 </div>
 <ul class="detail-list">
@@ -244,6 +244,24 @@
 <div class="case-media dual-screens">
 <figure><img alt="두 번째 감지 구간 결과 화면" loading="lazy" src="assets/review-segment2.webp"/><figcaption>복구 정책 적용 후 개별 구간 보존</figcaption></figure>
 <figure><img alt="세 번째 감지 구간 결과 화면" loading="lazy" src="assets/review-segment3.webp"/><figcaption>짧은 간격의 다음 시도도 별도 유지</figcaption></figure>
+</div>
+</article>
+<article class="case-card reveal">
+<div class="case-copy">
+<p class="case-index">04 · REVIEW TO RETAKE</p>
+<h3>실패 분석이 다음 시도를 늦추지 않도록,<br/>리뷰와 재촬영을 하나의 상태 흐름으로 연결했습니다</h3>
+<div class="before-after">
+<div><span>OBSERVATION</span><p>지인 클라이머가 실패 영상을 재생해 발 위치와 동작 타이밍을 확인한 뒤, 다음 시도를 위해 다시 카메라 화면으로 돌아가 구도와 설정을 맞추는 과정을 반복했습니다.</p></div>
+<div><span>PRODUCT DECISION</span><p>녹화 종료 후 자동 제안 구간을 바로 검토하고, 리뷰 화면의 ‘다시 촬영’ 버튼으로 기존 앵글과 선택 상태를 유지한 채 카메라를 재바인딩하고 카운트다운을 다시 시작하도록 구현했습니다.</p></div>
+</div>
+<ul class="detail-list">
+<li>Android는 매트선·탑홀드 선택과 촬영 설정을 상태에 유지하고, 리뷰 파일과 이전 감지 구간만 정리한 뒤 카메라를 재생성</li>
+<li>iOS는 저장하지 않은 클립 삭제를 확인한 뒤 리뷰를 닫고 <code>onRetake</code> 콜백으로 기존 촬영 컨텍스트에 복귀</li>
+<li>‘실패 확인 → 원인 파악 → 같은 앵글로 재촬영’의 이동과 재설정 단계를 하나의 버튼으로 축소</li>
+</ul>
+</div>
+<div class="case-media single-screen focus-bottom">
+<figure><img alt="감지 구간 확인과 다시 촬영 버튼이 있는 리뷰 화면" loading="lazy" src="assets/review-finish.webp"/><figcaption>구간 검토에서 촬영 재진입까지 연결한 다시 촬영 동선</figcaption></figure>
 </div>
 </article>
 </div>
@@ -316,7 +334,7 @@
 </article>
 <article class="result-card reveal" data-delay="160">
 <figure class="result-image focus-bottom"><img alt="감지 구간 확인과 다시 촬영 버튼이 있는 결과 화면" loading="lazy" src="assets/review-finish.webp"/></figure>
-<div class="result-copy"><span>STATE-PRESERVING RETAKE</span><h3>리뷰에서 동일한 촬영 조건으로 즉시 복귀</h3><p>실패 원인을 확인한 뒤 카메라 구도, 매트 경계, 탑홀드와 촬영 옵션을 유지한 채 다음 시도를 시작하도록 재촬영 경로를 단축했습니다.</p></div>
+<div class="result-copy"><span>STATE-PRESERVING RETAKE</span><h3>실패 원인을 확인한 화면에서 바로 다시 촬영</h3><p>지인 클라이머의 사용 경험을 바탕으로, 실패 구간을 확인한 뒤 ‘다시 촬영’을 누르면 카메라 구도, 매트 경계, 탑홀드와 촬영 옵션을 유지한 채 다음 시도를 준비하도록 재촬영 경로를 단축했습니다.</p></div>
 </article>
 </div>
 </div>
@@ -340,7 +358,7 @@
 <p class="eyebrow">TOP OUT · KEEP CLIMBING</p>
 <h2>등반을 판별하는 알고리즘을 넘어,<br/>촬영·검토·재시도의 마찰을 줄인 제품</h2>
 <p>TopOut을 통해 문제 정의, 컴퓨터 비전 파이프라인 설계, 크로스플랫폼 구현, 성능 최적화, 필드 테스트와 배포 운영을 하나의 제품 의사결정 과정으로 연결했습니다.</p>
-<div class="closing-links"><a href="#top">Back to top ↑</a><a href="mailto:your-email@example.com">Contact</a><a href="#">GitHub</a></div>
+<div class="closing-links"><a href="#top">Back to top ↑</a><a href="https://github.com/BIYONGHIYON/TopOut-app" target="_blank" rel="noopener noreferrer">GitHub · BIYONGHIYON/TopOut-app</a></div>
 </div>
 </section>
 </main>
