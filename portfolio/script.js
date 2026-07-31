@@ -4,8 +4,10 @@
   const menuButton = document.querySelector('.menu-button');
   const nav = document.querySelector('.site-nav');
   const year = document.getElementById('year');
+  const promoVideo = document.getElementById('promo-video');
 
   if (year) year.textContent = new Date().getFullYear();
+  if (promoVideo) promoVideo.volume = 0.5;
 
   const updateScrollUI = () => {
     const scrollTop = window.scrollY || document.documentElement.scrollTop;
