@@ -187,15 +187,15 @@ private fun PermissionGate(
             Text(
                 "카메라 권한이 필요합니다",
                 color = Color.White,
-                fontSize = 21.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
             Text(
                 "TopOut이 등반 영상을 촬영할 수 있도록 카메라 권한을 허용해주세요. 마이크 권한이 없어도 영상 촬영은 가능하지만 소리는 저장되지 않습니다.",
                 modifier = Modifier.padding(top = 12.dp, bottom = 24.dp),
                 color = Color.White.copy(alpha = 0.74f),
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
                 textAlign = TextAlign.Center
             )
             TopOutCapsuleButton(

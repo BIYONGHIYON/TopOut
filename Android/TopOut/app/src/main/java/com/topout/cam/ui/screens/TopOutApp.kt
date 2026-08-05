@@ -355,7 +355,7 @@ private fun PreviewControls(
                 modifier = Modifier.background(TopOutColors.TipBackground, RoundedCornerShape(10.dp))
                     .padding(horizontal = 6.dp, vertical = 4.dp),
                 color = Color.White,
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -379,7 +379,7 @@ private fun PreviewControls(
                         "%.1fx".format(zoom),
                         color = Color.White,
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1
                     )
@@ -408,7 +408,7 @@ private fun PreviewControls(
                     modifier = Modifier.align(Alignment.CenterStart),
                     color = Color.White,
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 TopOutCapsuleButton(
@@ -452,7 +452,7 @@ private fun SelectionControls(
                 modifier = Modifier.background(TopOutColors.TipBackground, RoundedCornerShape(10.dp))
                     .padding(horizontal = 6.dp, vertical = 4.dp),
                 color = Color.White,
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -532,7 +532,7 @@ private fun RecordingStopCapsuleButton(
             elapsed,
             color = Color.White,
             fontFamily = FontFamily.Monospace,
-            fontSize = 15.sp,
+            fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1
         )

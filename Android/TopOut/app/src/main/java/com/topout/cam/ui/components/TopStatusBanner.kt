@@ -34,7 +34,7 @@ fun TopStatusBanner(
                 end = if (isLandscape) 6.dp else 10.dp
             ),
         color = Color.White,
-        fontSize = 14.sp,
+        fontSize = 13.sp,
         fontWeight = FontWeight.SemiBold,
         style = TextStyle(
             shadow = Shadow(

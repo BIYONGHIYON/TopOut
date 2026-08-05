@@ -62,7 +62,7 @@ fun TopOutCapsuleButton(
         }
         Text(
             text = text,
-            fontSize = if (compact) 13.sp else 15.sp,
+            fontSize = if (compact) 12.sp else 14.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -101,7 +101,7 @@ fun SegmentControl(
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = if (selected) 1.dp else 0.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp)
             ) {
-                Text(label, fontSize = 12.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
+                Text(label, fontSize = 11.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
             }
         }
     }

@@ -3,6 +3,9 @@ package com.topout.cam.ui.theme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.graphics.Color
 
 object TopOutColors {
@@ -30,5 +33,11 @@ private val scheme = darkColorScheme(
 
 @Composable
 fun TopOutTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = scheme, content = content)
+    val density = LocalDensity.current
+    // Samsung display/font settings can otherwise enlarge fixed camera controls enough to clip.
+    // Keep physical dp density intact and cap only font scaling for this camera-first UI.
+    val stableDensity = Density(density.density, fontScale = density.fontScale.coerceAtMost(1f))
+    CompositionLocalProvider(LocalDensity provides stableDensity) {
+        MaterialTheme(colorScheme = scheme, content = content)
+    }
 }

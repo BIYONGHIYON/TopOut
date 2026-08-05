@@ -350,7 +350,7 @@ class CameraEngine(private val context: Context) {
                             Camera2CameraInfo.from(fallbackProbe.cameraInfo).cameraId
                         }.getOrDefault("default-back"),
                         selector = CameraSelector.DEFAULT_BACK_CAMERA,
-                        anchorRatio = fallbackMin.coerceAtLeast(1f),
+                        anchorRatio = 1f,
                         nativeMinZoom = fallbackMin,
                         nativeMaxZoom = fallbackMax,
                         equivalentFocalLength = EXPECTED_WIDE_EQUIVALENT_MM,
@@ -360,8 +360,12 @@ class CameraEngine(private val context: Context) {
                 cameraProvider.unbindAll()
             }
 
-            effectiveLensZoomRatios = rearLensProfiles.map { it.anchorRatio }
-            effectiveMinZoom = effectiveLensZoomRatios.first()
+            effectiveMinZoom = rearLensProfiles.minOf { profile ->
+                profile.anchorRatio * profile.nativeMinZoom
+            }.coerceAtLeast(TopOutConfig.MinZoom)
+            effectiveLensZoomRatios = (rearLensProfiles.map { it.anchorRatio } + effectiveMinZoom)
+                .distinct()
+                .sorted()
             val lastLens = rearLensProfiles.last()
             effectiveMaxZoom = min(
                 TopOutConfig.CameraMaxZoom,
@@ -396,8 +400,12 @@ class CameraEngine(private val context: Context) {
                     selectedProfile = rearLensProfiles.first()
                     selectedSelector = selectedProfile.selector
                     activeLensProfile = selectedProfile
-                    effectiveLensZoomRatios = rearLensProfiles.map { it.anchorRatio }
-                    effectiveMinZoom = effectiveLensZoomRatios.first()
+                    effectiveMinZoom = rearLensProfiles.minOf { profile ->
+                        profile.anchorRatio * profile.nativeMinZoom
+                    }.coerceAtLeast(TopOutConfig.MinZoom)
+                    effectiveLensZoomRatios = (rearLensProfiles.map { it.anchorRatio } + effectiveMinZoom)
+                        .distinct()
+                        .sorted()
                     val lastLens = rearLensProfiles.last()
                     effectiveMaxZoom = min(
                         TopOutConfig.CameraMaxZoom,
@@ -450,8 +458,12 @@ class CameraEngine(private val context: Context) {
 
             selectedProfile = rearLensProfiles.first()
             activeLensProfile = selectedProfile
-            effectiveLensZoomRatios = rearLensProfiles.map { it.anchorRatio }
-            effectiveMinZoom = effectiveLensZoomRatios.first()
+            effectiveMinZoom = rearLensProfiles.minOf { profile ->
+                profile.anchorRatio * profile.nativeMinZoom
+            }.coerceAtLeast(TopOutConfig.MinZoom)
+            effectiveLensZoomRatios = (rearLensProfiles.map { it.anchorRatio } + effectiveMinZoom)
+                .distinct()
+                .sorted()
             val lastLens = rearLensProfiles.last()
             effectiveMaxZoom = min(
                 TopOutConfig.CameraMaxZoom,
@@ -785,7 +797,8 @@ class CameraEngine(private val context: Context) {
                     selector = selector,
                     physicalCameraId = null,
                     equivalentFocalLength = equivalent,
-                    nativeMinZoom = (zoomState?.minZoomRatio ?: 1f).coerceAtLeast(1f),
+                    nativeMinZoom = (zoomState?.minZoomRatio ?: 1f)
+                        .coerceAtLeast(TopOutConfig.MinZoom),
                     nativeMaxZoom = min(
                         TopOutConfig.CameraMaxZoom,
                         zoomState?.maxZoomRatio ?: camera2Max

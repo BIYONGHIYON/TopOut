@@ -261,7 +261,7 @@ fun ReviewScreen(
                         modifier = Modifier.background(Color.Black.copy(alpha = 0.42f), RoundedCornerShape(13.dp)).padding(horizontal = 14.dp, vertical = 5.dp),
                         color = Color.White,
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     if (video.detectedRanges.size > 1) {

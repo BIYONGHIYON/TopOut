@@ -124,12 +124,12 @@ fun SettingsDialog(
                                 contentColor = TopOutColors.Blue
                             ),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
-                        ) { Text("닫기", fontSize = 16.sp) }
+                        ) { Text("닫기", fontSize = 15.sp) }
                         Text(
                             "설정",
                             modifier = Modifier.weight(1f),
                             color = Color.Black,
-                            fontSize = 17.sp,
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center
                         )
@@ -140,7 +140,7 @@ fun SettingsDialog(
                                 contentColor = TopOutColors.Blue
                             ),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
-                        ) { Text("저장", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
+                        ) { Text("저장", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
                     }
 
                     Column(
@@ -183,8 +183,8 @@ fun SettingsDialog(
                                     "4K 60fps는 배터리와 저장공간을 빠르게 소모할 수 있어요.",
                                     modifier = Modifier.padding(top = 4.dp),
                                     color = TopOutColors.Orange,
-                                    fontSize = 12.sp,
-                                    lineHeight = 16.sp
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp
                                 )
                             }
                         }
@@ -202,7 +202,7 @@ fun SettingsDialog(
                                 "${draft.aspectRatio.subtitle} · 저장 크기 ${output.width}×${output.height}",
                                 modifier = Modifier.padding(top = 4.dp),
                                 color = TopOutColors.SecondaryText,
-                                fontSize = 12.sp
+                                fontSize = 11.sp
                             )
                         }
 
@@ -255,15 +255,15 @@ fun SettingsDialog(
                                 "버전 ${BuildConfig.VERSION_NAME}",
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
                                 color = TopOutColors.SecondaryText,
-                                fontSize = 14.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
                                 "카메라와 마이크는 영상·음성 녹화에만 사용되며, 촬영 데이터는 외부 서버로 전송되지 않습니다.",
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp),
                                 color = TopOutColors.SecondaryText,
-                                fontSize = 11.sp,
-                                lineHeight = 15.sp
+                                fontSize = 10.sp,
+                                lineHeight = 14.sp
                             )
                         }
                         Spacer(Modifier.height(6.dp))
@@ -293,7 +293,7 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
                 "개인정보 처리방침",
                 modifier = Modifier.weight(1f),
                 color = Color.Black,
-                fontSize = 17.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center
             )
@@ -308,7 +308,7 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
             Text(
                 "시행일: 2026년 7월 19일",
                 color = TopOutColors.SecondaryText,
-                fontSize = 12.sp
+                fontSize = 11.sp
             )
 
             Column(
@@ -319,15 +319,15 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
                 Text(
                     "TopOut은 별도의 회원가입 기능을 제공하지 않으며, 사용자의 이름, 이메일 주소, 위치정보, 기기 식별자 등의 개인정보를 수집하거나 외부 서버로 전송하지 않습니다.",
                     color = Color.Black,
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "카메라와 마이크는 영상 및 음성 녹화에 사용되며, 신체 포즈 분석과 촬영 데이터 처리는 사용자의 기기 내에서 이루어집니다.",
                     color = TopOutColors.SecondaryText,
-                    fontSize = 13.sp,
-                    lineHeight = 19.sp
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp
                 )
             }
 
@@ -426,7 +426,7 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
                 "© 2026 TopOut. All rights reserved.",
                 modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                 color = TopOutColors.SecondaryText,
-                fontSize = 11.sp,
+                fontSize = 10.sp,
                 textAlign = TextAlign.Center
             )
         }
@@ -446,8 +446,8 @@ private fun PrivacyParagraph(text: String) {
     Text(
         text,
         color = TopOutColors.SecondaryText,
-        fontSize = 12.sp,
-        lineHeight = 18.sp
+        fontSize = 11.sp,
+        lineHeight = 17.sp
     )
 }
 
@@ -478,7 +478,7 @@ private fun OpenSourceLicensesScreen(onBack: () -> Unit) {
                 "오픈소스 라이선스",
                 modifier = Modifier.weight(1f),
                 color = Color.Black,
-                fontSize = 17.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center
             )
@@ -493,16 +493,16 @@ private fun OpenSourceLicensesScreen(onBack: () -> Unit) {
             Text(
                 "TopOut에 포함된 제3자 오픈소스 구성요소와 라이선스를 확인할 수 있습니다.",
                 color = TopOutColors.SecondaryText,
-                fontSize = 13.sp,
-                lineHeight = 18.sp
+                fontSize = 12.sp,
+                lineHeight = 17.sp
             )
 
             SettingsSection("제3자 구성요소") {
                 Text(
                     notices,
                     color = TopOutColors.SecondaryText,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp
                 )
             }
 
@@ -512,7 +512,7 @@ private fun OpenSourceLicensesScreen(onBack: () -> Unit) {
                     color = TopOutColors.SecondaryText,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 10.sp,
-                    lineHeight = 14.sp
+                    lineHeight = 13.sp
                 )
             }
             Spacer(Modifier.height(12.dp))
@@ -537,7 +537,7 @@ private fun SettingsNavigationRow(title: String, onClick: () -> Unit) {
             title,
             modifier = Modifier.weight(1f),
             color = Color.Black,
-            fontSize = 14.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold
         )
         Icon(
@@ -555,7 +555,7 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
             title,
             modifier = Modifier.padding(start = 4.dp),
             color = Color.Black,
-            fontSize = 16.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.Bold
         )
         Column(
@@ -572,7 +572,7 @@ private fun SettingLabel(text: String) {
     Text(
         text,
         color = TopOutColors.SecondaryText,
-        fontSize = 13.sp,
+        fontSize = 12.sp,
         fontWeight = FontWeight.SemiBold
     )
 }
@@ -592,9 +592,9 @@ private fun SettingSwitch(
             text,
             modifier = Modifier.weight(1f).padding(end = 12.dp),
             color = TopOutColors.SecondaryText.copy(alpha = if (enabled) 1f else 0.55f),
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
-            lineHeight = 15.sp
+            lineHeight = 14.sp
         )
         Switch(
             checked = checked,
