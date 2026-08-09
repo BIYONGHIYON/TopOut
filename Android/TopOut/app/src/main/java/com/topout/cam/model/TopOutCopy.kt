@@ -34,7 +34,7 @@ object TopOutCopy {
 
     fun selectionTip(settings: AppSettings): String =
         if (settings.requiresTopHoldSelection) {
-            "Tip. 작은 홀드는 확대해서 선택할 수 있어요"
+            "Tip. 준비 완료 후에는 촬영 배율이 고정됩니다"
         } else {
             "Tip. 파란 점은 위아래로 움직일 수 있어요"
         }

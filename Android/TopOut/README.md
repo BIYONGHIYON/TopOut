@@ -1,4 +1,4 @@
-# TopOut Android v1.4 (build 5)
+# TopOut Android v1.5 (build 7)
 
 TopOut records climbing video with audio and automatically proposes climb ranges.
 
@@ -27,7 +27,9 @@ Detected ranges are not limited to 10. All ranges are retained through the recor
 - six-second pose-loss grace period during an active climb
 - preview and selection do not create a recording file; recording starts only after the record action and countdown
 - latest-frame-only pose analysis via CameraX `STRATEGY_KEEP_ONLY_LATEST`
-- frozen selection image/embedding released before long recording
+- Ready-time mat analysis is never shown as a frozen editor; mat correction and hold selection stay on the live preview
+- camera lens/zoom is frozen after Ready; each top-hold tap captures a fresh frame for MobileSAM
+- exact 60 fps is accepted only when CameraX guarantees it for the active session configuration
 - no application debug logging
 
 ## Build

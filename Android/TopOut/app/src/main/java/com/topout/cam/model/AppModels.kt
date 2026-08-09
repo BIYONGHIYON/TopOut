@@ -208,7 +208,9 @@ data class TopOutUiState(
     val savingStatus: String? = null,
     val errorMessage: String? = null,
     val launchVisible: Boolean = true,
-    val isLandscape: Boolean = false
+    val isLandscape: Boolean = false,
+    /** CameraX target rotation frozen at Ready so large-screen window rotations cannot move FOV. */
+    val cameraTargetRotation: Int = 0
 )
 
 /** Values are a direct port of Config.swift. */

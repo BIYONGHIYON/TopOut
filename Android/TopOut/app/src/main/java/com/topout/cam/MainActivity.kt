@@ -101,8 +101,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun hasPermissions(): Boolean =
-        ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+    private fun hasPermissions(): Boolean {
+        val cameraGranted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        val storageGranted = android.os.Build.VERSION.SDK_INT > 28 ||
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+        return cameraGranted && storageGranted
+    }
 
     private fun openAppSettings() {
         startActivity(
@@ -154,8 +164,8 @@ private fun PermissionGate(
     var requested by remember { mutableStateOf(false) }
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { result ->
-        granted = result[Manifest.permission.CAMERA] == true || permissionsGranted()
+    ) { _ ->
+        granted = permissionsGranted()
         requested = true
     }
 
@@ -185,13 +195,21 @@ private fun PermissionGate(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                "카메라 권한이 필요합니다",
+                if (android.os.Build.VERSION.SDK_INT <= 28) {
+                    "카메라 및 저장공간 권한이 필요합니다"
+                } else {
+                    "카메라 권한이 필요합니다"
+                },
                 color = Color.White,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                "TopOut이 등반 영상을 촬영할 수 있도록 카메라 권한을 허용해주세요. 마이크 권한이 없어도 영상 촬영은 가능하지만 소리는 저장되지 않습니다.",
+                if (android.os.Build.VERSION.SDK_INT <= 28) {
+                    "TopOut이 등반 영상을 촬영하고 저장할 수 있도록 카메라와 저장공간 권한을 허용해주세요. 마이크 권한이 없어도 영상 촬영은 가능하지만 소리는 저장되지 않습니다."
+                } else {
+                    "TopOut이 등반 영상을 촬영할 수 있도록 카메라 권한을 허용해주세요. 마이크 권한이 없어도 영상 촬영은 가능하지만 소리는 저장되지 않습니다."
+                },
                 modifier = Modifier.padding(top = 12.dp, bottom = 24.dp),
                 color = Color.White.copy(alpha = 0.74f),
                 fontSize = 13.sp,

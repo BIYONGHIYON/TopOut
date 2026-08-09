@@ -20,7 +20,7 @@
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
             android:exported="true"
-            android:screenOrientation="fullSensor"
+            android:screenOrientation="fullUser"
             android:theme="@style/Theme.TopOut.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

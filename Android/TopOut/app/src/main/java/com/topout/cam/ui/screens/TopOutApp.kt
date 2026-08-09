@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.view.OrientationEventListener
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -93,6 +94,10 @@ fun TopOutApp(viewModel: TopOutViewModel) {
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
     val lockCaptureOrientation = state.isBusy ||
         state.stage == CameraStage.SELECT || state.stage == CameraStage.RECORDING
+    // On Android 16 large screens the system may ignore requestedOrientation. Keep the camera
+    // session's capture orientation frozen independently so a window rotation never rebinds or
+    // changes the recording crop while selecting/recording.
+    val cameraIsLandscape = if (lockCaptureOrientation) state.isLandscape else isLandscape
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -106,16 +111,29 @@ fun TopOutApp(viewModel: TopOutViewModel) {
         activity?.requestedOrientation = if (lockCaptureOrientation) {
             ActivityInfo.SCREEN_ORIENTATION_LOCKED
         } else {
-            ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+            ActivityInfo.SCREEN_ORIENTATION_FULL_USER
         }
     }
     DisposableEffect(activity) {
-        onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR }
+        onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER }
     }
 
     LaunchedEffect(isLandscape) { viewModel.updateOrientation(isLandscape) }
-    LaunchedEffect(configuration.orientation, previewView) {
-        previewView?.display?.rotation?.let(viewModel::updateTargetRotation)
+    DisposableEffect(previewView, lockCaptureOrientation) {
+        val listener = object : OrientationEventListener(context) {
+            private var lastRotation: Int? = null
+            override fun onOrientationChanged(orientation: Int) {
+                if (lockCaptureOrientation) return
+                val rotation = previewView?.display?.rotation ?: return
+                if (rotation != lastRotation) {
+                    lastRotation = rotation
+                    viewModel.updateTargetRotation(rotation)
+                }
+            }
+        }
+        if (!lockCaptureOrientation && listener.canDetectOrientation()) listener.enable()
+        previewView?.display?.rotation?.takeIf { !lockCaptureOrientation }?.let(viewModel::updateTargetRotation)
+        onDispose { listener.disable() }
     }
 
     if (state.stage == CameraStage.REVIEW && state.recordedVideo != null) {
@@ -131,14 +149,15 @@ fun TopOutApp(viewModel: TopOutViewModel) {
     } else {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             if (!state.launchVisible) {
-                val activeRatio = state.settings.aspectRatio.widthOverHeight(isLandscape)
+                val activeRatio = state.settings.aspectRatio.widthOverHeight(cameraIsLandscape)
             AspectFrame(widthOverHeight = activeRatio, modifier = Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxSize()) {
                     key(
                         state.settings.aspectRatio,
                         state.settings.resolution,
                         state.settings.frameRate,
-                        isLandscape
+                        cameraIsLandscape,
+                        state.cameraTargetRotation
                     ) {
                         CameraPreview(
                             lifecycleOwner = lifecycleOwner,
@@ -162,16 +181,13 @@ fun TopOutApp(viewModel: TopOutViewModel) {
 
 
                     if (state.stage == CameraStage.SELECT) {
-                        state.frozenFrame?.let { frame ->
-                            SelectionEditor(
-                                bitmap = frame,
-                                matLine = state.matLine,
-                                holdMask = state.holdMask,
-                                onTapHold = viewModel::onHoldTapped,
-                                onMatPointChanged = viewModel::updateMatPoint,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
+                        SelectionEditor(
+                            matLine = state.matLine,
+                            holdMask = state.holdMask,
+                            onTapHold = viewModel::onHoldTapped,
+                            onMatPointChanged = viewModel::updateMatPoint,
+                            modifier = Modifier.fillMaxSize()
+                        )
                     }
 
                     if (
@@ -181,6 +197,16 @@ fun TopOutApp(viewModel: TopOutViewModel) {
                         state.settings.topHoldMaskingEnabled
                     ) {
                         state.holdMask?.let { HoldMaskOverlay(it, Modifier.fillMaxSize()) }
+                    }
+
+                    if (
+                        state.stage == CameraStage.RECORDING &&
+                        state.recordingState == RecordingState.RECORDING &&
+                        state.livePreviewEnabled &&
+                        state.settings.autoClipDetectionEnabled &&
+                        state.matLine.size >= 2
+                    ) {
+                        RecordingMatLineOverlay(state.matLine, Modifier.fillMaxSize())
                     }
                 }
             }
@@ -222,11 +248,12 @@ fun TopOutApp(viewModel: TopOutViewModel) {
                     showTip = state.settings.helpEnabled,
                     isLandscape = isLandscape,
                     readyTitle = TopOutCopy.readyButtonTitle(state.settings),
-                    enabled = !state.isBusy,
+                    enabled = !state.isBusy && !state.lensSwitchInProgress,
                     onReady = {
                         viewModel.onReady(
                             frameProvider = { previewView?.bitmap },
-                            isLandscape = isLandscape
+                            isLandscape = cameraIsLandscape,
+                            targetRotation = previewView?.display?.rotation ?: state.cameraTargetRotation
                         )
                     },
                     onSettings = viewModel::showSettings,
@@ -288,6 +315,31 @@ fun TopOutApp(viewModel: TopOutViewModel) {
             title = { Text("TopOut") },
             text = { Text(message) },
             confirmButton = { Button(onClick = viewModel::clearError) { Text("확인") } }
+        )
+    }
+}
+
+
+@Composable
+private fun RecordingMatLineOverlay(matLine: List<Offset>, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        if (matLine.size < 2) return@Canvas
+        val path = Path()
+        matLine.forEachIndexed { index, point ->
+            val x = point.x.coerceIn(0f, 1f) * size.width
+            val y = point.y.coerceIn(0f, 1f) * size.height
+            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        // Read-only guide: no endpoint handles and lower opacity so it does not distract from the climb.
+        drawPath(
+            path,
+            Color.Black.copy(alpha = 0.28f),
+            style = Stroke(width = 5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
+        drawPath(
+            path,
+            Color(0xFF168BFF).copy(alpha = 0.48f),
+            style = Stroke(width = 3f, cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
     }
 }

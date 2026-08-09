@@ -68,4 +68,17 @@ class LensZoomGestureControllerTest {
         assertEquals(1f, controller.update(1f), 0.0001f)
         assertEquals(1.1f, controller.update(1.1f), 0.0001f)
     }
+
+    @Test
+    fun seamlessLogicalCameraDoesNotCreateArtificialOneXBoundary() {
+        val controller = LensZoomGestureController(
+            minimumZoom = 0.5f,
+            maximumZoom = 8f,
+            lensAnchors = listOf(0.5f)
+        )
+
+        controller.begin(0.5f)
+        assertEquals(1f, controller.update(2f), 0.0001f)
+        assertEquals(2f, controller.update(2f), 0.0001f)
+    }
 }

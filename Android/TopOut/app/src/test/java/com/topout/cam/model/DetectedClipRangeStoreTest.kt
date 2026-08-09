@@ -128,4 +128,12 @@ class DetectedClipRangeStoreTest {
         val result = ClipRangeNormalizer.normalize(input, recordingDurationSeconds = 120.0)
         assertEquals(12, result.size)
     }
+    @Test
+    fun sameStartStopSnapshotAndLateFinishAreCoalesced() {
+        val store = DetectedClipRangeStore()
+        store.append(ClipRange(10.0, 18.2))
+        store.append(ClipRange(10.02, 18.7))
+        assertEquals(listOf(ClipRange(10.0, 18.7)), store.snapshot())
+    }
+
 }

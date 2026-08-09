@@ -6,6 +6,7 @@ extension HoldVC {
     func setupUI() {
         view.addSubview(camView)
         view.addSubview(overlayView)
+        view.addSubview(recordingMatLineView)
         view.addSubview(powerSavingOverlayView)
         powerSavingOverlayView.addSubview(powerSavingCountdownLabel)
         powerSavingOverlayView.addSubview(powerSavingRecordButton)
@@ -32,6 +33,10 @@ extension HoldVC {
         view.addSubview(launchImageView)
 
         scrollView.delegate = self
+        // The selection surface is a transparent overlay over the live camera. Once Ready is
+        // pressed the camera FOV is intentionally frozen, so the overlay itself never scrolls/zooms.
+        scrollView.isScrollEnabled = false
+        scrollView.pinchGestureRecognizer?.isEnabled = false
         matLineView.onChange = { [weak self] points in
             self?.matLinePoints = points
         }
@@ -76,6 +81,7 @@ extension HoldVC {
         previewLayer?.frame = camView.bounds
         overlayView.frame = activeFrame
         overlayView.contentMode = .scaleAspectFill
+        recordingMatLineView.frame = activeFrame
         launchImageView.frame = bounds
         powerSavingOverlayView.frame = bounds
         layoutPowerSavingUI(in: bounds)
@@ -109,6 +115,7 @@ extension HoldVC {
         }
 
         view.bringSubviewToFront(overlayView)
+        view.bringSubviewToFront(recordingMatLineView)
         view.bringSubviewToFront(powerSavingOverlayView)
         view.bringSubviewToFront(camHint)
         view.bringSubviewToFront(previewTipLabel)
@@ -378,6 +385,14 @@ extension HoldVC {
         zoomLabel.text = zoomDisplayText()
         camHint.isHidden = false
         selectView.isHidden = true
+        recordingMatLineView.isHidden = !(
+            isRecording &&
+            recordingElapsedStartDate != nil &&
+            isDeveloperModeEnabled &&
+            isAutoClipDetectionEnabled &&
+            matLinePoints.count >= 2
+        )
+        if !recordingMatLineView.isHidden { recordingMatLineView.setPoints(matLinePoints, notify: false) }
         powerSavingOverlayView.isHidden = !usesPowerSavingScreen
 
         let hasRecordingStarted = recordingElapsedStartDate != nil
@@ -614,7 +629,7 @@ extension HoldVC {
         }
     }
 
-    func showSelectUI(with image: UIImage) {
+    func showSelectUI(with image: UIImage?) {
         clearSelectionCache(clearPending: true)
 
         mode = .select
@@ -623,19 +638,18 @@ extension HoldVC {
         pendingOverlay = nil
         pendingTopBox = nil
 
-        imgView.image = image
+        // Keep the Ready-time frame only as the MobileSAM mat-analysis source. The user always
+        // edits against the live camera preview, so movement after Ready is immediately visible.
+        imgView.image = nil
         selectOverlayView.image = nil
 
-        if requiresTopHoldSelection {
-            pixels = PixelMap(image: image)
-            emb = nil
-        } else {
-            pixels = nil
-            emb = nil
-        }
+        // The Ready-time frame is used only for mat detection. Hold selection builds a fresh
+        // PixelMap/embedding from the frame captured at the exact tap moment.
+        pixels = nil
+        emb = nil
 
         let boundaryRequestID = selectionRequestID
-        if isAutoClipDetectionEnabled {
+        if isAutoClipDetectionEnabled, let image {
             // 추론 전 75% 기본선을 먼저 표시하면 완료 시 선이 순간 이동해 보입니다.
             // 추론 중에는 선을 숨기고, 최종 예측 또는 fallback을 한 번만 표시합니다.
             matLinePoints = []
@@ -666,8 +680,10 @@ extension HoldVC {
 
                 if self.requiresTopHoldSelection {
                     self.selectHint.text = "탑홀드를 탭하세요 · 파란 점으로 매트 경계를 보정하세요"
-                    self.selectTipLabel.text = "Tip. 작은 홀드는 확대해서 선택할 수 있어요"
-                    self.warmUpEmbedding(for: image)
+                    self.selectTipLabel.text = "Tip. 준비 완료 후에는 촬영 배율이 고정됩니다"
+                    // Do not cache the Ready-time embedding for hold selection. Each hold tap
+                    // captures a fresh live frame while keeping the Ready-time camera FOV fixed.
+                    self.emb = nil
                 } else {
                     self.selectHint.text = "파란 점으로 매트 경계를 보정한 뒤 녹화 시작을 눌러주세요"
                     self.selectTipLabel.text = "Tip. 파란 점은 위아래로 움직일 수 있어요"
@@ -679,13 +695,15 @@ extension HoldVC {
             matLineView.clear()
             matLineView.isHidden = true
             selectHint.text = "탑홀드를 탭하세요"
-            selectTipLabel.text = "Tip. 작은 홀드는 확대해서 선택할 수 있어요"
+            selectTipLabel.text = "Tip. 준비 완료 후에는 촬영 배율이 고정됩니다"
             recordBtn.isEnabled = false
         }
         resetZoom()
 
-        camView.isHidden = true
+        camView.isHidden = false
         overlayView.isHidden = true
+        recordingMatLineView.isHidden = true
+        // Ready freezes the chosen camera FOV until recording finishes or the user retakes setup.
         zoomLabel.isHidden = true
         camHint.isHidden = true
         previewTipLabel.isHidden = true
@@ -702,9 +720,6 @@ extension HoldVC {
         }
         view.setNeedsLayout()
 
-        if requiresTopHoldSelection && !isAutoClipDetectionEnabled {
-            warmUpEmbedding(for: image)
-        }
     }
 
     func showCameraDeniedMessage() {

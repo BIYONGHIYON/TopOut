@@ -48,10 +48,22 @@ extension HoldVC {
     func appendDetectedClipRange(_ range: ClipRange) {
         guard CMTimeCompare(range.endPTS, range.startPTS) > 0 else { return }
 
-        if let last = clipTimes.completedRanges.last {
-            let sameStart = abs(CMTimeGetSeconds(last.startPTS - range.startPTS)) < 0.05
-            let sameEnd = abs(CMTimeGetSeconds(last.endPTS - range.endPTS)) < 0.05
-            if sameStart && sameEnd { return }
+        if let lastIndex = clipTimes.completedRanges.indices.last {
+            let last = clipTimes.completedRanges[lastIndex]
+            let sameStart = abs(CMTimeGetSeconds(last.startPTS - range.startPTS)) < 0.10
+            if sameStart {
+                // Manual/automatic stop can snapshot the currently open range just before a
+                // queued FINISH event arrives. Both ranges describe the same climb and share the
+                // same start, so retain the later end instead of showing duplicate review clips.
+                let laterEnd = CMTimeCompare(last.endPTS, range.endPTS) >= 0
+                    ? last.endPTS
+                    : range.endPTS
+                clipTimes.completedRanges[lastIndex] = ClipRange(
+                    startPTS: last.startPTS,
+                    endPTS: laterEnd
+                )
+                return
+            }
         }
 
         // Keep every detected range until recording finalization. Isolated short false positives

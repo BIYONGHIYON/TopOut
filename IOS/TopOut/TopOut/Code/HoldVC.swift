@@ -167,9 +167,9 @@ final class HoldVC: UIViewController {
 
     let scrollView: UIScrollView = {
         let view = UIScrollView()
-        view.backgroundColor = .black
-        view.minimumZoomScale = Cfg.minZoom
-        view.maximumZoomScale = Cfg.maxZoom
+        view.backgroundColor = .clear
+        view.minimumZoomScale = 1
+        view.maximumZoomScale = 1
         view.bouncesZoom = true
         view.showsHorizontalScrollIndicator = false
         view.showsVerticalScrollIndicator = false
@@ -195,6 +195,15 @@ final class HoldVC: UIViewController {
 
     let matLineView = MatLineView()
 
+    /// Read-only mat guide shown over the live recording preview when automatic clip detection is enabled.
+    let recordingMatLineView: MatLineView = {
+        let view = MatLineView()
+        view.showsHandles = false
+        view.lineAlpha = 0.48
+        view.isHidden = true
+        return view
+    }()
+
     let selectHint: UILabel = {
         let label = UILabel()
         label.text = "탑홀드를 탭하세요 · 파란 점으로 매트 경계를 보정하세요"
@@ -212,7 +221,7 @@ final class HoldVC: UIViewController {
 
     let selectTipLabel: UILabel = {
         let label = UILabel()
-        label.text = "Tip. 작은 홀드는 확대해서 선택할 수 있어요"
+        label.text = "Tip. 준비 완료 후에는 촬영 배율이 고정됩니다"
         label.textColor = UIColor.white.withAlphaComponent(0.92)
         label.textAlignment = .center
         label.font = .systemFont(ofSize: 13, weight: .medium)

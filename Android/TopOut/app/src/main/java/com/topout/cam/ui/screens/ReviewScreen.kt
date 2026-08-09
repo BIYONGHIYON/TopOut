@@ -109,10 +109,16 @@ fun ReviewScreen(
     }
     var stopNotice by remember(video.uri) { mutableStateOf(video.automaticStopNotice) }
     var pendingDiscardAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var pendingDiscardMessage by remember { mutableStateOf("") }
     var playbackErrorMessage by remember(video.uri) { mutableStateOf<String?>(null) }
 
     BackHandler(enabled = !saving) {
-        if (settings.helpEnabled) pendingDiscardAction = onClose else onClose()
+        if (settings.helpEnabled) {
+            pendingDiscardMessage = "저장하지 않은 영상이 삭제됩니다."
+            pendingDiscardAction = onClose
+        } else {
+            onClose()
+        }
     }
 
     DisposableEffect(player) {
@@ -325,10 +331,20 @@ fun ReviewScreen(
                 } else player.pause()
             }
             val requestRetake = {
-                if (settings.helpEnabled) pendingDiscardAction = onRetake else onRetake()
+                if (settings.helpEnabled) {
+                    pendingDiscardMessage = "기존의 매트경계 위치를 유지하여 다시 촬영합니다. 저장하지 않은 영상이 삭제됩니다."
+                    pendingDiscardAction = onRetake
+                } else {
+                    onRetake()
+                }
             }
             val requestClose = {
-                if (settings.helpEnabled) pendingDiscardAction = onClose else onClose()
+                if (settings.helpEnabled) {
+                    pendingDiscardMessage = "저장하지 않은 영상이 삭제됩니다."
+                    pendingDiscardAction = onClose
+                } else {
+                    onClose()
+                }
             }
 
             if (isLandscape) {
@@ -401,12 +417,18 @@ fun ReviewScreen(
 
     pendingDiscardAction?.let { action ->
         AlertDialog(
-            onDismissRequest = { pendingDiscardAction = null },
+            onDismissRequest = {
+                pendingDiscardAction = null
+                pendingDiscardMessage = ""
+            },
             title = null,
-            text = { Text("저장하지 않은 영상이 삭제됩니다") },
+            text = { Text(pendingDiscardMessage) },
             dismissButton = {
                 Button(
-                    onClick = { pendingDiscardAction = null },
+                    onClick = {
+                        pendingDiscardAction = null
+                        pendingDiscardMessage = ""
+                    },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = TopOutColors.GrayButton,
                         contentColor = Color.White
@@ -417,6 +439,7 @@ fun ReviewScreen(
                 Button(
                     onClick = {
                         pendingDiscardAction = null
+                        pendingDiscardMessage = ""
                         action()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = TopOutColors.Red)

@@ -11,9 +11,11 @@ extension HoldVC: UIScrollViewDelegate {
     }
 
     func resetZoom() {
-        scrollView.minimumZoomScale = Cfg.minZoom
-        scrollView.maximumZoomScale = Cfg.maxZoom
-        scrollView.setZoomScale(Cfg.minZoom, animated: false)
+        // Selection is drawn over a live camera preview. Keep the overlay at 1x so normalized
+        // mat/hold coordinates always match the fresh frame captured for MobileSAM.
+        scrollView.minimumZoomScale = 1
+        scrollView.maximumZoomScale = 1
+        scrollView.setZoomScale(1, animated: false)
         scrollView.contentOffset = .zero
         updateZoomInset()
     }

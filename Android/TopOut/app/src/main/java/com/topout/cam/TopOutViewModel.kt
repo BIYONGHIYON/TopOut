@@ -64,6 +64,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private val completedRanges = DetectedClipRangeStore()
     private var activeRecordingSettings: AppSettings? = null
     private var activeRecordingLandscape = false
+    private var activeRecordingTargetRotation = 0
     private var recordingAnalysisAvailable = true
     private var selectionRequestId = 0L
 
@@ -139,7 +140,18 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         cameraBindingJob?.cancel()
         cameraBindingJob = viewModelScope.launch {
             runCatching {
-                val state = _uiState.value
+                var state = _uiState.value
+                val captureLocked = state.isBusy ||
+                    state.stage == CameraStage.SELECT || state.stage == CameraStage.RECORDING
+                val targetRotation = if (captureLocked) {
+                    state.cameraTargetRotation
+                } else {
+                    previewView.display?.rotation ?: state.cameraTargetRotation
+                }
+                if (!captureLocked && targetRotation != state.cameraTargetRotation) {
+                    _uiState.update { it.copy(cameraTargetRotation = targetRotation) }
+                    state = _uiState.value
+                }
                 cameraEngine.bind(
                     lifecycleOwner = owner,
                     previewView = previewView,
@@ -147,7 +159,9 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     frameRate = state.settings.frameRate,
                     aspectRatio = state.settings.aspectRatio,
                     isLandscape = state.isLandscape,
-                    analyzer = poseAnalyzer
+                    targetRotation = targetRotation,
+                    analyzer = poseAnalyzer,
+                    requiresAnalysis = state.settings.autoClipDetectionEnabled
                 )
             }.onSuccess { capabilities ->
                 recordingAnalysisAvailable = cameraEngine.isAnalysisAvailable()
@@ -180,9 +194,22 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 // Rebinding intentionally cancels the previous camera job. Cancellation is a
                 // normal control-flow event and must never be surfaced as an app error dialog.
                 if (error is CancellationException) return@onFailure
+                val wasPendingRetake = pendingRetakeRecording
                 pendingRetakeRecording = false
-                _uiState.update {
-                    it.copy(errorMessage = error.localizedMessage ?: "카메라를 시작하지 못했습니다.")
+                _uiState.update { state ->
+                    val recoveryStage = if (wasPendingRetake) {
+                        if (state.settings.requiresTopHoldSelection && state.holdMask != null) {
+                            CameraStage.SELECT
+                        } else {
+                            CameraStage.PREVIEW
+                        }
+                    } else {
+                        state.stage
+                    }
+                    state.copy(
+                        stage = recoveryStage,
+                        errorMessage = error.localizedMessage ?: "카메라를 시작하지 못했습니다."
+                    )
                 }
             }
         }
@@ -190,59 +217,77 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
 
     fun updateOrientation(isLandscape: Boolean) {
         _uiState.update { state ->
-            state.copy(
-                isLandscape = isLandscape,
-                statusText = if (state.stage == CameraStage.PREVIEW) previewGuidance(state.settings) else state.statusText
-            )
+            // Android 16 can ignore requestedOrientation on large screens. Once Ready is pressed,
+            // keep the capture orientation immutable until selection/recording ends so Compose
+            // window changes cannot recreate CameraPreview with a different ViewPort.
+            if (state.isBusy || state.stage in setOf(CameraStage.SELECT, CameraStage.RECORDING)) {
+                state
+            } else {
+                state.copy(
+                    isLandscape = isLandscape,
+                    statusText = if (state.stage == CameraStage.PREVIEW) previewGuidance(state.settings) else state.statusText
+                )
+            }
         }
-        // Orientation changes recreate the keyed PreviewView in TopOutApp. Binding against the
-        // new surface avoids one frame of the previous orientation/aspect leaking through.
     }
 
-    fun updateTargetRotation(rotation: Int) = cameraEngine.updateTargetRotation(rotation)
+    fun updateTargetRotation(rotation: Int) {
+        val state = _uiState.value
+        if (state.isBusy || state.stage in setOf(CameraStage.SELECT, CameraStage.RECORDING)) return
+        _uiState.update { it.copy(cameraTargetRotation = rotation) }
+        cameraEngine.updateTargetRotation(rotation)
+    }
 
     /**
-     * Freezes exactly the camera composition currently visible in PreviewView.
-     *
-     * PreviewView already contains the selected aspect ratio, optical/digital zoom and CameraX
-     * transform. Using a separately converted ImageAnalysis frame here can apply a second crop on
-     * some devices and make the selection image look more zoomed than the live preview.
+     * Ready uses one current camera frame only to establish the automatic mat boundary.
+     * The captured bitmap is never displayed; selection continues over the live PreviewView.
      */
-    fun onReady(frameProvider: () -> Bitmap?, isLandscape: Boolean) {
+    fun onReady(frameProvider: () -> Bitmap?, isLandscape: Boolean, targetRotation: Int) {
         val current = _uiState.value
         if (current.stage != CameraStage.PREVIEW ||
             current.recordingState != RecordingState.IDLE ||
-            current.isBusy
+            current.isBusy ||
+            current.lensSwitchInProgress
         ) return
 
         updateOrientation(isLandscape)
+        // Freeze the exact display rotation used by the ready-time Preview/ViewPort. On Android 16
+        // large displays the window may rotate even while requestedOrientation is ignored.
+        _uiState.update { it.copy(cameraTargetRotation = targetRotation) }
+        cameraEngine.updateTargetRotation(targetRotation)
         val settings = _uiState.value.settings
         if (!settings.requiresTopHoldSelection && !settings.autoClipDetectionEnabled) {
             startRecordingWithoutSelection()
             return
         }
 
-        // iOS leaves the existing camera guidance in place while the current frame is captured.
-        // Only the loading indicator changes during this short transition.
-        _uiState.update { it.copy(isBusy = true, statusText = previewGuidance(settings)) }
+        // When only top-hold selection is enabled there is nothing to freeze at Ready. Enter the
+        // transparent live editor immediately; each hold tap captures its own fresh frame.
+        if (!settings.autoClipDetectionEnabled) {
+            selectionRequestId += 1
+            mobileSam.releaseCachedEmbedding()
+            _uiState.update { state ->
+                state.copy(
+                    stage = CameraStage.SELECT,
+                    frozenFrame = null,
+                    matLine = emptyList(),
+                    holdMask = null,
+                    isBusy = false,
+                    statusText = selectionGuidance(state.settings)
+                )
+            }
+            return
+        }
+
+        // Snapshot the displayed crop immediately at the Ready action. MobileSAM runs later, but
+        // its mat-boundary input represents the composition the user actually confirmed.
+        val readySnapshot = runCatching {
+            frameProvider()?.copy(Bitmap.Config.ARGB_8888, false)
+        }.getOrNull()
+        _uiState.update { it.copy(isBusy = true, statusText = "AI가 매트 경계를 분석하고 있어요") }
 
         viewModelScope.launch {
-            // Let the locked-orientation frame finish rendering, then snapshot PreviewView itself.
-            // This is the only source that is guaranteed to match what the user saw at the instant
-            // Ready was pressed. Keep ImageAnalysis only as a rare fallback when the TextureView
-            // has not produced a bitmap yet.
-            delay(120L)
-            // Use the TextureView-backed PreviewView bitmap as the single source for both the
-            // selection UI and MobileSAM. MobileSAM resizes its input to 1024px internally, so a
-            // separate low-resolution ImageAnalysis snapshot does not reduce inference cost enough
-            // to justify displaying a softer YUV-converted frame or risking a frame-time mismatch.
-            //
-            // ImageAnalysis remains a fallback only for rare devices where PreviewView.bitmap is
-            // temporarily unavailable.
-            val previewSnapshot = runCatching {
-                frameProvider()?.copy(Bitmap.Config.ARGB_8888, false)
-            }.getOrNull()
-            val frame = previewSnapshot
+            val frame = readySnapshot
                 ?: poseAnalyzer.captureNextFrame(TopOutConfig.CaptureMaxLongSide)
 
             if (frame == null || frame.width <= 0 || frame.height <= 0) {
@@ -256,67 +301,97 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
 
-            val mat = if (settings.autoClipDetectionEnabled) {
-                val detected = mobileSam.detectMatBoundary(frame).getOrElse {
-                    listOf(Offset(0.06f, TopOutConfig.MatDefaultY), Offset(0.94f, TopOutConfig.MatDefaultY))
+            val mat = try {
+                mobileSam.detectMatBoundary(frame).getOrElse {
+                    listOf(
+                        Offset(0.06f, TopOutConfig.MatDefaultY),
+                        Offset(0.94f, TopOutConfig.MatDefaultY)
+                    )
                 }
-                detected
-            } else {
-                emptyList()
+            } finally {
+                // The Ready image must not leak into later hold taps. A new embedding is generated
+                // from the frame captured at each tap instead.
+                mobileSam.releaseCachedEmbedding()
+                if (!frame.isRecycled) frame.recycle()
             }
 
             selectionRequestId += 1
             _uiState.update { state ->
                 state.copy(
                     stage = CameraStage.SELECT,
-                    frozenFrame = frame,
+                    frozenFrame = null,
                     matLine = mat,
                     holdMask = null,
                     isBusy = false,
                     statusText = selectionGuidance(state.settings)
                 )
             }
-            // detectMatBoundary already cached the embedding for this exact displayed bitmap. When
-            // automatic mat detection is off, warm it once only if top-hold selection needs SAM.
-            if (settings.requiresTopHoldSelection && !settings.autoClipDetectionEnabled) {
-                viewModelScope.launch { holdSegmenter.warmUp(frame) }
-            }
         }
     }
 
-    fun onHoldTapped(normalizedPoint: Offset, selectionZoom: Float) {
+    fun onHoldTapped(normalizedPoint: Offset) {
         val state = _uiState.value
-        if (state.stage != CameraStage.SELECT || state.isBusy || !state.settings.requiresTopHoldSelection) return
-        val frame = state.frozenFrame ?: return
+        if (state.stage != CameraStage.SELECT ||
+            state.isBusy ||
+            state.lensSwitchInProgress ||
+            !state.settings.requiresTopHoldSelection
+        ) return
+
         val requestId = ++selectionRequestId
-        _uiState.update { it.copy(isBusy = true, statusText = "탑홀드 분석 중...") }
+        _uiState.update {
+            it.copy(
+                holdMask = null,
+                isBusy = true,
+                statusText = "현재 프레임에서 탑홀드 분석 중..."
+            )
+        }
+
         viewModelScope.launch {
-            holdSegmenter.segment(frame, normalizedPoint, selectionZoom)
-                .onSuccess { mask ->
-                    if (requestId != selectionRequestId) return@onSuccess
-                    _uiState.update { currentState ->
-                        if (currentState.stage != CameraStage.SELECT) currentState
-                        else currentState.copy(
-                            holdMask = mask,
-                            isBusy = false,
-                            statusText = "선택 완료 · 다시 탭해서 수정하거나 녹화 시작을 눌러주세요"
-                        )
+            // PreviewView.bitmap is the exact displayed crop including the current physical lens and
+            // camera zoom. ImageAnalysis is retained only as a fallback for rare TextureView misses.
+            val previewSnapshot = runCatching {
+                latestPreviewView?.bitmap?.copy(Bitmap.Config.ARGB_8888, false)
+            }.getOrNull()
+            val frame = previewSnapshot
+                ?: poseAnalyzer.captureNextFrame(TopOutConfig.CaptureMaxLongSide)
+
+            if (frame == null || frame.width <= 0 || frame.height <= 0) {
+                frame?.recycle()
+                if (requestId == selectionRequestId) {
+                    _uiState.update {
+                        it.copy(isBusy = false, statusText = "현재 카메라 프레임을 캡처하지 못했습니다. 다시 탭해주세요")
                     }
                 }
-                .onFailure {
-                    if (requestId != selectionRequestId) return@onFailure
-                    _uiState.update { currentState ->
-                        if (currentState.stage != CameraStage.SELECT) currentState.copy(isBusy = false)
-                        else currentState.copy(
-                            isBusy = false,
-                            statusText = if (currentState.holdMask == null) {
-                                "선택 실패 · 다시 탭해보세요"
-                            } else {
-                                "선택 실패 · 기존 선택을 유지합니다"
-                            }
-                        )
+                return@launch
+            }
+
+            try {
+                holdSegmenter.segment(frame, normalizedPoint, 1f)
+                    .onSuccess { mask ->
+                        if (requestId != selectionRequestId) return@onSuccess
+                        _uiState.update { currentState ->
+                            if (currentState.stage != CameraStage.SELECT) currentState
+                            else currentState.copy(
+                                holdMask = mask,
+                                isBusy = false,
+                                statusText = "선택 완료 · 다시 탭해서 수정하거나 녹화 시작을 눌러주세요"
+                            )
+                        }
                     }
-                }
+                    .onFailure { error ->
+                        if (requestId != selectionRequestId) return@onFailure
+                        _uiState.update {
+                            it.copy(
+                                isBusy = false,
+                                statusText = "선택 실패 · 다시 탭해보세요",
+                                errorMessage = error.localizedMessage
+                            )
+                        }
+                    }
+            } finally {
+                mobileSam.releaseCachedEmbedding()
+                if (!frame.isRecycled) frame.recycle()
+            }
         }
     }
 
@@ -334,12 +409,16 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setZoom(zoom: Float) {
         val currentState = _uiState.value
-        // CameraEngine freezes the zoom at the optical boundary while another physical lens is
-        // loading. Ignore UI updates too, so the displayed ratio cannot run ahead of the camera.
-        if (currentState.lensSwitchInProgress) return
+        // Camera composition is editable only before Ready. Selection and recording must keep the
+        // exact lens/zoom FOV used to establish the mat boundary and subsequent hold masks.
+        if (currentState.stage != CameraStage.PREVIEW ||
+            currentState.recordingState != RecordingState.IDLE ||
+            currentState.isBusy ||
+            currentState.lensSwitchInProgress
+        ) return
         val capabilities = currentState.capabilities
         val value = zoom.coerceIn(capabilities.minZoomRatio, capabilities.maxZoomRatio)
-        _uiState.update { it.copy(zoomFactor = value) }
+        _uiState.update { state -> state.copy(zoomFactor = value) }
         cameraEngine.setZoom(value)
     }
 
@@ -377,6 +456,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         activeDetectedStart = null
         activeRecordingSettings = settings
         activeRecordingLandscape = state.isLandscape
+        activeRecordingTargetRotation = state.cameraTargetRotation
         recordingAnalysisAvailable = cameraEngine.isAnalysisAvailable()
         if (settings.autoClipDetectionEnabled && !recordingAnalysisAvailable) {
             setError("이 기기에서는 현재 촬영 설정으로 자동 구간 탐지를 사용할 수 없습니다. 해상도 또는 프레임을 낮춘 뒤 다시 시도해주세요.")
@@ -399,8 +479,8 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             poseAnalyzer.stop()
         }
 
-        // The mat line and optional hold mask are now self-contained. Drop the frozen RGB frame
-        // and its MobileSAM embedding before the long recording begins to reduce steady-state RAM.
+        // The mat line and optional hold mask are self-contained. Drop any transient MobileSAM
+        // embedding before the long recording begins to reduce steady-state RAM.
         mobileSam.releaseCachedEmbedding()
         _uiState.update {
             it.copy(
@@ -599,15 +679,22 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         pendingRetakeRecording = true
         _uiState.update { state ->
             state.copy(
-                stage = if (state.settings.requiresTopHoldSelection) CameraStage.SELECT else CameraStage.PREVIEW,
+                // Leave Review directly into a capture-locked stage. Android 16 may ignore
+                // requestedOrientation on large displays; using RECORDING here keeps AspectFrame,
+                // CameraPreview and the preserved normalized mat/hold coordinates on the exact
+                // orientation/FOV of the previous take while the camera session is rebound.
+                stage = CameraStage.RECORDING,
                 recordingState = RecordingState.IDLE,
                 recordingCountdown = null,
                 recordedVideo = null,
                 detectedRanges = emptyList(),
                 savingStatus = null,
-                statusText = if (state.settings.requiresTopHoldSelection) {
-                    "선택 완료 · 녹화를 다시 준비합니다"
-                } else previewGuidance(state.settings)
+                // Review may rotate independently. Retake must restore the exact orientation used
+                // for the saved mat/hold normalized coordinates, otherwise the preserved boundary
+                // would be drawn over a different camera crop.
+                isLandscape = activeRecordingLandscape,
+                cameraTargetRotation = activeRecordingTargetRotation,
+                statusText = "기존 매트 경계를 유지하여 녹화를 다시 준비합니다"
             )
         }
         // The camera composable is recreated on leaving review; bindCamera starts the retake.

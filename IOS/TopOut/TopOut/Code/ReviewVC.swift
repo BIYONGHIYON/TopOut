@@ -852,18 +852,25 @@ final class ReviewVC: UIViewController {
     }
 
     @objc private func onTapRetake() {
-        confirmDiscardUnsavedClipIfNeeded { [weak self] in
+        confirmDiscardUnsavedClipIfNeeded(
+            message: "기존의 매트경계 위치를 유지하여 다시 촬영합니다.\n저장하지 않은 영상이 삭제됩니다."
+        ) { [weak self] in
             self?.dismissForRetake()
         }
     }
 
     @objc private func onTapClose() {
-        confirmDiscardUnsavedClipIfNeeded { [weak self] in
+        confirmDiscardUnsavedClipIfNeeded(
+            message: "저장하지 않은 영상이 삭제됩니다."
+        ) { [weak self] in
             self?.dismissForClose()
         }
     }
 
-    private func confirmDiscardUnsavedClipIfNeeded(_ confirmedAction: @escaping () -> Void) {
+    private func confirmDiscardUnsavedClipIfNeeded(
+        message warningMessage: String,
+        _ confirmedAction: @escaping () -> Void
+    ) {
         pausePlayback()
 
         guard helpEnabled else {
@@ -871,7 +878,6 @@ final class ReviewVC: UIViewController {
             return
         }
 
-        let warningMessage = "저장하지 않은 영상이 삭제됩니다"
         let alert = UIAlertController(
             title: nil,
             message: warningMessage,

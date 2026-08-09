@@ -3,6 +3,10 @@ import UIKit
 final class MatLineView: UIView {
     private(set) var points: [CGPoint] = [] // normalized, 0...1
     var onChange: (([CGPoint]) -> Void)?
+    /// Selection mode shows draggable endpoint handles; recording preview uses the same normalized line without handles.
+    var showsHandles = true { didSet { isUserInteractionEnabled = showsHandles; setNeedsDisplay() } }
+    /// Keeps the passive recording guide visible without overpowering the climbing video.
+    var lineAlpha: CGFloat = 1.0 { didSet { setNeedsDisplay() } }
 
     private var activeIndex: Int?
     private lazy var pan = UIPanGestureRecognizer(target: self, action: #selector(onPan(_:)))
@@ -38,7 +42,7 @@ final class MatLineView: UIView {
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
         // 파란 보정점을 잡을 때만 터치를 가로채고,
         // 그 외 영역은 imgView의 홀드 선택 tap이 받을 수 있게 둡니다.
-        nearestHandle(to: point, maxDist: Cfg.matHitRadius) != nil
+        showsHandles && nearestHandle(to: point, maxDist: Cfg.matHitRadius) != nil
     }
 
     override func draw(_ rect: CGRect) {
@@ -51,14 +55,14 @@ final class MatLineView: UIView {
         ctx.setLineJoin(.round)
 
         // 얇은 어두운 stroke를 먼저 깔아 밝은 매트/벽에서도 선이 보이게 합니다.
-        ctx.setStrokeColor(UIColor.black.withAlphaComponent(0.55).cgColor)
+        ctx.setStrokeColor(UIColor.black.withAlphaComponent(0.55 * lineAlpha).cgColor)
         ctx.setLineWidth(Cfg.matLineWidth + 2)
         ctx.beginPath()
         ctx.move(to: viewPts[0])
         for p in viewPts.dropFirst() { ctx.addLine(to: p) }
         ctx.strokePath()
 
-        ctx.setStrokeColor(UIColor.systemBlue.cgColor)
+        ctx.setStrokeColor(UIColor.systemBlue.withAlphaComponent(lineAlpha).cgColor)
         ctx.setLineWidth(Cfg.matLineWidth)
         ctx.beginPath()
         ctx.move(to: viewPts[0])
@@ -67,8 +71,10 @@ final class MatLineView: UIView {
 
         ctx.restoreGState()
 
-        for (i, p) in viewPts.enumerated() {
-            drawHandle(at: p, isActive: i == activeIndex)
+        if showsHandles {
+            for (i, p) in viewPts.enumerated() {
+                drawHandle(at: p, isActive: i == activeIndex)
+            }
         }
     }
 

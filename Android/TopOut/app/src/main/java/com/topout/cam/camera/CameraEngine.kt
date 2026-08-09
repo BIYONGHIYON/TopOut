@@ -5,25 +5,21 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
-import android.hardware.camera2.CaptureRequest
 import android.os.Build
 import android.media.MediaRecorder
 import android.util.Range
 import android.util.Rational
 import android.util.Size
-import android.view.Surface
 import androidx.annotation.OptIn
-import androidx.camera.camera2.interop.Camera2CameraControl
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.Camera2Interop
-import androidx.camera.camera2.interop.CaptureRequestOptions
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.DynamicRange
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
-import androidx.camera.core.UseCaseGroup
+import androidx.camera.core.SessionConfig
 import androidx.camera.core.ViewPort
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
@@ -93,6 +89,7 @@ class CameraEngine(private val context: Context) {
         val aspectRatio: RecordingAspectRatio,
         val isLandscape: Boolean,
         val analyzer: ImageAnalysis.Analyzer,
+        val requiresAnalysis: Boolean,
         val viewPort: ViewPort
     )
 
@@ -126,9 +123,20 @@ class CameraEngine(private val context: Context) {
     private var effectiveLensZoomRatios = listOf(1f)
     private var lastSubmittedZoom = Float.NaN
 
-    /** Camera IDs and capabilities are stable for the process lifetime. */
+    private data class ExactFpsSessionKey(
+        val cameraId: String,
+        val resolution: RecordingResolution,
+        val aspectRatio: RecordingAspectRatio,
+        val isLandscape: Boolean,
+        val requiresAnalysis: Boolean
+    )
+
+    /** Camera IDs are stable for the process lifetime; hardware capabilities are lens-specific. */
     private var lensDiscoveryComplete = false
-    private var cachedCapabilities: CameraCapabilities? = null
+    private val cachedCapabilitiesByLens = mutableMapOf<String, CameraCapabilities>()
+
+    /** Exact 60-fps support depends on the full Preview + VideoCapture (+ Analysis) session. */
+    private val unsupportedExact60Sessions = mutableSetOf<ExactFpsSessionKey>()
 
     var onRecordingStarted: (() -> Unit)? = null
     var onRecordingProgress: ((Double) -> Unit)? = null
@@ -180,53 +188,86 @@ class CameraEngine(private val context: Context) {
         .map { longSide -> analysisTargetSize(aspectRatio, isLandscape, longSide) }
         .distinct()
 
-    /** The measured PreviewView is the frame source of truth; the ratio fallback is only for startup. */
+    /** Recomputes the public zoom range and only exposes anchors that actually switch cameras. */
+    private fun updateEffectiveZoomRange() {
+        if (rearLensProfiles.isEmpty()) {
+            effectiveMinZoom = 1f
+            effectiveMaxZoom = TopOutConfig.CameraMaxZoom
+            effectiveLensZoomRatios = listOf(effectiveMinZoom)
+            return
+        }
+
+        effectiveMinZoom = rearLensProfiles.minOf { profile ->
+            profile.anchorRatio * profile.nativeMinZoom
+        }.coerceAtLeast(TopOutConfig.MinZoom)
+
+        // The first profile owns everything below its optical anchor. If that profile is a logical
+        // camera with native 0.5x support, 1.0x is not a camera-switch boundary and must not force
+        // the user to release/re-pinch there. Remaining profile anchors are real rebind points.
+        effectiveLensZoomRatios = buildList {
+            add(effectiveMinZoom)
+            rearLensProfiles.drop(1).forEach { add(it.anchorRatio) }
+        }.distinct().sorted()
+
+        val lastLens = rearLensProfiles.last()
+        effectiveMaxZoom = min(
+            TopOutConfig.CameraMaxZoom,
+            lastLens.anchorRatio * lastLens.nativeMaxZoom
+        ).coerceAtLeast(effectiveMinZoom)
+    }
+
+    /**
+     * Use PreviewView's measured ViewPort while its display rotation matches the capture session.
+     * On an Android 16 large-screen retake the window may have rotated in Review even though we
+     * intentionally restore the previous take's targetRotation; in that case PreviewView.viewPort
+     * belongs to the new window rotation, so rebuild the same aspect crop with the frozen rotation.
+     */
     private fun previewViewPort(
         previewView: PreviewView,
         aspectRatio: RecordingAspectRatio,
         isLandscape: Boolean,
         targetRotation: Int
-    ): ViewPort = previewView.viewPort
-        ?: selectedFrameViewPort(aspectRatio, isLandscape, targetRotation)
+    ): ViewPort {
+        val displayRotation = previewView.display?.rotation
+        return if (displayRotation == null || displayRotation == targetRotation) {
+            previewView.viewPort
+                ?: selectedFrameViewPort(aspectRatio, isLandscape, targetRotation)
+        } else {
+            selectedFrameViewPort(aspectRatio, isLandscape, targetRotation)
+        }
+    }
 
     /**
      * Binds one long-lived WYSIWYG session. Recording never tears this session down, so the
      * selected lens, zoom and crop cannot change between the preview and the first encoded frame.
      */
+    private data class BoundUnifiedSession(
+        val camera: Camera,
+        val frameRate: RecordingFrameRate
+    )
+
+    /**
+     * Binds Preview + VideoCapture + optional ImageAnalysis as one CameraX SessionConfig.
+     * CameraX 1.5+ can report frame-rate ranges guaranteed for this exact use-case combination.
+     * A requested 60 fps session is accepted only when the exact 60..60 range is guaranteed;
+     * otherwise the same lens/session falls back to 30 fps instead of silently recording at 30.
+     */
     private fun bindUnifiedSession(
         cameraProvider: ProcessCameraProvider,
         config: CameraSessionConfig,
         profile: RearLensProfile
-    ): Camera {
+    ): BoundUnifiedSession {
         val quality = when (config.resolution) {
             RecordingResolution.FHD -> Quality.FHD
             RecordingResolution.UHD -> Quality.UHD
         }
-        val recorder = Recorder.Builder()
-            .setQualitySelector(QualitySelector.from(quality))
-            .setTargetVideoEncodingBitRate(
-                config.resolution.estimatedBitrate(config.frameRate, config.aspectRatio).toInt()
-            )
-            .build()
-        val captureBuilder = VideoCapture.Builder(recorder)
-            .setTargetRotation(config.targetRotation)
-            .setTargetFrameRate(Range(config.frameRate.fps, config.frameRate.fps))
-        val previewBuilder = Preview.Builder()
-            .setTargetRotation(config.targetRotation)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            profile.physicalCameraId?.let { physicalId ->
-                Camera2Interop.Extender(captureBuilder).setPhysicalCameraId(physicalId)
-                Camera2Interop.Extender(previewBuilder).setPhysicalCameraId(physicalId)
-            }
-        }
-        val capture = captureBuilder.build()
-        // Keep Preview as part of the unified CameraX session, but allow its SurfaceProvider to
-        // be detached during recording. VideoCapture and ImageAnalysis stay bound and continue
-        // working while CameraX stops producing the display-only preview stream.
-        val preview = previewBuilder.build().also { useCase ->
-            useCase.setSurfaceProvider(config.previewView.surfaceProvider)
-        }
-        previewRenderingEnabled = true
+
+        data class Attempt(
+            val camera: Camera,
+            val preview: Preview,
+            val capture: VideoCapture<Recorder>,
+            val analysis: ImageAnalysis?
+        )
 
         fun newAnalysis(targetSize: Size): ImageAnalysis {
             val selector = ResolutionSelector.Builder()
@@ -249,19 +290,71 @@ class CameraEngine(private val context: Context) {
             return builder.build().also { it.setAnalyzer(analysisExecutor, config.analyzer) }
         }
 
-        fun tryBind(analysis: ImageAnalysis?): Camera? {
-            cameraProvider.unbindAll()
-            val groupBuilder = UseCaseGroup.Builder()
+        fun tryBind(frameRate: RecordingFrameRate, targetSize: Size?): Attempt? {
+            val recorder = Recorder.Builder()
+                .setQualitySelector(QualitySelector.from(quality))
+                .setTargetVideoEncodingBitRate(
+                    config.resolution.estimatedBitrate(frameRate, config.aspectRatio).toInt()
+                )
+                .build()
+            val captureBuilder = VideoCapture.Builder(recorder)
+                .setTargetRotation(config.targetRotation)
+            val previewBuilder = Preview.Builder()
+                .setTargetRotation(config.targetRotation)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                profile.physicalCameraId?.let { physicalId ->
+                    Camera2Interop.Extender(captureBuilder).setPhysicalCameraId(physicalId)
+                    Camera2Interop.Extender(previewBuilder).setPhysicalCameraId(physicalId)
+                }
+            }
+
+            val capture = captureBuilder.build()
+            val preview = previewBuilder.build().also { useCase ->
+                useCase.setSurfaceProvider(config.previewView.surfaceProvider)
+            }
+            val analysis = targetSize?.let(::newAnalysis)
+            val useCases = buildList {
+                add(preview)
+                add(capture)
+                analysis?.let(::add)
+            }
+            val baseSession = SessionConfig.Builder(useCases)
                 .setViewPort(config.viewPort)
-                .addUseCase(preview)
-                .addUseCase(capture)
-            if (analysis != null) groupBuilder.addUseCase(analysis)
+                .build()
+
+            val exactRate = Range(frameRate.fps, frameRate.fps)
+            val supportedRanges = runCatching {
+                cameraProvider.getCameraInfo(profile.selector, baseSession)
+                    .getSupportedFrameRateRanges(baseSession)
+            }.getOrDefault(emptySet())
+
+            // Never advertise/accept 60 fps when CameraX cannot guarantee 60 for this exact
+            // Preview + VideoCapture (+ Analysis) configuration. This prevents OEMs from quietly
+            // running a user-selected 60-fps session at 30 fps.
+            if (frameRate == RecordingFrameRate.FPS60 && exactRate !in supportedRanges) {
+                analysis?.clearAnalyzer()
+                return null
+            }
+
+            val session = if (exactRate in supportedRanges) {
+                SessionConfig.Builder(useCases)
+                    .setViewPort(config.viewPort)
+                    .setFrameRateRange(exactRate)
+                    .build()
+            } else {
+                // 30 fps remains the compatibility floor. Older/quirky OEMs may not expose an
+                // exact 30..30 range even though their normal SDR recording pipeline is 30 fps.
+                baseSession
+            }
+
+            cameraProvider.unbindAll()
             return try {
-                cameraProvider.bindToLifecycle(
+                val bound = cameraProvider.bindToLifecycle(
                     config.lifecycleOwner,
                     profile.selector,
-                    groupBuilder.build()
+                    session
                 )
+                Attempt(bound, preview, capture, analysis)
             } catch (_: Throwable) {
                 analysis?.clearAnalyzer()
                 cameraProvider.unbindAll()
@@ -269,33 +362,49 @@ class CameraEngine(private val context: Context) {
             }
         }
 
-        var bound: Camera? = null
-        var selectedAnalysis: ImageAnalysis? = null
-        for (targetSize in recordingAnalysisTargetSizes(config.aspectRatio, config.isLandscape)) {
-            val analysis = newAnalysis(targetSize)
-            val candidate = tryBind(analysis)
-            if (candidate != null) {
-                bound = candidate
-                selectedAnalysis = analysis
-                break
+        val ratesToTry = if (config.frameRate == RecordingFrameRate.FPS60) {
+            listOf(RecordingFrameRate.FPS60, RecordingFrameRate.FPS30)
+        } else {
+            listOf(RecordingFrameRate.FPS30)
+        }
+
+        fun accept(attempt: Attempt, rate: RecordingFrameRate): BoundUnifiedSession {
+            camera = attempt.camera
+            previewUseCase = attempt.preview
+            videoCapture = attempt.capture
+            analysisUseCase = attempt.analysis
+            previewRenderingEnabled = true
+            activeLensProfile = profile
+            lastSubmittedZoom = Float.NaN
+            return BoundUnifiedSession(attempt.camera, rate)
+        }
+
+        if (config.requiresAnalysis) {
+            // Automatic clip detection needs ImageAnalysis. Prefer an exact 30-fps session with
+            // analysis over a nominal 60-fps recording that would have to drop analysis entirely.
+            for (rate in ratesToTry) {
+                for (targetSize in recordingAnalysisTargetSizes(config.aspectRatio, config.isLandscape)) {
+                    tryBind(rate, targetSize)?.let { return accept(it, rate) }
+                }
+            }
+
+            // Keep Preview + VideoCapture usable even on OEM stream combinations that reject YUV
+            // analysis. The ViewModel then blocks auto-detection recording with a clear message.
+            for (rate in ratesToTry.asReversed()) {
+                val fallback = tryBind(rate, null) ?: continue
+                onRecordingAnalysisUnavailable?.invoke()
+                return accept(fallback, rate)
+            }
+        } else {
+            // Manual/top-hold-only recording does not need a continuous ImageAnalysis stream.
+            // Binding only Preview + VideoCapture avoids unnecessarily disqualifying exact 60 fps
+            // on devices whose three-stream combination is limited to 30 fps.
+            for (rate in ratesToTry) {
+                tryBind(rate, null)?.let { return accept(it, rate) }
             }
         }
 
-        // Live camera and recorder are never separated. If the device cannot expose a third YUV
-        // stream, automatic range analysis is dropped without changing the visible/recorded frame.
-        val boundCamera = bound ?: run {
-            val fallbackCamera = tryBind(null)
-                ?: throw IllegalStateException("이 기기에서 선택한 카메라 녹화 구성을 시작할 수 없습니다.")
-            onRecordingAnalysisUnavailable?.invoke()
-            fallbackCamera
-        }
-        camera = boundCamera
-        previewUseCase = preview
-        videoCapture = capture
-        analysisUseCase = selectedAnalysis
-        activeLensProfile = profile
-        lastSubmittedZoom = Float.NaN
-        return boundCamera
+        throw IllegalStateException("이 기기에서 선택한 카메라 녹화 구성을 시작할 수 없습니다.")
     }
 
     fun isAnalysisAvailable(): Boolean = analysisUseCase != null
@@ -307,12 +416,13 @@ class CameraEngine(private val context: Context) {
         frameRate: RecordingFrameRate,
         aspectRatio: RecordingAspectRatio,
         isLandscape: Boolean,
-        analyzer: ImageAnalysis.Analyzer
+        targetRotation: Int,
+        analyzer: ImageAnalysis.Analyzer,
+        requiresAnalysis: Boolean
     ): CameraCapabilities {
         val cameraProvider = provider ?: awaitCameraProvider().also { provider = it }
         cameraProvider.unbindAll()
 
-        val targetRotation = previewView.display?.rotation ?: Surface.ROTATION_0
         val cameraManager = context.getSystemService(CameraManager::class.java)
 
         fun bindProbe(
@@ -360,17 +470,7 @@ class CameraEngine(private val context: Context) {
                 cameraProvider.unbindAll()
             }
 
-            effectiveMinZoom = rearLensProfiles.minOf { profile ->
-                profile.anchorRatio * profile.nativeMinZoom
-            }.coerceAtLeast(TopOutConfig.MinZoom)
-            effectiveLensZoomRatios = (rearLensProfiles.map { it.anchorRatio } + effectiveMinZoom)
-                .distinct()
-                .sorted()
-            val lastLens = rearLensProfiles.last()
-            effectiveMaxZoom = min(
-                TopOutConfig.CameraMaxZoom,
-                lastLens.anchorRatio * lastLens.nativeMaxZoom
-            ).coerceAtLeast(effectiveMinZoom)
+            updateEffectiveZoomRange()
 
             // Cold start always selects the lowest real optical anchor (normally 0.5x). Later
             // lifecycle rebinds preserve the user's current requested zoom.
@@ -384,7 +484,7 @@ class CameraEngine(private val context: Context) {
 
         var selectedProfile = activeLensProfile ?: rearLensProfiles.first()
         var selectedSelector = selectedProfile.selector
-        var capabilities = cachedCapabilities ?: run {
+        var capabilities = cachedCapabilitiesByLens[selectedProfile.cameraId] ?: run {
             var probeResult: Camera? = null
             var lastError: Throwable? = null
             while (probeResult == null && rearLensProfiles.isNotEmpty()) {
@@ -400,25 +500,15 @@ class CameraEngine(private val context: Context) {
                     selectedProfile = rearLensProfiles.first()
                     selectedSelector = selectedProfile.selector
                     activeLensProfile = selectedProfile
-                    effectiveMinZoom = rearLensProfiles.minOf { profile ->
-                        profile.anchorRatio * profile.nativeMinZoom
-                    }.coerceAtLeast(TopOutConfig.MinZoom)
-                    effectiveLensZoomRatios = (rearLensProfiles.map { it.anchorRatio } + effectiveMinZoom)
-                        .distinct()
-                        .sorted()
-                    val lastLens = rearLensProfiles.last()
-                    effectiveMaxZoom = min(
-                        TopOutConfig.CameraMaxZoom,
-                        lastLens.anchorRatio * lastLens.nativeMaxZoom
-                    ).coerceAtLeast(effectiveMinZoom)
+                    updateEffectiveZoomRange()
                     requestedZoom = effectiveMinZoom
                     null
                 }
             }
             val probe = probeResult ?: throw (lastError
                 ?: IllegalStateException("사용 가능한 후면 카메라를 찾지 못했습니다."))
-            queryCapabilities(probe).also {
-                cachedCapabilities = it
+            queryCapabilities(probe, selectedProfile).also {
+                cachedCapabilitiesByLens[selectedProfile.cameraId] = it
                 cameraProvider.unbindAll()
             }
         }
@@ -446,10 +536,11 @@ class CameraEngine(private val context: Context) {
             aspectRatio = aspectRatio,
             isLandscape = isLandscape,
             analyzer = analyzer,
+            requiresAnalysis = requiresAnalysis,
             viewPort = previewViewPort(previewView, aspectRatio, isLandscape, targetRotation)
         )
 
-        val boundCamera = try {
+        val boundSession = try {
             bindUnifiedSession(cameraProvider, config, selectedProfile)
         } catch (firstError: Throwable) {
             cameraProvider.unbindAll()
@@ -458,17 +549,7 @@ class CameraEngine(private val context: Context) {
 
             selectedProfile = rearLensProfiles.first()
             activeLensProfile = selectedProfile
-            effectiveMinZoom = rearLensProfiles.minOf { profile ->
-                profile.anchorRatio * profile.nativeMinZoom
-            }.coerceAtLeast(TopOutConfig.MinZoom)
-            effectiveLensZoomRatios = (rearLensProfiles.map { it.anchorRatio } + effectiveMinZoom)
-                .distinct()
-                .sorted()
-            val lastLens = rearLensProfiles.last()
-            effectiveMaxZoom = min(
-                TopOutConfig.CameraMaxZoom,
-                lastLens.anchorRatio * lastLens.nativeMaxZoom
-            ).coerceAtLeast(effectiveMinZoom)
+            updateEffectiveZoomRange()
             requestedZoom = effectiveMinZoom
             onZoomCorrected?.invoke(requestedZoom)
 
@@ -481,9 +562,38 @@ class CameraEngine(private val context: Context) {
             }
         }
 
-        camera = boundCamera
-        sessionConfig = config
+        camera = boundSession.camera
+        sessionConfig = config.copy(frameRate = boundSession.frameRate)
 
+        // Refresh the base hardware capabilities for the lens that actually bound. Exact 60-fps
+        // support is session-specific, so keep that knowledge separately instead of poisoning the
+        // lens cache when only one aspect/orientation/analysis combination cannot sustain 60 fps.
+        val baseCapabilities = queryCapabilities(boundSession.camera, selectedProfile)
+        cachedCapabilitiesByLens[selectedProfile.cameraId] = baseCapabilities
+
+        val exact60Key = ExactFpsSessionKey(
+            cameraId = selectedProfile.cameraId,
+            resolution = resolvedResolution,
+            aspectRatio = aspectRatio,
+            isLandscape = isLandscape,
+            requiresAnalysis = requiresAnalysis
+        )
+        if (resolvedFrameRate == RecordingFrameRate.FPS60) {
+            if (boundSession.frameRate == RecordingFrameRate.FPS60) {
+                unsupportedExact60Sessions.remove(exact60Key)
+            } else {
+                unsupportedExact60Sessions += exact60Key
+            }
+        }
+
+        capabilities = baseCapabilities
+        if (exact60Key in unsupportedExact60Sessions) {
+            val correctedRates = capabilities.supportedFrameRates.toMutableMap()
+            correctedRates[resolvedResolution] =
+                correctedRates[resolvedResolution].orEmpty() - RecordingFrameRate.FPS60 +
+                    RecordingFrameRate.FPS30
+            capabilities = capabilities.copy(supportedFrameRates = correctedRates)
+        }
         capabilities = capabilities.copy(
             minZoomRatio = effectiveMinZoom,
             maxZoomRatio = effectiveMaxZoom,
@@ -590,23 +700,11 @@ class CameraEngine(private val context: Context) {
             .coerceIn(max(profile.nativeMinZoom, stateMin), min(profile.nativeMaxZoom, stateMax))
 
         lastSubmittedZoom = target
-        val request = if (
-            profile.physicalCameraId != null &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
-        ) {
-            // A physical member of a logical camera uses the logical camera's public zoom
-            // coordinate: 0.5 is the full ultra-wide view, 1.0 is the wide anchor, and 3.0 is
-            // the tele anchor. Dividing by the anchor here would incorrectly crop it.
-            val options = CaptureRequestOptions.Builder()
-                .setCaptureRequestOption(CaptureRequest.CONTROL_ZOOM_RATIO, target)
-                .build()
-            Camera2CameraControl.from(activeCamera.cameraControl)
-                .setCaptureRequestOptions(options)
-        } else {
-            // A separately bindable camera has its own native 1.0x coordinate.
-            activeCamera.cameraControl.setZoomRatio(nativeTarget)
-        }
-        return request
+        // Every bound lens uses its own native zoom coordinate. In particular, a physical
+        // ultra-wide pinned through Camera2Interop must start at native 1.0x; sending the public
+        // display ratio (0.5) through CONTROL_ZOOM_RATIO can be outside the logical camera's
+        // supported range on Samsung/OEM devices and is a common source of broken 0.5x startup.
+        return activeCamera.cameraControl.setZoomRatio(nativeTarget)
     }
 
     private fun profileForDisplayZoom(zoom: Float): RearLensProfile? = rearLensProfiles
@@ -690,9 +788,17 @@ class CameraEngine(private val context: Context) {
 
             fun bindProfile(profile: RearLensProfile): Camera {
                 val bound = bindUnifiedSession(cameraProvider, config, profile)
-                camera = bound
+                // A zoom gesture must never silently turn a user-selected exact 60-fps session
+                // into 30 fps. If the target physical lens cannot sustain the current session,
+                // reject that lens transition and restore the previous camera instead.
+                if (bound.frameRate != config.frameRate) {
+                    cameraProvider.unbindAll()
+                    throw IllegalStateException("현재 촬영 설정에서는 이 렌즈 전환을 사용할 수 없습니다.")
+                }
+                camera = bound.camera
                 activeLensProfile = profile
-                return bound
+                sessionConfig = config
+                return bound.camera
             }
 
             try {
@@ -889,6 +995,21 @@ class CameraEngine(private val context: Context) {
             }
             .distinctBy { it.anchorRatio }
             .sortedBy { it.anchorRatio }
+            .let { profiles ->
+                // Modern Samsung/Pixel logical rear cameras already expose their lens system as a
+                // continuous CameraControl zoom range (commonly 0.5x..10x+). In that case let the
+                // OEM logical camera perform all ultra-wide/wide/tele hand-offs. Rebinding pinned
+                // physical members is slower, can break exact FPS negotiation, and used to send an
+                // invalid public 0.5 ratio into a physical stream. Physical profiles remain only as
+                // the fallback for devices whose logical CameraX camera cannot reach below 1x.
+                val seamlessLogical = profiles.firstOrNull { profile ->
+                    abs(profile.anchorRatio - 1f) <= LENS_BOUNDARY_EPSILON &&
+                        profile.physicalCameraId == null &&
+                        profile.isLogicalMultiCamera &&
+                        profile.nativeMinZoom < 0.95f
+                }
+                if (seamlessLogical == null) profiles else listOf(seamlessLogical)
+            }
     }
 
     private fun snapPhysicalLensAnchor(rawRatio: Float): Float {
@@ -1034,13 +1155,17 @@ class CameraEngine(private val context: Context) {
         )
     }
 
-    private fun queryCapabilities(camera: Camera): CameraCapabilities {
+    private fun queryCapabilities(
+        camera: Camera,
+        profile: RearLensProfile
+    ): CameraCapabilities {
         val qualities = Recorder.getVideoCapabilities(camera.cameraInfo).getSupportedQualities(DynamicRange.SDR)
         val manager = context.getSystemService(CameraManager::class.java)
         // Query the exact physical/logical camera selected by CameraX. Picking the first back camera
         // can report the ultra-wide lens capabilities on multi-camera devices such as the Z Flip3.
-        val cameraId = runCatching { Camera2CameraInfo.from(camera.cameraInfo).cameraId }
-            .getOrElse {
+        val cameraId = profile.physicalCameraId ?: runCatching {
+            Camera2CameraInfo.from(camera.cameraInfo).cameraId
+        }.getOrElse {
                 manager.cameraIdList.firstOrNull { id ->
                     manager.getCameraCharacteristics(id)
                         .get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
@@ -1050,18 +1175,24 @@ class CameraEngine(private val context: Context) {
         val streamMap = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
         val aeRanges = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES).orEmpty()
 
+        fun matchesSize(candidate: Size, target: Size): Boolean =
+            (candidate.width == target.width && candidate.height == target.height) ||
+                (candidate.width == target.height && candidate.height == target.width)
+
+        val recorderSizes = streamMap?.getOutputSizes(MediaRecorder::class.java).orEmpty()
+        fun supportsRecordingSize(size: Size): Boolean = recorderSizes.any { matchesSize(it, size) }
+
         fun supports60(size: Size): Boolean {
             val hasRange = aeRanges.any { it.lower <= 60 && it.upper >= 60 }
-            if (!hasRange || streamMap == null) return false
-            val recorderSizes = streamMap.getOutputSizes(MediaRecorder::class.java).orEmpty()
-            if (recorderSizes.none { it.width == size.width && it.height == size.height }) return false
+            if (!hasRange || streamMap == null || !supportsRecordingSize(size)) return false
+            val actualSize = recorderSizes.firstOrNull { matchesSize(it, size) } ?: size
             val regularDuration = runCatching {
-                streamMap.getOutputMinFrameDuration(MediaRecorder::class.java, size)
+                streamMap.getOutputMinFrameDuration(MediaRecorder::class.java, actualSize)
             }.getOrDefault(0L)
             val regular60 = regularDuration in 1L..17_500_000L
             val highSpeed60 = runCatching {
                 streamMap.highSpeedVideoSizes.any { candidate ->
-                    candidate == size && streamMap.getHighSpeedVideoFpsRangesFor(candidate)
+                    matchesSize(candidate, size) && streamMap.getHighSpeedVideoFpsRangesFor(candidate)
                         .any { it.lower <= 60 && it.upper >= 60 }
                 }
             }.getOrDefault(false)
@@ -1069,14 +1200,14 @@ class CameraEngine(private val context: Context) {
         }
 
         val map = buildMap {
-            if (Quality.FHD in qualities) {
+            if (Quality.FHD in qualities && supportsRecordingSize(Size(1920, 1080))) {
                 put(
                     RecordingResolution.FHD,
                     if (supports60(Size(1920, 1080))) setOf(RecordingFrameRate.FPS30, RecordingFrameRate.FPS60)
                     else setOf(RecordingFrameRate.FPS30)
                 )
             }
-            if (Quality.UHD in qualities) {
+            if (Quality.UHD in qualities && supportsRecordingSize(Size(3840, 2160))) {
                 put(
                     RecordingResolution.UHD,
                     if (supports60(Size(3840, 2160))) setOf(RecordingFrameRate.FPS30, RecordingFrameRate.FPS60)

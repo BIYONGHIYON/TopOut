@@ -17,12 +17,19 @@ internal class DetectedClipRangeStore {
 
     fun append(range: ClipRange) {
         if (range.endSeconds <= range.startSeconds) return
-        val last = ranges.lastOrNull()
-        if (last != null &&
-            abs(last.startSeconds - range.startSeconds) < DUPLICATE_TOLERANCE_SECONDS &&
-            abs(last.endSeconds - range.endSeconds) < DUPLICATE_TOLERANCE_SECONDS
-        ) {
-            return
+        val lastIndex = ranges.lastIndex
+        if (lastIndex >= 0) {
+            val last = ranges[lastIndex]
+            if (abs(last.startSeconds - range.startSeconds) < DUPLICATE_START_TOLERANCE_SECONDS) {
+                // stop() can snapshot an open climb just before a queued FINISH callback arrives.
+                // They share the same start but may have slightly different end times; keep one
+                // range with the later end rather than producing duplicate review clips.
+                ranges[lastIndex] = ClipRange(
+                    startSeconds = min(last.startSeconds, range.startSeconds),
+                    endSeconds = max(last.endSeconds, range.endSeconds)
+                )
+                return
+            }
         }
         ranges += range
     }
@@ -30,7 +37,7 @@ internal class DetectedClipRangeStore {
     fun snapshot(): List<ClipRange> = ranges.toList()
 
     private companion object {
-        const val DUPLICATE_TOLERANCE_SECONDS = 0.05
+        const val DUPLICATE_START_TOLERANCE_SECONDS = 0.10
     }
 }
 

@@ -33,7 +33,6 @@ internal class LensZoomGestureController(
             .filter { it.isFinite() }
             .map { it.coerceIn(this@LensZoomGestureController.minimumZoom, this@LensZoomGestureController.maximumZoom) }
             .forEach(::add)
-        if (1f in this@LensZoomGestureController.minimumZoom..this@LensZoomGestureController.maximumZoom) add(1f)
     }
         .sorted()
         .fold(mutableListOf()) { result, value ->

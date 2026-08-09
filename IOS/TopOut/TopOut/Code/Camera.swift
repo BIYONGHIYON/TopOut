@@ -2,7 +2,7 @@ import UIKit
 import CoreImage
 @preconcurrency import AVFoundation
 
-private enum CameraCfg {
+enum CameraCfg {
     // SAM 입력은 1024이므로 캡처 원본을 너무 크게 들고 있을 필요가 없습니다.
     // 녹화 해상도와 무관하게 탑홀드 선택용 캡처 이미지는 이 크기로 축소합니다.
     static let captureMaxLongSide: CGFloat = 1600
@@ -518,7 +518,7 @@ extension HoldVC {
     }
 
     @objc func onCameraPinch(_ gesture: UIPinchGestureRecognizer) {
-        guard mode == .camera, recState == .idle else { return }
+        guard mode == .camera, recState == .idle, !isBusy else { return }
         guard let camera = activeCameraDevice else { return }
 
         switch gesture.state {
@@ -561,6 +561,7 @@ extension HoldVC {
             return
         }
 
+        isBusy = true
         setLoading(true)
         readyBtn.isEnabled = false
 
@@ -577,27 +578,34 @@ extension HoldVC {
                 return
             }
 
-            // 자동 구간 탐지에는 매트 기준 프레임이 필요하고,
-            // 탑홀드 마스킹에는 사용자가 탑홀드를 선택할 기준 프레임이 필요합니다.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
-                guard let self else { return }
-                self.videoFrameSink.captureCurrentFrame(
-                    aspectRatio: self.activeRecordingAspect,
-                    maxLongSide: CameraCfg.captureMaxLongSide
-                ) { [weak self] image in
-                    guard let self else { return }
-                    guard let image else {
-                        self.unlockCameraOrientation()
-                        self.setLoading(false)
-                        self.readyBtn.isEnabled = true
-                        self.showCameraError("현재 카메라 프레임을 캡처하지 못했습니다.")
-                        return
-                    }
+            // 탑홀드만 사용하는 경우 Ready 시점의 정지 이미지는 더 이상 필요하지 않습니다.
+            // 라이브 선택 화면으로 바로 진입하고, 실제 SAM 입력은 탑홀드를 탭하는 매 순간
+            // 새 비디오 프레임을 캡처해 생성합니다.
+            if self.requiresTopHoldSelection && !self.isAutoClipDetectionEnabled {
+                self.setLoading(false)
+                self.showSelectUI(with: nil)
+                return
+            }
 
-                    // 자동 구간 탐지가 켜져 있으면 사용자가 매트 경계를 직접 확인·보정합니다.
-                    // 탑홀드 마스킹이 켜진 경우에는 같은 화면에서 탑홀드도 함께 선택합니다.
-                    self.showSelectUI(with: image)
+            // 자동 구간 탐지의 매트 경계만 Ready 직후 도착하는 첫 비디오 프레임으로 한 번
+            // 확정합니다. 이 이미지는 MobileSAM 입력에만 쓰이며 사용자에게 표시하지 않습니다.
+            self.videoFrameSink.captureCurrentFrame(
+                aspectRatio: self.activeRecordingAspect,
+                maxLongSide: CameraCfg.captureMaxLongSide
+            ) { [weak self] image in
+                guard let self else { return }
+                guard let image else {
+                    self.unlockCameraOrientation()
+                    self.isBusy = false
+                    self.setLoading(false)
+                    self.readyBtn.isEnabled = true
+                    self.showCameraError("현재 카메라 프레임을 캡처하지 못했습니다.")
+                    return
                 }
+
+                // 자동 구간 탐지가 켜져 있으면 사용자가 라이브 프리뷰 위에서 매트 경계를
+                // 직접 확인·보정합니다. 탑홀드도 같은 라이브 화면에서 선택합니다.
+                self.showSelectUI(with: image)
             }
         }
     }

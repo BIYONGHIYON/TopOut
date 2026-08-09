@@ -33,5 +33,5 @@ packaged `.so` file.
 
 ## Release identity
 
-- Version name: `1.4`
-- Version code: `6`
+- Version name: `1.5`
+- Version code: `7`
