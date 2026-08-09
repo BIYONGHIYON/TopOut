@@ -67,6 +67,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.TimeBar
 import com.topout.cam.model.AppSettings
 import com.topout.cam.model.GalleryClipSelection
 import com.topout.cam.model.RecordedVideo
@@ -533,7 +534,10 @@ private fun SavedGalleryVideoDialog(
 ) {
     val context = LocalContext.current
     val player = remember(uri) {
-        ExoPlayer.Builder(context).build().apply {
+        ExoPlayer.Builder(context)
+            .setSeekBackIncrementMs(5_000L)
+            .setSeekForwardIncrementMs(5_000L)
+            .build().apply {
             setMediaItem(MediaItem.fromUri(uri))
             repeatMode = Player.REPEAT_MODE_OFF
             prepare()
@@ -541,6 +545,8 @@ private fun SavedGalleryVideoDialog(
         }
     }
     var playbackError by remember(uri) { mutableStateOf<String?>(null) }
+    var isGalleryScrubbing by remember(uri) { mutableStateOf(false) }
+    var pendingGallerySeekPositionMs by remember(uri) { mutableLongStateOf(0L) }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -552,6 +558,22 @@ private fun SavedGalleryVideoDialog(
         onDispose {
             player.removeListener(listener)
             player.release()
+        }
+    }
+
+    LaunchedEffect(player, isGalleryScrubbing) {
+        if (!isGalleryScrubbing) return@LaunchedEffect
+
+        // Match the review trim slider: render at most one requested frame per display cycle so
+        // decoder seeks do not queue up behind a fast finger movement.
+        var lastIssuedPositionMs = Long.MIN_VALUE
+        while (isActive) {
+            val requestedPositionMs = pendingGallerySeekPositionMs
+            if (requestedPositionMs != lastIssuedPositionMs) {
+                player.seekTo(requestedPositionMs)
+                lastIssuedPositionMs = requestedPositionMs
+            }
+            delay(16.milliseconds)
         }
     }
 
@@ -590,6 +612,39 @@ private fun SavedGalleryVideoDialog(
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                             this.player = player
                             setShutterBackgroundColor(android.graphics.Color.BLACK)
+
+                            // Media3 defaults to a 60% full-screen scrim and a nearly 70% bottom
+                            // bar. Keep the controls legible without hiding the saved video.
+                            findViewById<android.view.View>(androidx.media3.ui.R.id.exo_controls_background)
+                                ?.setBackgroundColor(android.graphics.Color.argb(46, 0, 0, 0))
+                            findViewById<android.view.View>(androidx.media3.ui.R.id.exo_bottom_bar)
+                                ?.setBackgroundColor(android.graphics.Color.argb(82, 0, 0, 0))
+
+                            (findViewById<android.view.View>(androidx.media3.ui.R.id.exo_progress) as? TimeBar)
+                                ?.addListener(object : TimeBar.OnScrubListener {
+                                    override fun onScrubStart(timeBar: TimeBar, position: Long) {
+                                        player.pause()
+                                        player.isScrubbingModeEnabled = true
+                                        player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+                                        pendingGallerySeekPositionMs = position
+                                        isGalleryScrubbing = true
+                                    }
+
+                                    override fun onScrubMove(timeBar: TimeBar, position: Long) {
+                                        pendingGallerySeekPositionMs = position
+                                    }
+
+                                    override fun onScrubStop(
+                                        timeBar: TimeBar,
+                                        position: Long,
+                                        canceled: Boolean
+                                    ) {
+                                        isGalleryScrubbing = false
+                                        player.isScrubbingModeEnabled = false
+                                        player.setSeekParameters(SeekParameters.EXACT)
+                                        if (!canceled) player.seekTo(position)
+                                    }
+                                })
                         }
                     },
                     update = { it.player = player }
