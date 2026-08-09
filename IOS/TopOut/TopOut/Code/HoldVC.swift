@@ -261,6 +261,11 @@ final class HoldVC: UIViewController {
     let videoOutputQ = DispatchQueue(label: "camera.video.output.queue", qos: .userInitiated)
     let audioOutputQ = DispatchQueue(label: "camera.audio.output.queue", qos: .userInitiated)
     var isCameraReady = false
+    /// True only after the configured capture session has delivered enough real video frames.
+    /// `isCameraReady` alone means only that the AVCapture graph was committed.
+    var isCameraStreamReady = false
+    var appliedRecordingResolution: RecordingResolution?
+    var appliedRecordingFrameRate: RecordingFrameRate?
     /// 실제 오디오 세션 활성화와 캡처 입력/출력 연결이 모두 성공한 경우에만 true입니다.
     /// 통화 중처럼 마이크를 다른 클라이언트가 점유하면 false로 내려가고 영상만 녹화합니다.
     var isAudioCaptureEnabled = false

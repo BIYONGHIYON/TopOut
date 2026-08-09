@@ -143,7 +143,8 @@ fun TopOutApp(viewModel: TopOutViewModel) {
             settings = state.settings,
             saving = state.saving,
             savingStatus = state.savingStatus,
-            savedGalleryVideo = state.savedGalleryVideo,
+            savingStatusSelection = state.savingStatusSelection,
+            savedGalleryVideos = state.savedGalleryVideos,
             onSave = viewModel::saveSelectedClip,
             onRetake = viewModel::retakeFromReview,
             onClose = viewModel::closeReview
@@ -250,7 +251,7 @@ fun TopOutApp(viewModel: TopOutViewModel) {
                     showTip = state.settings.helpEnabled,
                     isLandscape = isLandscape,
                     readyTitle = TopOutCopy.readyButtonTitle(state.settings),
-                    enabled = !state.isBusy && !state.lensSwitchInProgress,
+                    enabled = state.cameraReady && !state.isBusy && !state.lensSwitchInProgress,
                     onReady = {
                         viewModel.onReady(
                             frameProvider = { previewView?.bitmap },
@@ -410,10 +411,15 @@ private fun PreviewControls(
                 modifier = Modifier.background(TopOutColors.TipBackground, RoundedCornerShape(10.dp))
                     .padding(horizontal = 6.dp, vertical = 4.dp),
                 color = Color.White,
-                fontSize = 13.sp,
+                autoSize = TextAutoSize.StepBased(
+                    minFontSize = 9.5.sp,
+                    maxFontSize = 13.sp,
+                    stepSize = 0.5.sp
+                ),
                 textAlign = TextAlign.Center,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                softWrap = false,
+                overflow = TextOverflow.Clip
             )
             Spacer(Modifier.height(6.dp))
         }
@@ -507,9 +513,14 @@ private fun SelectionControls(
                 modifier = Modifier.background(TopOutColors.TipBackground, RoundedCornerShape(10.dp))
                     .padding(horizontal = 6.dp, vertical = 4.dp),
                 color = Color.White,
-                fontSize = 13.sp,
+                autoSize = TextAutoSize.StepBased(
+                    minFontSize = 9.5.sp,
+                    maxFontSize = 13.sp,
+                    stepSize = 0.5.sp
+                ),
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                softWrap = false,
+                overflow = TextOverflow.Clip
             )
             Spacer(Modifier.height(6.dp))
         }

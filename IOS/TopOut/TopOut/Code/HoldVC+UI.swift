@@ -398,7 +398,7 @@ extension HoldVC {
         let hasRecordingStarted = recordingElapsedStartDate != nil
 
         readyBtn.isHidden = isRecording
-        readyBtn.isEnabled = !isRecording && isCameraReady && !isBusy
+        readyBtn.isEnabled = !isRecording && isCameraReady && isCameraStreamReady && !isBusy
         settingsBtn.isHidden = isRecording
         settingsBtn.isEnabled = !isRecording && recState == .idle
         zoomLabel.isHidden = isRecording

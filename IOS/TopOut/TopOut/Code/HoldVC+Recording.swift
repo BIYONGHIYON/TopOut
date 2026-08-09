@@ -214,7 +214,7 @@ extension HoldVC {
                                 endSeconds: endSeconds,
                                 includeTopHoldOverlay: includeTopHoldOverlay
                             )
-                            vc?.setStatus("✓ 갤러리에 저장된 영상을 확인했습니다")
+                            vc?.setStatus("갤러리에 저장된 영상을 확인했습니다")
                         case .failure(let error):
                             vc?.setStatus("사진 앱 저장/확인 실패: \(error.localizedDescription)")
                         }

@@ -139,13 +139,28 @@ data class RecordedVideo(
     val automaticStopNotice: RecordingStopNotice? = null
 )
 
+/** Exact review selection used to keep save progress/results isolated per detected clip. */
+data class GalleryClipSelection(
+    val startSeconds: Double,
+    val endSeconds: Double,
+    val includeOverlay: Boolean
+) {
+    fun matches(other: GalleryClipSelection, toleranceSeconds: Double = 0.01): Boolean =
+        kotlin.math.abs(startSeconds - other.startSeconds) < toleranceSeconds &&
+            kotlin.math.abs(endSeconds - other.endSeconds) < toleranceSeconds &&
+            includeOverlay == other.includeOverlay
+}
+
 /** A clip that was written to MediaStore and successfully reopened from the gallery. */
 data class SavedGalleryVideo(
     val uri: Uri,
     val startSeconds: Double,
     val endSeconds: Double,
     val includeOverlay: Boolean
-)
+) {
+    val selection: GalleryClipSelection
+        get() = GalleryClipSelection(startSeconds, endSeconds, includeOverlay)
+}
 
 data class RecordingStopNotice(val title: String, val message: String) {
     companion object {
@@ -214,10 +229,14 @@ data class TopOutUiState(
     val isBusy: Boolean = false,
     val saving: Boolean = false,
     val savingStatus: String? = null,
-    /** Most recent clip whose MediaStore row was queried and file contents reopened successfully. */
-    val savedGalleryVideo: SavedGalleryVideo? = null,
+    /** Selection that owns [savingStatus], so messages never leak into another detected clip. */
+    val savingStatusSelection: GalleryClipSelection? = null,
+    /** Every clip whose MediaStore row and contents were reopened successfully. */
+    val savedGalleryVideos: List<SavedGalleryVideo> = emptyList(),
     val errorMessage: String? = null,
     val launchVisible: Boolean = true,
+    /** True only after CameraX has bound and PreviewView reports a real streaming surface. */
+    val cameraReady: Boolean = false,
     val isLandscape: Boolean = false,
     /** CameraX target rotation frozen at Ready so large-screen window rotations cannot move FOV. */
     val cameraTargetRotation: Int = 0

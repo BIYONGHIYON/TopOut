@@ -19,6 +19,7 @@ import com.topout.cam.model.CameraStage
 import com.topout.cam.model.ClipRange
 import com.topout.cam.model.ClipRangeNormalizer
 import com.topout.cam.model.DetectedClipRangeStore
+import com.topout.cam.model.GalleryClipSelection
 import com.topout.cam.model.RecordedVideo
 import com.topout.cam.model.SavedGalleryVideo
 import com.topout.cam.model.RecordingFrameRate
@@ -139,6 +140,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         latestLifecycleOwner = owner
         latestPreviewView = previewView
         cameraBindingJob?.cancel()
+        _uiState.update { it.copy(cameraReady = false) }
         cameraBindingJob = viewModelScope.launch {
             runCatching {
                 var state = _uiState.value
@@ -177,6 +179,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                         capabilities = capabilities,
                         settings = normalized,
                         zoomFactor = zoom,
+                        cameraReady = true,
                         errorMessage = null
                     )
                 }
@@ -209,6 +212,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     }
                     state.copy(
                         stage = recoveryStage,
+                        cameraReady = false,
                         errorMessage = error.localizedMessage ?: "카메라를 시작하지 못했습니다."
                     )
                 }
@@ -248,6 +252,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         if (current.stage != CameraStage.PREVIEW ||
             current.recordingState != RecordingState.IDLE ||
             current.isBusy ||
+            !current.cameraReady ||
             current.lensSwitchInProgress
         ) return
 
@@ -280,16 +285,25 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
-        // Snapshot the displayed crop immediately at the Ready action. MobileSAM runs later, but
-        // its mat-boundary input represents the composition the user actually confirmed.
-        val readySnapshot = runCatching {
-            frameProvider()?.copy(Bitmap.Config.ARGB_8888, false)
-        }.getOrNull()
         _uiState.update { it.copy(isBusy = true, statusText = "AI가 매트 경계를 분석하고 있어요") }
 
         viewModelScope.launch {
-            val frame = readySnapshot
-                ?: poseAnalyzer.captureNextFrame(TopOutConfig.CaptureMaxLongSide)
+            // The preview may report STREAMING on its very first rendered buffer. Consume several
+            // new ImageAnalysis frames after Ready so CameraX/3A/lens transitions cannot feed a
+            // cold-start frame into MobileSAM. If an OEM rejected ImageAnalysis, take a fresh
+            // PreviewView snapshot only after the camera-ready gate instead.
+            val frame = if (recordingAnalysisAvailable) {
+                poseAnalyzer.captureNextFrame(
+                    maxLongSide = TopOutConfig.CaptureMaxLongSide,
+                    minimumFramesAfterRequest = 6
+                ) ?: runCatching {
+                    frameProvider()?.copy(Bitmap.Config.ARGB_8888, false)
+                }.getOrNull()
+            } else {
+                runCatching {
+                    frameProvider()?.copy(Bitmap.Config.ARGB_8888, false)
+                }.getOrNull()
+            }
 
             if (frame == null || frame.width <= 0 || frame.height <= 0) {
                 frame?.recycle()
@@ -614,10 +628,12 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     fun saveSelectedClip(startSeconds: Double, endSeconds: Double, includeOverlay: Boolean) {
         val video = _uiState.value.recordedVideo ?: return
         if (_uiState.value.saving) return
+        val selection = GalleryClipSelection(startSeconds, endSeconds, includeOverlay)
         _uiState.update {
             it.copy(
                 saving = true,
-                savingStatus = if (includeOverlay) "탑홀드 마스크를 입히는 중..." else "선택 구간 자르는 중..."
+                savingStatus = if (includeOverlay) "탑홀드 마스크를 입히는 중..." else "선택 구간 자르는 중...",
+                savingStatusSelection = selection
             )
         }
         viewModelScope.launch {
@@ -631,20 +647,28 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     includeOverlay = includeOverlay,
                     onSavingToGallery = {
                         savingToGallery = true
-                        _uiState.update { it.copy(savingStatus = "사진 앱에 저장하고 확인하는 중...") }
+                        _uiState.update {
+                            it.copy(
+                                savingStatus = "사진 앱에 저장하고 확인하는 중...",
+                                savingStatusSelection = selection
+                            )
+                        }
                     }
                 )
             }.onSuccess { savedUri ->
-                _uiState.update {
-                    it.copy(
+                _uiState.update { state ->
+                    val saved = SavedGalleryVideo(
+                        uri = savedUri,
+                        startSeconds = startSeconds,
+                        endSeconds = endSeconds,
+                        includeOverlay = includeOverlay
+                    )
+                    state.copy(
                         saving = false,
-                        savingStatus = "✓ 갤러리에 저장된 영상을 확인했습니다",
-                        savedGalleryVideo = SavedGalleryVideo(
-                            uri = savedUri,
-                            startSeconds = startSeconds,
-                            endSeconds = endSeconds,
-                            includeOverlay = includeOverlay
-                        )
+                        savingStatus = "갤러리에 저장된 영상을 확인했습니다",
+                        savingStatusSelection = selection,
+                        savedGalleryVideos = state.savedGalleryVideos
+                            .filterNot { it.selection.matches(selection) } + saved
                     )
                 }
             }.onFailure { error ->
@@ -652,7 +676,8 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 _uiState.update {
                     it.copy(
                         saving = false,
-                        savingStatus = "$prefix: ${error.localizedMessage ?: "알 수 없는 오류"}"
+                        savingStatus = "$prefix: ${error.localizedMessage ?: "알 수 없는 오류"}",
+                        savingStatusSelection = selection
                     )
                 }
             }
@@ -701,7 +726,8 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 recordedVideo = null,
                 detectedRanges = emptyList(),
                 savingStatus = null,
-                savedGalleryVideo = null,
+                savingStatusSelection = null,
+                savedGalleryVideos = emptyList(),
                 // Review may rotate independently. Retake must restore the exact orientation used
                 // for the saved mat/hold normalized coordinates, otherwise the preserved boundary
                 // would be drawn over a different camera crop.
@@ -766,8 +792,9 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     recordingCountdown = null,
                     livePreviewEnabled = true,
                     detectedRanges = ranges,
-                    savedGalleryVideo = null,
+                    savedGalleryVideos = emptyList(),
                     savingStatus = null,
+                    savingStatusSelection = null,
                     recordedVideo = RecordedVideo(
                         uri = Uri.fromFile(readyFile),
                         durationSeconds = duration,

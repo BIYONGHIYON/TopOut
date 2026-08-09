@@ -30,7 +30,7 @@ android {
         applicationId = "com.topout.cam"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
+        versionCode = 9
         versionName = "1.5"
 
         vectorDrawables.useSupportLibrary = true

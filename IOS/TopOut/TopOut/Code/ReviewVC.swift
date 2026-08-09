@@ -4,7 +4,7 @@ import AVKit
 import Photos
 
 final class ReviewVC: UIViewController {
-    private struct VerifiedSavedSelection {
+    private struct VerifiedSavedSelection: Hashable {
         let startSeconds: TimeInterval
         let endSeconds: TimeInterval
         let includeTopHoldOverlay: Bool
@@ -26,8 +26,7 @@ final class ReviewVC: UIViewController {
     private var includeTopHoldOverlay: Bool
     private var selectedDetectedRangeIndex: Int?
     private var sliderTimeBubbleHideWorkItem: DispatchWorkItem?
-    private var verifiedSavedAssetIdentifier: String?
-    private var verifiedSavedSelection: VerifiedSavedSelection?
+    private var verifiedSavedAssets: [VerifiedSavedSelection: String] = [:]
 
     private var player: AVPlayer?
     private var playerLayer: AVPlayerLayer?
@@ -657,20 +656,25 @@ final class ReviewVC: UIViewController {
         endSeconds: TimeInterval,
         includeTopHoldOverlay: Bool
     ) {
-        verifiedSavedAssetIdentifier = localIdentifier
-        verifiedSavedSelection = VerifiedSavedSelection(
+        let selection = VerifiedSavedSelection(
             startSeconds: startSeconds,
             endSeconds: endSeconds,
             includeTopHoldOverlay: includeTopHoldOverlay
         )
+        verifiedSavedAssets[selection] = localIdentifier
         updateSaveButtonMode()
     }
 
+    private var currentVerifiedSavedAssetIdentifier: String? {
+        verifiedSavedAssets.first { selection, _ in
+            abs(selection.startSeconds - selectedStart) < 0.01 &&
+                abs(selection.endSeconds - selectedEnd) < 0.01 &&
+                selection.includeTopHoldOverlay == includeTopHoldOverlay
+        }?.value
+    }
+
     private var verifiedSavedSelectionMatchesCurrent: Bool {
-        guard let selection = verifiedSavedSelection, verifiedSavedAssetIdentifier != nil else { return false }
-        return abs(selection.startSeconds - selectedStart) < 0.01 &&
-            abs(selection.endSeconds - selectedEnd) < 0.01 &&
-            selection.includeTopHoldOverlay == includeTopHoldOverlay
+        currentVerifiedSavedAssetIdentifier != nil
     }
 
     private func updateSaveButtonMode() {
@@ -679,7 +683,7 @@ final class ReviewVC: UIViewController {
         config.title = matchesSavedSelection ? "저장된 영상 확인" : "선택 구간 저장"
         saveBtn.configuration = config
         saveBtn.accessibilityLabel = matchesSavedSelection ? "갤러리에 저장된 영상 확인" : "선택 구간 저장"
-        if !matchesSavedSelection, statusLabel.text?.hasPrefix("✓ 갤러리") == true {
+        if !matchesSavedSelection {
             updateDetectedRangeNavigationUI()
         }
         normalizeReviewButtonContentLayout()
@@ -896,7 +900,7 @@ final class ReviewVC: UIViewController {
     }
 
     @objc private func onTapSave() {
-        if verifiedSavedSelectionMatchesCurrent, let localIdentifier = verifiedSavedAssetIdentifier {
+        if let localIdentifier = currentVerifiedSavedAssetIdentifier {
             presentVerifiedSavedVideo(localIdentifier: localIdentifier)
             return
         }
@@ -927,7 +931,7 @@ final class ReviewVC: UIViewController {
 
                 let playerController = AVPlayerViewController()
                 playerController.player = AVPlayer(playerItem: AVPlayerItem(asset: avAsset))
-                self.setStatus("✓ 갤러리에서 불러온 영상을 재생합니다")
+                self.setStatus("갤러리에서 불러온 영상을 재생합니다")
                 self.present(playerController, animated: true) {
                     playerController.player?.play()
                 }

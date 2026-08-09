@@ -60,7 +60,8 @@ class PoseClimbAnalyzer(
     private data class ReliablePose(val points: List<Offset>)
     private data class FrameCaptureRequest(
         val maxLongSide: Int,
-        val result: CompletableDeferred<Bitmap?>
+        val result: CompletableDeferred<Bitmap?>,
+        val framesToSkip: Int
     )
 
     private val frameCaptureRequest = AtomicReference<FrameCaptureRequest?>(null)
@@ -101,14 +102,22 @@ class PoseClimbAnalyzer(
     private var postClimbConsecutivePoseMisses = 0
     private var rgbScratchPixels = IntArray(0)
 
-    suspend fun captureNextFrame(maxLongSide: Int = TopOutConfig.CaptureMaxLongSide): Bitmap? {
+    suspend fun captureNextFrame(
+        maxLongSide: Int = TopOutConfig.CaptureMaxLongSide,
+        minimumFramesAfterRequest: Int = 0
+    ): Bitmap? {
         val request = FrameCaptureRequest(
             maxLongSide = max(1, maxLongSide),
-            result = CompletableDeferred()
+            result = CompletableDeferred(),
+            framesToSkip = max(0, minimumFramesAfterRequest)
         )
         frameCaptureRequest.getAndSet(request)?.result?.complete(null)
         val bitmap = withTimeoutOrNull(1_800L) { request.result.await() }
-        frameCaptureRequest.compareAndSet(request, null)
+        frameCaptureRequest.get()?.let { pending ->
+            if (pending.result === request.result) {
+                frameCaptureRequest.compareAndSet(pending, null)
+            }
+        }
         return bitmap
     }
 
@@ -151,11 +160,18 @@ class PoseClimbAnalyzer(
             cachedGeometry = it
         }
 
-        frameCaptureRequest.getAndSet(null)?.let { request ->
-            val bitmap = runCatching {
-                imageProxyToBitmap(image, request.maxLongSide, geometryForFrame())
-            }.getOrNull()
-            request.result.complete(bitmap)
+        frameCaptureRequest.get()?.let { request ->
+            if (request.framesToSkip > 0) {
+                frameCaptureRequest.compareAndSet(
+                    request,
+                    request.copy(framesToSkip = request.framesToSkip - 1)
+                )
+            } else if (frameCaptureRequest.compareAndSet(request, null)) {
+                val bitmap = runCatching {
+                    imageProxyToBitmap(image, request.maxLongSide, geometryForFrame())
+                }.getOrNull()
+                request.result.complete(bitmap)
+            }
         }
 
         val enabled = active && matLine.isNotEmpty() &&

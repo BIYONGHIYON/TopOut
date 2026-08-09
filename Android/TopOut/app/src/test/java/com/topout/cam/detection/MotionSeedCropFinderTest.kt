@@ -1,9 +1,9 @@
 package com.topout.cam.detection
 
 import kotlin.math.abs
-import kotlin.test.Test
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
 
 class MotionSeedCropFinderTest {
     @Test
@@ -14,7 +14,7 @@ class MotionSeedCropFinderTest {
         val current = previous.copyOf()
         fill(current, width, left = 55, top = 25, right = 78, bottom = 65, value = 220)
 
-        val crop = assertNotNull(
+        val crop = assertPresent(
             MotionSeedCropFinder.find(width, height, current, previous)
         )
 
@@ -39,7 +39,7 @@ class MotionSeedCropFinderTest {
         fill(current, width, 30, 60, 48, 82, 200)
         fill(current, width, 62, 72, 82, 98, 210)
 
-        val crop = assertNotNull(
+        val crop = assertPresent(
             MotionSeedCropFinder.find(width, height, current, previous)
         )
         val left = crop.xMin * width
@@ -65,7 +65,7 @@ class MotionSeedCropFinderTest {
         val top = IntArray(width) { 80 }
         val bottom = IntArray(width) { 140 }
 
-        val crop = assertNotNull(
+        val crop = assertPresent(
             MotionSeedCropFinder.find(
                 width = width,
                 height = height,
@@ -119,5 +119,10 @@ class MotionSeedCropFinderTest {
                 buffer[y * width + x] = value.toByte()
             }
         }
+    }
+
+    private fun <T : Any> assertPresent(value: T?): T {
+        assertNotNull(value)
+        return requireNotNull(value)
     }
 }

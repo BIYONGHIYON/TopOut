@@ -80,6 +80,16 @@ extension HoldVC {
         // 실제 콜백은 아래 videoOutputQ에서 들어옵니다.
         videoOutput.setSampleBufferDelegate(videoFrameSink, queue: videoOutputQ)
         audioOutput.setSampleBufferDelegate(videoFrameSink, queue: audioOutputQ)
+        videoFrameSink.setStreamReadinessHandler { [weak self] in
+            guard let self else { return }
+            self.isCameraStreamReady = true
+            if self.mode == .camera,
+               self.recState == .idle,
+               !self.isBusy,
+               self.launchImageView.isHidden {
+                self.readyBtn.isEnabled = true
+            }
+        }
 
         let selectedResolution = selectedRecordingResolution
         let selectedFrameRate = selectedRecordingFrameRate
@@ -115,11 +125,15 @@ extension HoldVC {
                 requestedResolution: selectedResolution,
                 requestedFrameRate: selectedFrameRate
             )
-            self.applyCaptureFormat(
+            let didApplyFormat = self.applyCaptureFormat(
                 to: camera,
                 resolution: resolvedFormat.resolution,
                 frameRate: resolvedFormat.frameRate
             )
+            if didApplyFormat {
+                self.appliedRecordingResolution = resolvedFormat.resolution
+                self.appliedRecordingFrameRate = resolvedFormat.frameRate
+            }
             self.applyCameraZoomLocked(self.currentCameraZoomFactor, to: camera)
 
             do {
@@ -248,14 +262,34 @@ extension HoldVC {
                 requestedFrameRate: selectedFrameRate
             )
 
-            self.session.beginConfiguration()
-            self.applyCaptureFormat(
-                to: camera,
-                resolution: resolvedFormat.resolution,
-                frameRate: resolvedFormat.frameRate
-            )
-            self.applyCameraZoomLocked(self.currentCameraZoomFactor, to: camera)
-            self.session.commitConfiguration()
+            let needsFormatChange = self.appliedRecordingResolution != resolvedFormat.resolution ||
+                self.appliedRecordingFrameRate != resolvedFormat.frameRate
+            let needsZoomChange = abs(camera.videoZoomFactor - self.currentCameraZoomFactor) > 0.001
+
+            if needsFormatChange {
+                self.videoFrameSink.resetStreamReadiness()
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.isCameraStreamReady = false
+                    self.readyBtn.isEnabled = false
+                }
+
+                self.session.beginConfiguration()
+                if self.applyCaptureFormat(
+                    to: camera,
+                    resolution: resolvedFormat.resolution,
+                    frameRate: resolvedFormat.frameRate
+                ) {
+                    self.appliedRecordingResolution = resolvedFormat.resolution
+                    self.appliedRecordingFrameRate = resolvedFormat.frameRate
+                }
+                if needsZoomChange {
+                    self.applyCameraZoomLocked(self.currentCameraZoomFactor, to: camera)
+                }
+                self.session.commitConfiguration()
+            } else if needsZoomChange {
+                self.applyCameraZoomLocked(self.currentCameraZoomFactor, to: camera)
+            }
 
             DispatchQueue.main.async { [weak self] in
                 self?.applyResolvedRecordingFormatIfNeeded(resolvedFormat)
@@ -265,10 +299,15 @@ extension HoldVC {
         }
     }
 
-    private func applyCaptureFormat(to camera: AVCaptureDevice, resolution: RecordingResolution, frameRate: RecordingFrameRate) {
+    @discardableResult
+    private func applyCaptureFormat(
+        to camera: AVCaptureDevice,
+        resolution: RecordingResolution,
+        frameRate: RecordingFrameRate
+    ) -> Bool {
         let preferredFPS = frameRate.fps
         guard let format = bestVideoFormat(for: camera, resolution: resolution, fps: preferredFPS) else {
-            return
+            return false
         }
 
         let fps = clampedFPS(preferredFPS, in: format)
@@ -280,7 +319,10 @@ extension HoldVC {
             camera.activeVideoMinFrameDuration = frameDuration
             camera.activeVideoMaxFrameDuration = frameDuration
             camera.unlockForConfiguration()
-        } catch { }
+            return true
+        } catch {
+            return false
+        }
     }
 
     private func bestVideoFormat(for camera: AVCaptureDevice, resolution: RecordingResolution, fps: Double) -> AVCaptureDevice.Format? {
@@ -444,6 +486,12 @@ extension HoldVC {
             }
             guard !self.session.isRunning else { return }
 
+            self.videoFrameSink.resetStreamReadiness()
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.isCameraStreamReady = false
+                self.readyBtn.isEnabled = false
+            }
             self.session.startRunning()
         }
     }
@@ -556,7 +604,7 @@ extension HoldVC {
 
     @objc func onReady() {
         guard mode == .camera, recState == .idle, !isBusy else { return }
-        guard isCameraReady else {
+        guard isCameraReady, isCameraStreamReady else {
             showCameraError("카메라가 아직 준비되지 않았습니다.")
             return
         }
@@ -589,16 +637,17 @@ extension HoldVC {
 
             // 자동 구간 탐지의 매트 경계만 Ready 직후 도착하는 첫 비디오 프레임으로 한 번
             // 확정합니다. 이 이미지는 MobileSAM 입력에만 쓰이며 사용자에게 표시하지 않습니다.
-            self.videoFrameSink.captureCurrentFrame(
+            self.videoFrameSink.captureStableFrame(
                 aspectRatio: self.activeRecordingAspect,
-                maxLongSide: CameraCfg.captureMaxLongSide
+                maxLongSide: CameraCfg.captureMaxLongSide,
+                camera: self.activeCameraDevice
             ) { [weak self] image in
                 guard let self else { return }
                 guard let image else {
                     self.unlockCameraOrientation()
                     self.isBusy = false
                     self.setLoading(false)
-                    self.readyBtn.isEnabled = true
+                    self.readyBtn.isEnabled = self.isCameraStreamReady
                     self.showCameraError("현재 카메라 프레임을 캡처하지 못했습니다.")
                     return
                 }
@@ -619,12 +668,24 @@ final class VideoFrameSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
     private var isRecording = false
     private var isMotionDetectionEnabled = true
+    private var videoFramesSinceReset = 0
+    private var didNotifyStreamReady = false
+    private var streamReadinessHandler: (() -> Void)?
+
+    private enum FrameCapturePolicy {
+        case nextFrame
+        case stableCamera(AVCaptureDevice?)
+    }
 
     private struct FrameCaptureRequest {
         let id: UUID
         let aspectRatio: CGFloat
         let maxLongSide: CGFloat
         let completion: (UIImage?) -> Void
+        let policy: FrameCapturePolicy
+        let requestedAt: TimeInterval
+        var observedFrames: Int
+        var consecutiveStableFrames: Int
     }
 
     private var pendingFrameCapture: FrameCaptureRequest?
@@ -633,6 +694,19 @@ final class VideoFrameSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         self.recorder = recorder
         self.motionDetector = motionDetector
         super.init()
+    }
+
+    func setStreamReadinessHandler(_ handler: @escaping () -> Void) {
+        stateQ.async { [weak self] in
+            self?.streamReadinessHandler = handler
+        }
+    }
+
+    func resetStreamReadiness() {
+        stateQ.async { [weak self] in
+            self?.videoFramesSinceReset = 0
+            self?.didNotifyStreamReady = false
+        }
     }
 
 
@@ -653,20 +727,53 @@ final class VideoFrameSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         maxLongSide: CGFloat,
         completion: @escaping (UIImage?) -> Void
     ) {
+        enqueueFrameCapture(
+            aspectRatio: aspectRatio,
+            maxLongSide: maxLongSide,
+            policy: .nextFrame,
+            completion: completion
+        )
+    }
+
+    /// Waits for new post-Ready frames and prefers frames captured after camera 3A has settled.
+    /// This prevents a cold-start or just-reconfigured frame from becoming MobileSAM input.
+    func captureStableFrame(
+        aspectRatio: CGFloat,
+        maxLongSide: CGFloat,
+        camera: AVCaptureDevice?,
+        completion: @escaping (UIImage?) -> Void
+    ) {
+        enqueueFrameCapture(
+            aspectRatio: aspectRatio,
+            maxLongSide: maxLongSide,
+            policy: .stableCamera(camera),
+            completion: completion
+        )
+    }
+
+    private func enqueueFrameCapture(
+        aspectRatio: CGFloat,
+        maxLongSide: CGFloat,
+        policy: FrameCapturePolicy,
+        completion: @escaping (UIImage?) -> Void
+    ) {
         let request = FrameCaptureRequest(
             id: UUID(),
             aspectRatio: aspectRatio,
             maxLongSide: maxLongSide,
-            completion: completion
+            completion: completion,
+            policy: policy,
+            requestedAt: ProcessInfo.processInfo.systemUptime,
+            observedFrames: 0,
+            consecutiveStableFrames: 0
         )
 
         // Keep preview running at the selected camera FPS, but do not retain every preview frame.
-        // Only the next video frame is consumed when the user taps Ready.
         stateQ.async { [weak self] in
             self?.pendingFrameCapture = request
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
             guard let self else { return }
             self.stateQ.async { [weak self] in
                 guard let self, self.pendingFrameCapture?.id == request.id else { return }
@@ -684,15 +791,57 @@ final class VideoFrameSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
         let mediaType = CMFormatDescriptionGetMediaType(formatDescription)
 
-        let state = stateQ.sync { () -> (recording: Bool, motionDetection: Bool, capture: FrameCaptureRequest?) in
-            let capture = mediaType == kCMMediaType_Video ? pendingFrameCapture : nil
-            if capture != nil {
-                pendingFrameCapture = nil
+        let state = stateQ.sync { () -> (
+            recording: Bool,
+            motionDetection: Bool,
+            capture: FrameCaptureRequest?,
+            streamReadyHandler: (() -> Void)?
+        ) in
+            var capture: FrameCaptureRequest?
+            var readyHandler: (() -> Void)?
+
+            if mediaType == kCMMediaType_Video {
+                videoFramesSinceReset += 1
+                if !didNotifyStreamReady, videoFramesSinceReset >= 6 {
+                    didNotifyStreamReady = true
+                    readyHandler = streamReadinessHandler
+                }
+
+                if var request = pendingFrameCapture {
+                    request.observedFrames += 1
+                    let shouldCapture: Bool
+                    switch request.policy {
+                    case .nextFrame:
+                        shouldCapture = true
+                    case let .stableCamera(camera):
+                        let elapsed = ProcessInfo.processInfo.systemUptime - request.requestedAt
+                        let cameraIsSettled = camera.map {
+                            !$0.isAdjustingExposure && !$0.isAdjustingFocus && !$0.isAdjustingWhiteBalance
+                        } ?? true
+                        request.consecutiveStableFrames = cameraIsSettled
+                            ? request.consecutiveStableFrames + 1
+                            : 0
+                        let hasFreshFrames = request.observedFrames >= 4 && elapsed >= 0.20
+                        let hasStableCamera = request.consecutiveStableFrames >= 2
+                        shouldCapture = (hasFreshFrames && hasStableCamera) || elapsed >= 0.90
+                    }
+
+                    if shouldCapture {
+                        capture = request
+                        pendingFrameCapture = nil
+                    } else {
+                        pendingFrameCapture = request
+                    }
+                }
             }
-            return (isRecording, isMotionDetectionEnabled, capture)
+            return (isRecording, isMotionDetectionEnabled, capture, readyHandler)
         }
         let shouldRecord = state.recording
         let shouldRunMotionDetection = state.motionDetection
+
+        if let readyHandler = state.streamReadyHandler {
+            DispatchQueue.main.async(execute: readyHandler)
+        }
 
         if mediaType == kCMMediaType_Audio {
             guard shouldRecord else { return }

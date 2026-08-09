@@ -52,6 +52,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.round
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** CameraX counterpart of Camera.swift + Recorder.swift. */
 @Suppress("UsePropertyAccessSyntax")
@@ -599,7 +600,8 @@ class CameraEngine(private val context: Context) {
             maxZoomRatio = effectiveMaxZoom,
             lensZoomRatios = effectiveLensZoomRatios
         )
-        applyRequestedZoomToBoundCamera()
+        awaitRequestedZoomApplied()
+        awaitPreviewStreaming(config.lifecycleOwner, previewView)
         return capabilities
     }
 
@@ -1038,6 +1040,8 @@ class CameraEngine(private val context: Context) {
         const val LENS_BOUNDARY_EPSILON = 0.001f
         const val LENS_SWITCH_GAP = 0.1f
         const val LENS_SWITCH_READY_TIMEOUT_MS = 2_500L
+        const val PREVIEW_STREAM_READY_TIMEOUT_MS = 3_000L
+        const val ZOOM_APPLY_TIMEOUT_MS = 1_500L
         const val FULL_FRAME_SENSOR_WIDTH_MM = 36f
         const val EXPECTED_WIDE_EQUIVALENT_MM = 26f
     }
@@ -1232,6 +1236,44 @@ class CameraEngine(private val context: Context) {
                 continuation.resumeWithException(error)
             }
         }, mainExecutor)
+    }
+
+    private suspend fun awaitRequestedZoomApplied() {
+        withTimeoutOrNull(ZOOM_APPLY_TIMEOUT_MS) {
+            suspendCancellableCoroutine { continuation ->
+                applyRequestedZoomToBoundCamera {
+                    if (continuation.isActive) continuation.resume(Unit)
+                }
+            }
+        }
+    }
+
+    private suspend fun awaitPreviewStreaming(
+        lifecycleOwner: LifecycleOwner,
+        previewView: PreviewView
+    ) {
+        if (previewView.previewStreamState.value == PreviewView.StreamState.STREAMING) return
+
+        val didStartStreaming = withTimeoutOrNull(PREVIEW_STREAM_READY_TIMEOUT_MS) {
+            suspendCancellableCoroutine { continuation ->
+                lateinit var observer: Observer<PreviewView.StreamState>
+                observer = Observer { state ->
+                    if (state == PreviewView.StreamState.STREAMING && continuation.isActive) {
+                        previewView.previewStreamState.removeObserver(observer)
+                        continuation.resume(Unit)
+                    }
+                }
+                previewView.previewStreamState.observe(lifecycleOwner, observer)
+                continuation.invokeOnCancellation {
+                    mainExecutor.execute {
+                        previewView.previewStreamState.removeObserver(observer)
+                    }
+                }
+            }
+        }
+        if (didStartStreaming == null) {
+            throw IllegalStateException("카메라 미리보기 스트림을 시작하지 못했습니다.")
+        }
     }
 
     fun release() {

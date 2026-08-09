@@ -57,7 +57,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.time.Duration.Companion.milliseconds
 import androidx.media3.common.MediaItem
@@ -69,6 +68,7 @@ import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.topout.cam.model.AppSettings
+import com.topout.cam.model.GalleryClipSelection
 import com.topout.cam.model.RecordedVideo
 import com.topout.cam.model.SavedGalleryVideo
 import com.topout.cam.ui.components.PrecisionTrimSlider
@@ -85,7 +85,8 @@ fun ReviewScreen(
     settings: AppSettings,
     saving: Boolean,
     savingStatus: String?,
-    savedGalleryVideo: SavedGalleryVideo?,
+    savingStatusSelection: GalleryClipSelection?,
+    savedGalleryVideos: List<SavedGalleryVideo>,
     onSave: (Double, Double, Boolean) -> Unit,
     onRetake: () -> Unit,
     onClose: () -> Unit
@@ -204,11 +205,11 @@ fun ReviewScreen(
         isPlaying = true
     }
 
-    val savedMatchesCurrentSelection = savedGalleryVideo?.let { saved ->
-        abs(saved.startSeconds - selectedStart) < 0.01 &&
-            abs(saved.endSeconds - selectedEnd) < 0.01 &&
-            saved.includeOverlay == includeOverlay
-    } == true
+    val currentSelection = GalleryClipSelection(selectedStart, selectedEnd, includeOverlay)
+    val currentSavedGalleryVideo = savedGalleryVideos.lastOrNull {
+        it.selection.matches(currentSelection)
+    }
+    val savedMatchesCurrentSelection = currentSavedGalleryVideo != null
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
@@ -235,8 +236,8 @@ fun ReviewScreen(
             }
         }
 
-        val currentSavingStatus = savingStatus?.takeUnless {
-            it.startsWith("✓") && !savedMatchesCurrentSelection
+        val currentSavingStatus = savingStatus?.takeIf {
+            savingStatusSelection?.matches(currentSelection) == true
         }
         val reviewStatusText = playbackErrorMessage ?: currentSavingStatus ?: if (video.detectedRanges.isEmpty()) {
             "저장할 구간을 직접 선택해주세요"
@@ -452,9 +453,9 @@ fun ReviewScreen(
         }
     }
 
-    if (showingSavedGalleryVideo && savedGalleryVideo != null) {
+    if (showingSavedGalleryVideo && currentSavedGalleryVideo != null) {
         SavedGalleryVideoDialog(
-            uri = savedGalleryVideo.uri,
+            uri = currentSavedGalleryVideo.uri,
             onDismiss = { showingSavedGalleryVideo = false }
         )
     }
@@ -595,7 +596,7 @@ private fun SavedGalleryVideoDialog(
                 )
 
                 TopStatusBanner(
-                    text = playbackError ?: "✓ 갤러리에서 불러온 영상",
+                    text = playbackError ?: "갤러리에서 불러온 영상",
                     isLandscape = isLandscape,
                     modifier = Modifier.align(Alignment.TopCenter)
                 )
