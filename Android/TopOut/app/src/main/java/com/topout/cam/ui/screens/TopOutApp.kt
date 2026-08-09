@@ -39,6 +39,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -142,6 +143,7 @@ fun TopOutApp(viewModel: TopOutViewModel) {
             settings = state.settings,
             saving = state.saving,
             savingStatus = state.savingStatus,
+            savedGalleryVideo = state.savedGalleryVideo,
             onSave = viewModel::saveSelectedClip,
             onRetake = viewModel::retakeFromReview,
             onClose = viewModel::closeReview
@@ -331,15 +333,16 @@ private fun RecordingMatLineOverlay(matLine: List<Offset>, modifier: Modifier = 
             if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
         // Read-only guide: no endpoint handles and lower opacity so it does not distract from the climb.
+        // Use dp-based widths so high-density Android displays match the visual weight of iOS.
         drawPath(
             path,
             Color.Black.copy(alpha = 0.28f),
-            style = Stroke(width = 5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            style = Stroke(width = 5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
         drawPath(
             path,
             Color(0xFF168BFF).copy(alpha = 0.48f),
-            style = Stroke(width = 3f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
     }
 }
@@ -407,7 +410,7 @@ private fun PreviewControls(
                 modifier = Modifier.background(TopOutColors.TipBackground, RoundedCornerShape(10.dp))
                     .padding(horizontal = 6.dp, vertical = 4.dp),
                 color = Color.White,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -431,7 +434,7 @@ private fun PreviewControls(
                         "%.1fx".format(zoom),
                         color = Color.White,
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1
                     )
@@ -460,7 +463,7 @@ private fun PreviewControls(
                     modifier = Modifier.align(Alignment.CenterStart),
                     color = Color.White,
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 14.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 TopOutCapsuleButton(
@@ -504,7 +507,7 @@ private fun SelectionControls(
                 modifier = Modifier.background(TopOutColors.TipBackground, RoundedCornerShape(10.dp))
                     .padding(horizontal = 6.dp, vertical = 4.dp),
                 color = Color.White,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -584,9 +587,14 @@ private fun RecordingStopCapsuleButton(
             elapsed,
             color = Color.White,
             fontFamily = FontFamily.Monospace,
-            fontSize = 14.sp,
+            autoSize = TextAutoSize.StepBased(
+                minFontSize = 14.sp,
+                maxFontSize = 16.sp,
+                stepSize = 0.5.sp
+            ),
             fontWeight = FontWeight.SemiBold,
-            maxLines = 1
+            maxLines = 1,
+            softWrap = false
         )
     }
 }

@@ -10,11 +10,12 @@ object PoseHumanGate {
         elbowCount: Int,
         kneeCount: Int
     ): Boolean {
-        if (shoulderCount < TopOutConfig.PoseMinimumShoulders) return false
-        if (hipCount < TopOutConfig.PoseMinimumHips) return false
-        if (elbowCount < TopOutConfig.PoseMinimumElbows) return false
-        if (kneeCount < TopOutConfig.PoseMinimumKnees) return false
-        return true
+        var satisfiedGroups = 0
+        if (shoulderCount >= TopOutConfig.PoseMinimumShoulders) satisfiedGroups++
+        if (hipCount >= TopOutConfig.PoseMinimumHips) satisfiedGroups++
+        if (elbowCount >= TopOutConfig.PoseMinimumElbows) satisfiedGroups++
+        if (kneeCount >= TopOutConfig.PoseMinimumKnees) satisfiedGroups++
+        return satisfiedGroups >= TopOutConfig.PoseMinimumSatisfiedGroups
     }
 
     /** Compatibility overload retained for unit tests and small pure callers. */

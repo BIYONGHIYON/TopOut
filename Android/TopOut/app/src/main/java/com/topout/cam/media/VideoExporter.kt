@@ -19,6 +19,7 @@ import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
 import java.io.File
 import java.io.FileInputStream
+import java.io.IOException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -145,10 +146,48 @@ class VideoExporter(private val context: Context) {
                     put(MediaStore.Video.Media.IS_PENDING, 0)
                 }, null, null)
             }
+            verifySavedMediaStoreVideo(uri)
             return uri
         } catch (error: Throwable) {
             resolver.delete(uri, null, null)
             throw error
         }
     }
+    /**
+     * Treat a save as complete only after the MediaStore row is visible again and the stored
+     * resource can actually be reopened. Playback later uses this exact content URI.
+     */
+    private fun verifySavedMediaStoreVideo(uri: Uri) {
+        val resolver = context.contentResolver
+        val projection = arrayOf(
+            MediaStore.Video.Media._ID,
+            MediaStore.Video.Media.SIZE,
+            MediaStore.Video.Media.DURATION,
+            MediaStore.Video.Media.MIME_TYPE
+        )
+        resolver.query(uri, projection, null, null, null)?.use { cursor ->
+            if (!cursor.moveToFirst()) error("갤러리에서 저장된 영상을 다시 찾지 못했습니다.")
+        } ?: error("갤러리에서 저장된 영상을 확인할 수 없습니다.")
+
+        resolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
+            if (!descriptor.fileDescriptor.valid()) {
+                throw IOException("갤러리에 저장된 영상 파일을 열 수 없습니다.")
+            }
+        } ?: error("갤러리에 저장된 영상 파일을 열 수 없습니다.")
+
+        resolver.openInputStream(uri)?.use { input ->
+            if (input.read() < 0) error("갤러리에 저장된 영상 데이터를 읽을 수 없습니다.")
+        } ?: error("갤러리에 저장된 영상 데이터를 읽을 수 없습니다.")
+
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(context, uri)
+            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: 0L
+            if (duration <= 0L) error("갤러리에 저장된 영상의 재생 정보를 확인하지 못했습니다.")
+        } finally {
+            retriever.release()
+        }
+    }
+
 }

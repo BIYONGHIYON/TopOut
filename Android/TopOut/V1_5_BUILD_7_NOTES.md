@@ -19,6 +19,12 @@
 
 ## Review and range handling
 
-- Retake warning: `기존의 매트경계 위치를 유지하여 다시 촬영합니다. 저장하지 않은 영상이 삭제됩니다.`
+- Retake warning: `기존의 매트경계 위치를 유지하여 다시 촬영합니다.
+저장하지 않은 영상이 삭제됩니다.`
 - Close warning: `저장하지 않은 영상이 삭제됩니다.`
 - Stop-time open ranges and queued finish events with the same start are coalesced instead of creating duplicate review clips.
+
+### Android UI readability
+- Increased camera/action button label sizes for large/high-density displays such as Galaxy Fold while keeping existing button dimensions.
+- Button and segmented-control labels now use Compose text auto-sizing so labels grow when space allows and shrink within a safe minimum instead of being ellipsized or clipped.
+- Slightly increased guidance, zoom, recording timer, settings section, and interactive settings text sizes.

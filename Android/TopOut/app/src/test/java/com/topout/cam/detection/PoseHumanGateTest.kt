@@ -13,7 +13,7 @@ class PoseHumanGateTest {
     }
 
     @Test
-    fun acceptsExactlyFourRequiredJoints() {
+    fun acceptsExactlyFourRequiredGroups() {
         assertTrue(
             PoseHumanGate.isValid(
                 setOf(
@@ -27,13 +27,13 @@ class PoseHumanGateTest {
     }
 
     @Test
-    fun rejectsPoseWithoutShoulder() {
-        assertFalse(
+    fun acceptsPoseWhenThreeOfFourGroupsArePresent() {
+        assertTrue(
             PoseHumanGate.isValid(
                 setOf(
+                    PoseLandmark.LEFT_SHOULDER,
                     PoseLandmark.LEFT_HIP,
                     PoseLandmark.LEFT_ELBOW,
-                    PoseLandmark.LEFT_KNEE,
                     PoseLandmark.LEFT_WRIST,
                     PoseLandmark.LEFT_ANKLE
                 )
@@ -42,43 +42,12 @@ class PoseHumanGateTest {
     }
 
     @Test
-    fun rejectsPoseWithoutHip() {
-        assertFalse(
-            PoseHumanGate.isValid(
-                setOf(
-                    PoseLandmark.LEFT_SHOULDER,
-                    PoseLandmark.LEFT_ELBOW,
-                    PoseLandmark.LEFT_KNEE,
-                    PoseLandmark.LEFT_WRIST,
-                    PoseLandmark.LEFT_ANKLE
-                )
-            )
-        )
-    }
-
-    @Test
-    fun rejectsPoseWithoutElbow() {
+    fun rejectsPoseWhenOnlyTwoOfFourGroupsArePresent() {
         assertFalse(
             PoseHumanGate.isValid(
                 setOf(
                     PoseLandmark.LEFT_SHOULDER,
                     PoseLandmark.LEFT_HIP,
-                    PoseLandmark.LEFT_KNEE,
-                    PoseLandmark.LEFT_WRIST,
-                    PoseLandmark.LEFT_ANKLE
-                )
-            )
-        )
-    }
-
-    @Test
-    fun rejectsPoseWithoutKnee() {
-        assertFalse(
-            PoseHumanGate.isValid(
-                setOf(
-                    PoseLandmark.LEFT_SHOULDER,
-                    PoseLandmark.LEFT_HIP,
-                    PoseLandmark.LEFT_ELBOW,
                     PoseLandmark.LEFT_WRIST,
                     PoseLandmark.LEFT_ANKLE
                 )

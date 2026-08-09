@@ -4,9 +4,9 @@ import Photos
 
 
 private final class PhotoLibrarySaveCompletionBox: @unchecked Sendable {
-    let completion: (Result<Void, Error>) -> Void
+    let completion: (Result<String, Error>) -> Void
 
-    init(_ completion: @escaping (Result<Void, Error>) -> Void) {
+    init(_ completion: @escaping (Result<String, Error>) -> Void) {
         self.completion = completion
     }
 }
@@ -203,14 +203,20 @@ extension HoldVC {
             ) { result in
                 switch result {
                 case .success(let url):
-                    vc?.setStatus("사진 앱에 저장하는 중...")
+                    vc?.setStatus("사진 앱에 저장하고 확인하는 중...")
                     self.saveVideoToPhotoLibrary(url) { saveResult in
                         vc?.setSaving(false)
                         switch saveResult {
-                        case .success:
-                            vc?.setStatus("구간 선택된 동영상을 저장했습니다")
+                        case .success(let localIdentifier):
+                            vc?.setVerifiedSavedAsset(
+                                localIdentifier: localIdentifier,
+                                startSeconds: startSeconds,
+                                endSeconds: endSeconds,
+                                includeTopHoldOverlay: includeTopHoldOverlay
+                            )
+                            vc?.setStatus("✓ 갤러리에 저장된 영상을 확인했습니다")
                         case .failure(let error):
-                            vc?.setStatus("사진 앱 저장 실패: \(error.localizedDescription)")
+                            vc?.setStatus("사진 앱 저장/확인 실패: \(error.localizedDescription)")
                         }
                     }
                     return
@@ -229,37 +235,100 @@ extension HoldVC {
 
     private func saveVideoToPhotoLibrary(
         _ url: URL,
-        completion: @escaping (Result<Void, Error>) -> Void
+        completion: @escaping (Result<String, Error>) -> Void
     ) {
         let completionBox = PhotoLibrarySaveCompletionBox(completion)
 
-        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+        // Build 8 verifies the newly created PHAsset by fetching and reopening that exact video.
+        // This requires read/write Photos access rather than the previous add-only permission.
+        PHPhotoLibrary.requestAuthorization(for: .readWrite) { [weak self] status in
+            guard let self else { return }
             guard status == .authorized || status == .limited else {
                 let error = NSError(
                     domain: "TopOut.PhotoLibrary",
                     code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "사진 앱에 추가할 권한이 없습니다. 설정에서 사진 추가 권한을 허용해주세요."]
+                    userInfo: [NSLocalizedDescriptionKey: "사진 앱에 저장된 영상을 확인할 권한이 없습니다. 설정에서 사진 접근 권한을 허용해주세요."]
                 )
                 DispatchQueue.main.async { completionBox.completion(.failure(error)) }
                 return
             }
 
+            var createdLocalIdentifier: String?
             PHPhotoLibrary.shared().performChanges {
-                PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
+                let request = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
+                createdLocalIdentifier = request?.placeholderForCreatedAsset?.localIdentifier
             } completionHandler: { success, error in
-                DispatchQueue.main.async {
-                    if success {
-                        completionBox.completion(.success(()))
-                    } else {
-                        let resolvedError = error ?? NSError(
-                            domain: "TopOut.PhotoLibrary",
-                            code: 2,
-                            userInfo: [NSLocalizedDescriptionKey: "동영상을 사진 앱에 저장하지 못했습니다."]
-                        )
-                        completionBox.completion(.failure(resolvedError))
-                    }
+                guard success, let localIdentifier = createdLocalIdentifier else {
+                    let resolvedError = error ?? NSError(
+                        domain: "TopOut.PhotoLibrary",
+                        code: 2,
+                        userInfo: [NSLocalizedDescriptionKey: "동영상을 사진 앱에 저장하지 못했습니다."]
+                    )
+                    DispatchQueue.main.async { completionBox.completion(.failure(resolvedError)) }
+                    return
+                }
+
+                self.verifySavedPhotoLibraryVideo(localIdentifier: localIdentifier) { result in
+                    DispatchQueue.main.async { completionBox.completion(result) }
                 }
             }
+        }
+    }
+
+    private func verifySavedPhotoLibraryVideo(
+        localIdentifier: String,
+        attemptsRemaining: Int = 3,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        let result = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
+        guard let asset = result.firstObject, asset.mediaType == .video, asset.duration > 0 else {
+            if attemptsRemaining > 1 {
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                    self?.verifySavedPhotoLibraryVideo(
+                        localIdentifier: localIdentifier,
+                        attemptsRemaining: attemptsRemaining - 1,
+                        completion: completion
+                    )
+                }
+                return
+            }
+            let error = NSError(
+                domain: "TopOut.PhotoLibrary",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "사진 앱에서 저장된 영상을 다시 찾지 못했습니다."]
+            )
+            completion(.failure(error))
+            return
+        }
+
+        let options = PHVideoRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = true
+        PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { [weak self] avAsset, _, info in
+            if let avAsset {
+                _ = avAsset // Reopening the exact Photos asset is the final save-verification step.
+                completion(.success(localIdentifier))
+                return
+            }
+
+            if attemptsRemaining > 1 {
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.25) {
+                    self?.verifySavedPhotoLibraryVideo(
+                        localIdentifier: localIdentifier,
+                        attemptsRemaining: attemptsRemaining - 1,
+                        completion: completion
+                    )
+                }
+                return
+            }
+
+            let underlyingError = info?[PHImageErrorKey] as? Error
+            let error = underlyingError ?? NSError(
+                domain: "TopOut.PhotoLibrary",
+                code: 4,
+                userInfo: [NSLocalizedDescriptionKey: "사진 앱에 저장된 영상 파일을 다시 열지 못했습니다."]
+            )
+            completion(.failure(error))
         }
     }
 

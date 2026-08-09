@@ -1,6 +1,7 @@
 package com.topout.cam.ui.components
 
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Text
@@ -34,7 +35,11 @@ fun TopStatusBanner(
                 end = if (isLandscape) 6.dp else 10.dp
             ),
         color = Color.White,
-        fontSize = 13.sp,
+        autoSize = TextAutoSize.StepBased(
+            minFontSize = 12.sp,
+            maxFontSize = 14.5.sp,
+            stepSize = 0.5.sp
+        ),
         fontWeight = FontWeight.SemiBold,
         style = TextStyle(
             shadow = Shadow(
@@ -45,6 +50,7 @@ fun TopStatusBanner(
         ),
         textAlign = TextAlign.Center,
         maxLines = 1,
-        overflow = TextOverflow.Ellipsis
+        softWrap = false,
+        overflow = TextOverflow.Clip
     )
 }

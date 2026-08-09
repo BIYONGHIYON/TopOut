@@ -20,6 +20,7 @@ import com.topout.cam.model.ClipRange
 import com.topout.cam.model.ClipRangeNormalizer
 import com.topout.cam.model.DetectedClipRangeStore
 import com.topout.cam.model.RecordedVideo
+import com.topout.cam.model.SavedGalleryVideo
 import com.topout.cam.model.RecordingFrameRate
 import com.topout.cam.model.RecordingResolution
 import com.topout.cam.model.RecordingState
@@ -630,13 +631,24 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     includeOverlay = includeOverlay,
                     onSavingToGallery = {
                         savingToGallery = true
-                        _uiState.update { it.copy(savingStatus = "사진 앱에 저장하는 중...") }
+                        _uiState.update { it.copy(savingStatus = "사진 앱에 저장하고 확인하는 중...") }
                     }
                 )
-            }.onSuccess {
-                _uiState.update { it.copy(saving = false, savingStatus = "구간 선택된 동영상을 저장했습니다") }
+            }.onSuccess { savedUri ->
+                _uiState.update {
+                    it.copy(
+                        saving = false,
+                        savingStatus = "✓ 갤러리에 저장된 영상을 확인했습니다",
+                        savedGalleryVideo = SavedGalleryVideo(
+                            uri = savedUri,
+                            startSeconds = startSeconds,
+                            endSeconds = endSeconds,
+                            includeOverlay = includeOverlay
+                        )
+                    )
+                }
             }.onFailure { error ->
-                val prefix = if (savingToGallery) "사진 앱 저장 실패" else "구간 저장 실패"
+                val prefix = if (savingToGallery) "사진 앱 저장/확인 실패" else "구간 저장 실패"
                 _uiState.update {
                     it.copy(
                         saving = false,
@@ -689,6 +701,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 recordedVideo = null,
                 detectedRanges = emptyList(),
                 savingStatus = null,
+                savedGalleryVideo = null,
                 // Review may rotate independently. Retake must restore the exact orientation used
                 // for the saved mat/hold normalized coordinates, otherwise the preserved boundary
                 // would be drawn over a different camera crop.
@@ -753,6 +766,8 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     recordingCountdown = null,
                     livePreviewEnabled = true,
                     detectedRanges = ranges,
+                    savedGalleryVideo = null,
+                    savingStatus = null,
                     recordedVideo = RecordedVideo(
                         uri = Uri.fromFile(readyFile),
                         durationSeconds = duration,

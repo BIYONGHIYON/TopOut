@@ -1,6 +1,7 @@
 package com.topout.cam.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -62,10 +63,15 @@ fun TopOutCapsuleButton(
         }
         Text(
             text = text,
-            fontSize = if (compact) 12.sp else 14.sp,
+            autoSize = TextAutoSize.StepBased(
+                minFontSize = if (compact) 12.sp else 13.sp,
+                maxFontSize = if (compact) 14.sp else 16.sp,
+                stepSize = 0.5.sp
+            ),
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            softWrap = false,
+            overflow = TextOverflow.Clip
         )
     }
 }
@@ -90,7 +96,7 @@ fun SegmentControl(
             Button(
                 onClick = { onSelected(index) },
                 enabled = isEnabled,
-                modifier = Modifier.weight(1f).height(30.dp),
+                modifier = Modifier.weight(1f).height(32.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (selected) Color.White else Color.Transparent,
                     contentColor = Color.Black,
@@ -101,7 +107,18 @@ fun SegmentControl(
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = if (selected) 1.dp else 0.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp)
             ) {
-                Text(label, fontSize = 11.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
+                Text(
+                    text = label,
+                    autoSize = TextAutoSize.StepBased(
+                        minFontSize = 10.5.sp,
+                        maxFontSize = 13.sp,
+                        stepSize = 0.5.sp
+                    ),
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip
+                )
             }
         }
     }

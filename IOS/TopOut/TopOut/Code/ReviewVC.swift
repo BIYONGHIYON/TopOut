@@ -1,7 +1,15 @@
 import UIKit
 import AVFoundation
+import AVKit
+import Photos
 
 final class ReviewVC: UIViewController {
+    private struct VerifiedSavedSelection {
+        let startSeconds: TimeInterval
+        let endSeconds: TimeInterval
+        let includeTopHoldOverlay: Bool
+    }
+
     private let recordingURL: URL
     private let duration: TimeInterval
     private let topHoldOverlayImage: UIImage?
@@ -18,6 +26,8 @@ final class ReviewVC: UIViewController {
     private var includeTopHoldOverlay: Bool
     private var selectedDetectedRangeIndex: Int?
     private var sliderTimeBubbleHideWorkItem: DispatchWorkItem?
+    private var verifiedSavedAssetIdentifier: String?
+    private var verifiedSavedSelection: VerifiedSavedSelection?
 
     private var player: AVPlayer?
     private var playerLayer: AVPlayerLayer?
@@ -322,6 +332,7 @@ final class ReviewVC: UIViewController {
         updateDetectedRangeNavigationUI()
         refreshSelectedRangeZoomControl(recenter: true)
         topHoldOverlayView.image = topHoldOverlayImage
+        updateSaveButtonMode()
 
         let playerItem = AVPlayerItem(url: recordingURL)
         let player = AVPlayer(playerItem: playerItem)
@@ -640,6 +651,40 @@ final class ReviewVC: UIViewController {
         statusLabel.isHidden = false
     }
 
+    func setVerifiedSavedAsset(
+        localIdentifier: String,
+        startSeconds: TimeInterval,
+        endSeconds: TimeInterval,
+        includeTopHoldOverlay: Bool
+    ) {
+        verifiedSavedAssetIdentifier = localIdentifier
+        verifiedSavedSelection = VerifiedSavedSelection(
+            startSeconds: startSeconds,
+            endSeconds: endSeconds,
+            includeTopHoldOverlay: includeTopHoldOverlay
+        )
+        updateSaveButtonMode()
+    }
+
+    private var verifiedSavedSelectionMatchesCurrent: Bool {
+        guard let selection = verifiedSavedSelection, verifiedSavedAssetIdentifier != nil else { return false }
+        return abs(selection.startSeconds - selectedStart) < 0.01 &&
+            abs(selection.endSeconds - selectedEnd) < 0.01 &&
+            selection.includeTopHoldOverlay == includeTopHoldOverlay
+    }
+
+    private func updateSaveButtonMode() {
+        let matchesSavedSelection = verifiedSavedSelectionMatchesCurrent
+        var config = saveBtn.configuration ?? UIButton.Configuration.filled()
+        config.title = matchesSavedSelection ? "저장된 영상 확인" : "선택 구간 저장"
+        saveBtn.configuration = config
+        saveBtn.accessibilityLabel = matchesSavedSelection ? "갤러리에 저장된 영상 확인" : "선택 구간 저장"
+        if !matchesSavedSelection, statusLabel.text?.hasPrefix("✓ 갤러리") == true {
+            updateDetectedRangeNavigationUI()
+        }
+        normalizeReviewButtonContentLayout()
+    }
+
     func setSaving(_ saving: Bool) {
         saveBtn.isEnabled = !saving
         playPauseBtn.isEnabled = !saving
@@ -699,6 +744,7 @@ final class ReviewVC: UIViewController {
     private func handleRangeChanged(lower: TimeInterval, upper: TimeInterval, activeHandle: TrimRangeSlider.ActiveHandle) {
         selectedStart = lower
         selectedEnd = upper
+        updateSaveButtonMode()
 
         switch activeHandle {
         case .lower:
@@ -788,6 +834,7 @@ final class ReviewVC: UIViewController {
         let range = detectedRanges[index]
         selectedStart = clamped(range.startSeconds, min: 0, max: duration)
         selectedEnd = clamped(range.endSeconds, min: selectedStart + 0.1, max: duration)
+        updateSaveButtonMode()
         playhead = selectedStart
         trimSlider.lowerValue = selectedStart
         trimSlider.upperValue = selectedEnd
@@ -845,10 +892,47 @@ final class ReviewVC: UIViewController {
         guard topHoldOverlayImage != nil, !topHoldOverlayToggleLocked else { return }
         includeTopHoldOverlay.toggle()
         updateOverlayToggleButton()
+        updateSaveButtonMode()
     }
 
     @objc private func onTapSave() {
+        if verifiedSavedSelectionMatchesCurrent, let localIdentifier = verifiedSavedAssetIdentifier {
+            presentVerifiedSavedVideo(localIdentifier: localIdentifier)
+            return
+        }
         onSaveTrim?(selectedStart, selectedEnd, includeTopHoldOverlay)
+    }
+
+    private func presentVerifiedSavedVideo(localIdentifier: String) {
+        pausePlayback()
+        setStatus("갤러리에서 저장된 영상을 불러오는 중...")
+
+        let result = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
+        guard let asset = result.firstObject, asset.mediaType == .video else {
+            setStatus("갤러리에 저장된 영상을 다시 찾지 못했습니다")
+            return
+        }
+
+        let options = PHVideoRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = true
+        PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { [weak self] avAsset, _, info in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard let avAsset else {
+                    let error = info?[PHImageErrorKey] as? Error
+                    self.setStatus("저장된 영상 확인 실패: \(error?.localizedDescription ?? "영상을 열 수 없습니다")")
+                    return
+                }
+
+                let playerController = AVPlayerViewController()
+                playerController.player = AVPlayer(playerItem: AVPlayerItem(asset: avAsset))
+                self.setStatus("✓ 갤러리에서 불러온 영상을 재생합니다")
+                self.present(playerController, animated: true) {
+                    playerController.player?.play()
+                }
+            }
+        }
     }
 
     @objc private func onTapRetake() {

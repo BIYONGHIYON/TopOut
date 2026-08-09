@@ -124,12 +124,12 @@ fun SettingsDialog(
                                 contentColor = TopOutColors.Blue
                             ),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
-                        ) { Text("닫기", fontSize = 15.sp) }
+                        ) { Text("닫기", fontSize = 16.sp) }
                         Text(
                             "설정",
                             modifier = Modifier.weight(1f),
                             color = Color.Black,
-                            fontSize = 16.sp,
+                            fontSize = 17.sp,
                             fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center
                         )
@@ -140,7 +140,7 @@ fun SettingsDialog(
                                 contentColor = TopOutColors.Blue
                             ),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
-                        ) { Text("저장", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+                        ) { Text("저장", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
                     }
 
                     Column(
@@ -183,8 +183,8 @@ fun SettingsDialog(
                                     "4K 60fps는 배터리와 저장공간을 빠르게 소모할 수 있어요.",
                                     modifier = Modifier.padding(top = 4.dp),
                                     color = TopOutColors.Orange,
-                                    fontSize = 11.sp,
-                                    lineHeight = 15.sp
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp
                                 )
                             }
                         }
@@ -202,7 +202,7 @@ fun SettingsDialog(
                                 "${draft.aspectRatio.subtitle} · 저장 크기 ${output.width}×${output.height}",
                                 modifier = Modifier.padding(top = 4.dp),
                                 color = TopOutColors.SecondaryText,
-                                fontSize = 11.sp
+                                fontSize = 12.sp
                             )
                         }
 
@@ -262,8 +262,8 @@ fun SettingsDialog(
                                 "카메라와 마이크는 영상·음성 녹화에만 사용되며, 촬영 데이터는 외부 서버로 전송되지 않습니다.",
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp),
                                 color = TopOutColors.SecondaryText,
-                                fontSize = 10.sp,
-                                lineHeight = 14.sp
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
                             )
                         }
                         Spacer(Modifier.height(6.dp))
@@ -363,7 +363,7 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
                     "TopOut은 앱에서 새로 촬영한 영상을 사용자의 기기 사진 앱 또는 미디어 저장소에 저장합니다."
                 )
                 PrivacyParagraph(
-                    "TopOut은 사용자의 기존 사진이나 영상을 임의로 열람, 수집, 분석 또는 외부로 전송하지 않습니다. 운영체제 버전에 따라 영상 저장을 위한 권한 요청 방식이 달라질 수 있습니다."
+                    "저장 완료 후 정상 저장 여부를 확인할 때에는 TopOut이 방금 저장한 영상의 미디어 항목만 다시 조회하고 재생할 수 있습니다. 사용자의 기존 사진이나 영상을 임의로 탐색, 수집, 분석 또는 외부로 전송하지 않습니다. 운영체제 버전에 따라 영상 저장을 위한 권한 요청 방식이 달라질 수 있습니다."
                 )
             }
 
@@ -537,7 +537,7 @@ private fun SettingsNavigationRow(title: String, onClick: () -> Unit) {
             title,
             modifier = Modifier.weight(1f),
             color = Color.Black,
-            fontSize = 13.sp,
+            fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold
         )
         Icon(
@@ -555,7 +555,7 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
             title,
             modifier = Modifier.padding(start = 4.dp),
             color = Color.Black,
-            fontSize = 15.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.Bold
         )
         Column(
@@ -572,7 +572,7 @@ private fun SettingLabel(text: String) {
     Text(
         text,
         color = TopOutColors.SecondaryText,
-        fontSize = 12.sp,
+        fontSize = 13.sp,
         fontWeight = FontWeight.SemiBold
     )
 }
@@ -592,9 +592,9 @@ private fun SettingSwitch(
             text,
             modifier = Modifier.weight(1f).padding(end = 12.dp),
             color = TopOutColors.SecondaryText.copy(alpha = if (enabled) 1f else 0.55f),
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
-            lineHeight = 14.sp
+            lineHeight = 16.sp
         )
         Switch(
             checked = checked,

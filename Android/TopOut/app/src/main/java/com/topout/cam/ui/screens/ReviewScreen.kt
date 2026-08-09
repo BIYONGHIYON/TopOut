@@ -53,7 +53,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import kotlin.math.abs
 import kotlin.math.roundToLong
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -65,6 +67,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.topout.cam.model.AppSettings
 import com.topout.cam.model.RecordedVideo
+import com.topout.cam.model.SavedGalleryVideo
 import com.topout.cam.ui.components.PrecisionTrimSlider
 import com.topout.cam.ui.components.TopOutCapsuleButton
 import com.topout.cam.ui.components.TopStatusBanner
@@ -79,6 +82,7 @@ fun ReviewScreen(
     settings: AppSettings,
     saving: Boolean,
     savingStatus: String?,
+    savedGalleryVideo: SavedGalleryVideo?,
     onSave: (Double, Double, Boolean) -> Unit,
     onRetake: () -> Unit,
     onClose: () -> Unit
@@ -111,6 +115,7 @@ fun ReviewScreen(
     var pendingDiscardAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var pendingDiscardMessage by remember { mutableStateOf("") }
     var playbackErrorMessage by remember(video.uri) { mutableStateOf<String?>(null) }
+    var showingSavedGalleryVideo by remember(video.uri) { mutableStateOf(false) }
 
     BackHandler(enabled = !saving) {
         if (settings.helpEnabled) {
@@ -196,6 +201,12 @@ fun ReviewScreen(
         isPlaying = true
     }
 
+    val savedMatchesCurrentSelection = savedGalleryVideo?.let { saved ->
+        abs(saved.startSeconds - selectedStart) < 0.01 &&
+            abs(saved.endSeconds - selectedEnd) < 0.01 &&
+            saved.includeOverlay == includeOverlay
+    } == true
+
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -221,12 +232,15 @@ fun ReviewScreen(
             }
         }
 
-        val reviewStatusText = playbackErrorMessage ?: savingStatus ?: if (video.detectedRanges.isEmpty()) {
+        val currentSavingStatus = savingStatus?.takeUnless {
+            it.startsWith("✓") && !savedMatchesCurrentSelection
+        }
+        val reviewStatusText = playbackErrorMessage ?: currentSavingStatus ?: if (video.detectedRanges.isEmpty()) {
             "저장할 구간을 직접 선택해주세요"
         } else {
             "자동 감지된 시작~완등 구간을 확인해주세요"
         }
-        if (settings.helpEnabled || savingStatus != null) {
+        if (settings.helpEnabled || currentSavingStatus != null) {
             TopStatusBanner(
                 text = reviewStatusText,
                 isLandscape = isLandscape,
@@ -267,7 +281,7 @@ fun ReviewScreen(
                         modifier = Modifier.background(Color.Black.copy(alpha = 0.42f), RoundedCornerShape(13.dp)).padding(horizontal = 14.dp, vertical = 5.dp),
                         color = Color.White,
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                     if (video.detectedRanges.size > 1) {
@@ -332,7 +346,7 @@ fun ReviewScreen(
             }
             val requestRetake = {
                 if (settings.helpEnabled) {
-                    pendingDiscardMessage = "기존의 매트경계 위치를 유지하여 다시 촬영합니다. 저장하지 않은 영상이 삭제됩니다."
+                    pendingDiscardMessage = "기존의 매트경계 위치를 유지하여 다시 촬영합니다.\n저장하지 않은 영상이 삭제됩니다."
                     pendingDiscardAction = onRetake
                 } else {
                     onRetake()
@@ -364,8 +378,22 @@ fun ReviewScreen(
                         modifier = Modifier.weight(1f)
                     )
                     TopOutCapsuleButton(
-                        text = if (saving) "저장 중..." else "선택 구간 저장",
-                        onClick = { onSave(selectedStart, selectedEnd, includeOverlay) },
+                        text = if (saving) {
+                            "저장 중..."
+                        } else if (savedMatchesCurrentSelection) {
+                            "저장된 영상 확인"
+                        } else {
+                            "선택 구간 저장"
+                        },
+                        onClick = {
+                            if (savedMatchesCurrentSelection) {
+                                player.pause()
+                                isPlaying = false
+                                showingSavedGalleryVideo = true
+                            } else {
+                                onSave(selectedStart, selectedEnd, includeOverlay)
+                            }
+                        },
                         enabled = !saving,
                         primary = true,
                         compact = true,
@@ -391,8 +419,22 @@ fun ReviewScreen(
                         modifier = Modifier.weight(1f)
                     )
                     TopOutCapsuleButton(
-                        text = if (saving) "저장 중..." else "선택 구간 저장",
-                        onClick = { onSave(selectedStart, selectedEnd, includeOverlay) },
+                        text = if (saving) {
+                            "저장 중..."
+                        } else if (savedMatchesCurrentSelection) {
+                            "저장된 영상 확인"
+                        } else {
+                            "선택 구간 저장"
+                        },
+                        onClick = {
+                            if (savedMatchesCurrentSelection) {
+                                player.pause()
+                                isPlaying = false
+                                showingSavedGalleryVideo = true
+                            } else {
+                                onSave(selectedStart, selectedEnd, includeOverlay)
+                            }
+                        },
                         enabled = !saving,
                         primary = true,
                         compact = true,
@@ -405,6 +447,13 @@ fun ReviewScreen(
                 }
             }
         }
+    }
+
+    if (showingSavedGalleryVideo && savedGalleryVideo != null) {
+        SavedGalleryVideoDialog(
+            uri = savedGalleryVideo.uri,
+            onDismiss = { showingSavedGalleryVideo = false }
+        )
     }
 
     stopNotice?.let { notice ->
@@ -469,6 +518,79 @@ private fun PlaybackButton(
             "재생 또는 일시정지",
             tint = Color.White
         )
+    }
+}
+
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+private fun SavedGalleryVideoDialog(
+    uri: android.net.Uri,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val player = remember(uri) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(uri))
+            repeatMode = Player.REPEAT_MODE_OFF
+            prepare()
+            playWhenReady = true
+        }
+    }
+    var playbackError by remember(uri) { mutableStateOf<String?>(null) }
+
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                playbackError = "갤러리에 저장된 영상을 재생할 수 없습니다."
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+            player.release()
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { viewContext ->
+                    PlayerView(viewContext).apply {
+                        useController = true
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        this.player = player
+                        setShutterBackgroundColor(android.graphics.Color.BLACK)
+                    }
+                },
+                update = { it.player = player }
+            )
+
+            TopStatusBanner(
+                text = playbackError ?: "✓ 갤러리에서 불러온 영상",
+                isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
+
+            TopOutCapsuleButton(
+                text = "편집 화면으로 돌아가기",
+                onClick = onDismiss,
+                primary = true,
+                compact = false,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 24.dp, vertical = 18.dp)
+                    .widthIn(max = 420.dp)
+                    .fillMaxWidth()
+            )
+        }
     }
 }
 

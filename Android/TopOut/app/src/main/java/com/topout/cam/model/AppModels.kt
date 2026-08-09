@@ -139,6 +139,14 @@ data class RecordedVideo(
     val automaticStopNotice: RecordingStopNotice? = null
 )
 
+/** A clip that was written to MediaStore and successfully reopened from the gallery. */
+data class SavedGalleryVideo(
+    val uri: Uri,
+    val startSeconds: Double,
+    val endSeconds: Double,
+    val includeOverlay: Boolean
+)
+
 data class RecordingStopNotice(val title: String, val message: String) {
     companion object {
         val Background = RecordingStopNotice(
@@ -206,6 +214,8 @@ data class TopOutUiState(
     val isBusy: Boolean = false,
     val saving: Boolean = false,
     val savingStatus: String? = null,
+    /** Most recent clip whose MediaStore row was queried and file contents reopened successfully. */
+    val savedGalleryVideo: SavedGalleryVideo? = null,
     val errorMessage: String? = null,
     val launchVisible: Boolean = true,
     val isLandscape: Boolean = false,
@@ -286,6 +296,8 @@ object TopOutConfig {
     const val PoseMinimumHips = 1
     const val PoseMinimumElbows = 1
     const val PoseMinimumKnees = 1
+    /** Human validation passes when at least 3 of the 4 required joint groups are present. */
+    const val PoseMinimumSatisfiedGroups = 3
     /** Raw detected climbs shorter than this are treated as short candidates before padding. */
     const val ShortClipMinimumDetectionSeconds = 2.0
     /** A short raw range may merge only when its raw gap to a neighbour is at most this value. */
