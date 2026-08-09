@@ -47,6 +47,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -57,6 +59,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlin.math.abs
 import kotlin.math.roundToLong
+import kotlin.time.Duration.Companion.milliseconds
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -158,7 +161,7 @@ fun ReviewScreen(
                     playhead = position.coerceIn(selectedStart, selectedEnd)
                 }
             }
-            delay(50)
+            delay(50.milliseconds)
         }
     }
 
@@ -175,7 +178,7 @@ fun ReviewScreen(
                 player.seekTo(requestedPositionMs)
                 lastIssuedPositionMs = requestedPositionMs
             }
-            delay(16)
+            delay(16.milliseconds)
         }
     }
 
@@ -324,11 +327,11 @@ fun ReviewScreen(
                             isPlaying = false
                         }
                         pendingSeekPositionMs = (playhead * 1000.0).roundToLong()
-                        player.setScrubbingModeEnabled(true)
+                        player.isScrubbingModeEnabled = true
                         isTrimTracking = true
                     } else {
                         isTrimTracking = false
-                        player.setScrubbingModeEnabled(false)
+                        player.isScrubbingModeEnabled = false
                         player.setSeekParameters(SeekParameters.EXACT)
                         // Finish on the exact requested frame after the fast scrub preview.
                         player.seekTo(pendingSeekPositionMs)
@@ -558,38 +561,67 @@ private fun SavedGalleryVideoDialog(
             decorFitsSystemWindows = false
         )
     ) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { viewContext ->
-                    PlayerView(viewContext).apply {
-                        useController = true
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        this.player = player
-                        setShutterBackgroundColor(android.graphics.Color.BLACK)
-                    }
-                },
-                update = { it.player = player }
-            )
+        val configuration = LocalConfiguration.current
+        val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val windowInfo = LocalWindowInfo.current
+        val density = LocalDensity.current
+        val shortViewport = with(density) {
+            windowInfo.containerSize.height.toDp() < 520.dp
+        }
 
-            TopStatusBanner(
-                text = playbackError ?: "✓ 갤러리에서 불러온 영상",
-                isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE,
-                modifier = Modifier.align(Alignment.TopCenter)
-            )
-
-            TopOutCapsuleButton(
-                text = "편집 화면으로 돌아가기",
-                onClick = onDismiss,
-                primary = true,
-                compact = false,
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            // Keep the navigation controls outside PlayerView. Overlaying a large button on
+            // PlayerView hides Media3's seek bar on short/wide displays (for example Fold).
+            Box(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(horizontal = 24.dp, vertical = 18.dp)
-                    .widthIn(max = 420.dp)
                     .fillMaxWidth()
-            )
+                    .weight(1f)
+            ) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { viewContext ->
+                        PlayerView(viewContext).apply {
+                            useController = true
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            this.player = player
+                            setShutterBackgroundColor(android.graphics.Color.BLACK)
+                        }
+                    },
+                    update = { it.player = player }
+                )
+
+                TopStatusBanner(
+                    text = playbackError ?: "✓ 갤러리에서 불러온 영상",
+                    isLandscape = isLandscape,
+                    modifier = Modifier.align(Alignment.TopCenter)
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black)
+                    .navigationBarsPadding()
+                    .padding(
+                        horizontal = if (isLandscape) 16.dp else 24.dp,
+                        vertical = if (shortViewport) 6.dp else 10.dp
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                TopOutCapsuleButton(
+                    text = "편집 화면으로 돌아가기",
+                    onClick = onDismiss,
+                    primary = true,
+                    compact = true,
+                    modifier = Modifier
+                        .widthIn(max = if (isLandscape) 360.dp else 420.dp)
+                        .fillMaxWidth()
+                )
+            }
         }
     }
 }
