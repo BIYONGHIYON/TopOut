@@ -360,6 +360,13 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(-
 .dual-screens figure:last-child { transform: none; }
 .single-screen { width: min(250px, 100%); }
 .single-screen figure { aspect-ratio: auto; }
+.feedback-proof { width: min(280px, 100%); }
+.feedback-proof figure { max-width: 280px; }
+.feedback-proof img {
+  aspect-ratio: 1179 / 2399;
+  object-fit: contain;
+  background: #090C10;
+}
 
 .parity-strip {
   margin-top: 20px;

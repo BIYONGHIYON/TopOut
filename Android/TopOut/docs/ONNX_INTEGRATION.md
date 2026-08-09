@@ -59,6 +59,7 @@ mobile_sam_decoder.onnx
 ## 성능 구조
 
 - 앱 시작 시 encoder와 decoder 세션을 한 번만 생성합니다.
-- 한 장의 정지 화면에서 탑홀드를 다시 탭할 때 encoder embedding을 재사용합니다.
-- Decoder와 외곽선 추출만 다시 실행하므로 반복 선택 속도를 줄였습니다.
+- 자동 매트 경계는 Ready 이후 안정된 한 프레임에서 하나의 embedding을 만들고 y=70%, 80%, 90%, 95% decoder 프롬프트에 재사용합니다.
+- 매트 분석이 끝나면 embedding을 해제해 이후 탑홀드 입력으로 섞이지 않게 합니다.
+- 탑홀드를 다시 탭할 때는 라이브 프리뷰의 새 프레임을 캡처해 새 embedding과 mask를 계산합니다.
 - Z Flip3 호환성을 우선해 기본 CPU Execution Provider를 사용합니다.

@@ -1,5 +1,7 @@
 # TopOut 1.5 (Build 8)
 
+> 과거 릴리스 기록입니다. 현재 릴리스는 [v1.5 build 9](V1_5_BUILD_9_NOTES.md)이며 현재 동작은 [Android README](README.md)를 기준으로 합니다.
+
 ## Saved-video verification
 - Saving is no longer considered complete solely because the export/write API returned success.
 - The app reopens the exact media item created in the system gallery before showing verified success.

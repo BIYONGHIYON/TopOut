@@ -9,8 +9,8 @@
 - Any unreliable pose switches `POSE -> MOTION`; any reliable pose switches `MOTION -> POSE`.
 - Initial motion search is restricted to the region up to 40% of frame height above the edited mat line.
 - After a reliable person has been found, motion recovery may move across the whole frame.
-- Reliable pose still requires confidence >= 0.25 and at least one shoulder, hip, elbow, and knee.
-- Start: lowest reliable joint is at least 3% of frame height above the mat line.
-- Finish: lowest reliable joint moves below the actual mat line.
+- Reliable pose requires confidence >= 0.25 and at least three of the four shoulder, hip, elbow, and knee groups. Each group passes when either its left or right joint is reliable.
+- Start: lowest reliable joint is at least 4% of frame height above the x-interpolated mat line.
+- Finish: lowest reliable joint moves below the boundary 2% of frame height above the x-interpolated mat line.
 - During a climb, pose recovery can continue for up to 6 seconds.
 - After a normal finish, the first pose miss switches to motion recovery; the second consecutive miss resets to initial motion search. Visible post-climb tracking has no time limit; only two consecutive pose misses reset to initial motion search.

@@ -1,6 +1,6 @@
 # MobileSAM Mat Boundary Detector
 
-The iOS automatic mat-line detector now mirrors the Android v1.4 build 5 rule.
+The iOS automatic mat-line detector mirrors the current Android v1.5 build 9 rule.
 
 1. Reuse one MobileSAM image embedding.
 2. Decode masks from center prompts at y = 70%, 80%, 90%, and 95%.
@@ -13,5 +13,7 @@ The iOS automatic mat-line detector now mirrors the Android v1.4 build 5 rule.
 6. Convert the fitted upper edge to the editable x = 6% and x = 94% mat-line points.
 7. `HoldVC+UI.swift` uses the detected boundary at its original position without a downward correction.
 8. If no candidate survives, use the 75% fallback line.
+
+Ready waits for actual stream readiness and a new stable post-Ready frame before this pipeline runs. The analysis image is not displayed; mat correction stays on the live preview, and every top-hold tap captures a fresh frame and embedding.
 
 No straightness/inlier ratio, area score, multi-height consensus, side prompts, or candidate scoring is used.

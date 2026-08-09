@@ -25,6 +25,9 @@ local.properties
 **/testRecord.mov
 **/testRecord.MOV
 
+# Separate public repository checkout
+/TopOut-app/
+
 # Android signing keys
 keystore/
 *.jks

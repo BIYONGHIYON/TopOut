@@ -34,4 +34,5 @@ packaged `.so` file.
 ## Release identity
 
 - Version name: `1.5`
-- Version code: `7`
+- Version code: `9`
+- Current behavior and build commands: [Android README](README.md)

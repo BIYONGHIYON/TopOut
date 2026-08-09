@@ -21,7 +21,7 @@
 - Reuses the analyzer RGB scratch array.
 - Uses an immediate-frame motion grid to seed a pixel-square ROI covering approximately 25% of the visible frame area.
 - Samples both the motion seed and pose-tracking crop directly from CameraX YUV into MoveNet's 256x256 RGB tensor.
-- Retains the 512px RGB path only as a safety fallback when no usable motion seed is available.
+- Does not run a full-frame 512px RGB fallback; without a usable motion seed the analyzer remains in WAITING.
 - Uses bilinear luma sampling and allocation-free nearest chroma sampling for tracked frames.
 - Avoids the tracked-frame Bitmap creation, Canvas resize, getPixels pass, and 512px RGB scratch work.
 - Prefers a 960px CameraX analysis stream, while retaining 1280px as a compatibility fallback.

@@ -41,15 +41,15 @@
 <div class="hero-copy reveal">
 <p class="eyebrow">Solo Product Case Study · Strategy · UX · iOS/Android Engineering · Release</p>
 <h1>클라이밍 촬영의 반복 작업을,<br/><span>온디바이스 자동화로 줄였습니다.</span></h1>
-<p class="hero-description">TopOut은 연속 촬영 영상에서 등반의 시작과 완등 후보를 자동 추출하고, 검토·정밀 편집·재촬영을 하나의 흐름으로 연결한 iOS·Android 앱입니다.</p>
+<p class="hero-description">TopOut은 연속 촬영 영상에서 등반의 시작과 완등 후보를 자동 추출하고, 검토·정밀 편집·갤러리 저장 확인·재촬영을 하나의 흐름으로 연결한 iOS·Android 앱입니다.</p>
 <div class="hero-actions">
 <a class="button button-primary" href="#promo">프로모션 영상 보기</a>
 <a class="button button-secondary" href="#overview">프로젝트 살펴보기</a>
 </div>
 <dl aria-label="프로젝트 요약" class="hero-meta">
 <div><dt>Product</dt><dd>Climbing Video Automation</dd></div>
-<div><dt>Release</dt><dd>v1.4 · build 5</dd></div>
-<div><dt>Status</dt><dd>Android Closed Testing</dd></div>
+<div><dt>Release</dt><dd>v1.5 · build 9</dd></div>
+<div><dt>Status</dt><dd>iOS · Android Release</dd></div>
 </dl>
 </div>
 <div class="hero-visual reveal" data-delay="120">
@@ -93,7 +93,7 @@
 <div class="section-heading max-copy reveal">
 <p class="eyebrow">02 · OVERVIEW</p>
 <h2>기술을 시연하는 데서 끝내지 않고,<br/>촬영 전 과정을 하나의 제품 흐름으로 설계했습니다</h2>
-<p>클라이머가 반복적으로 수행하던 녹화 조작, 구간 탐색, 편집, 재촬영을 하나의 세션으로 연결했습니다. 자동화는 결과를 강제하지 않고, 사용자가 빠르게 검토하고 보정할 수 있는 편집 시작점으로 제공합니다.</p>
+<p>클라이머가 반복적으로 수행하던 녹화 조작, 구간 탐색, 편집, 저장 확인, 재촬영을 하나의 세션으로 연결했습니다. 자동화는 결과를 강제하지 않고, 사용자가 빠르게 검토하고 보정할 수 있는 편집 시작점으로 제공합니다.</p>
 </div>
 <div class="overview-cards">
 <article class="metric-card reveal">
@@ -109,14 +109,14 @@
 <article class="metric-card reveal" data-delay="160">
 <span>03</span>
 <strong>Human-in-the-loop Review</strong>
-<p>자동 감지 결과를 구간 확대와 0.1초 미세 조정으로 보정하고, 동일한 촬영 조건으로 즉시 재시도합니다.</p>
+<p>자동 감지 결과를 구간 확대와 0.1초 미세 조정으로 보정하고, 실제 갤러리 저장본까지 확인한 뒤 동일한 촬영 조건으로 즉시 재시도합니다.</p>
 </article>
 </div>
 <div class="project-facts reveal">
 <div><span>Scope</span><strong>제품 전략 · UX 설계 · iOS/Android 개발 · QA · 배포 운영</strong></div>
 <div><span>iOS</span><strong>Swift · UIKit · AVFoundation · Vision · Core ML</strong></div>
 <div><span>Android</span><strong>Kotlin · Jetpack Compose · CameraX · LiteRT · ONNX Runtime</strong></div>
-<div><span>Release</span><strong>iOS Archive · Android AAB · Closed Testing · Privacy &amp; License Compliance</strong></div>
+<div><span>Release</span><strong>v1.5 build 9 · iOS Archive · Android AAB · Privacy &amp; License Compliance</strong></div>
 </div>
 </div>
 </section>
@@ -185,8 +185,8 @@
 <div class="shell">
 <div class="section-heading max-copy reveal">
 <p class="eyebrow">05 · ITERATIONS</p>
-<h2>필드 테스트에서 관찰한 실패를<br/>파이프라인 구조와 상태 정책에 반영했습니다</h2>
-<p>환경마다 임계값을 추가하는 방식은 예외를 늘릴 뿐이었습니다. 필드 영상에서 실패 장면을 재현하고, 입력 영역·모델 출력·상태 전이를 분리해 로그와 프레임 단위로 원인을 좁힌 뒤 파이프라인 구조를 수정했습니다.</p>
+<h2>필드 테스트와 사용자 피드백을<br/>파이프라인 구조와 제품 흐름에 반영했습니다</h2>
+<p>환경마다 임계값을 추가하는 방식은 예외를 늘릴 뿐이었습니다. 필드 영상에서 실패 장면을 재현해 입력 영역·모델 출력·상태 전이를 분리하고, 출시 후 사용자 피드백은 실제 사용 흐름의 다음 업데이트로 연결했습니다.</p>
 </div>
 <div class="case-stack">
 <article class="case-card reveal">
@@ -201,6 +201,7 @@
 <li>가로 점유율 40% 이상, 최상단 위치 50% 이하, 경계 기울기 15° 이하 조건으로 후보 필터링</li>
 <li>선택된 상단 경계를 x=6%와 x=94%의 편집 가능한 2점 직선으로 변환</li>
 <li>후보가 없으면 화면 높이 75% 기본선을 사용하고 사용자가 최종 보정</li>
+<li>build 9에서는 실제 카메라 스트림과 3A가 안정된 Ready 이후 새 프레임만 분석해 앱 실행 직후 첫 경계의 오차를 방지</li>
 </ul>
 </div>
 <div class="case-media dual-screens">
@@ -263,6 +264,24 @@
 <figure><img alt="감지 구간 확인과 다시 촬영 버튼이 있는 리뷰 화면" loading="lazy" src="assets/review-finish.webp"/><figcaption>구간 검토에서 촬영 재진입까지 연결한 다시 촬영 동선</figcaption></figure>
 </div>
 </article>
+<article class="case-card reveal">
+<div class="case-copy">
+<p class="case-index">05 · FEEDBACK TO VERIFIED GALLERY</p>
+<h3>댓글로 확인한 실제 사용 요구를,<br/>저장 완료의 신뢰를 높이는 업데이트로 연결했습니다</h3>
+<div class="before-after">
+<div><span>USER FEEDBACK</span><p>Android 출시 소식에 사용자가 “촬영본이 갤러리에 추가되는 것 같은데, 앱 안에서도 최종 저장 영상을 확인하고 싶다”는 의견을 남겼습니다. 단순한 기능 요청보다 저장 결과를 확신하고 싶은 사용 맥락으로 해석했습니다.</p></div>
+<div><span>PRODUCT RESPONSE</span><p>내보내기 성공 메시지만 보여주던 흐름을 바꿔, 시스템 갤러리에 생성된 바로 그 항목을 다시 조회·검증하고 앱 안에서 재생하도록 iOS와 Android 모두 업데이트했습니다.</p></div>
+</div>
+<ul class="detail-list">
+<li>iOS는 PhotoKit의 <code>localIdentifier</code>로 같은 <code>PHAsset</code>을 다시 찾고 실제 <code>AVAsset</code>을 요청</li>
+<li>Android는 MediaStore의 같은 <code>content URI</code>를 재조회하고 파일·메타데이터 검증 후 Media3로 재생</li>
+<li>구간별 저장 상태를 분리하고, Android 저장 영상 보기에는 앞뒤 5초 이동·실시간 슬라이더 seek·가벼운 반투명 컨트롤을 적용</li>
+</ul>
+</div>
+<div class="case-media single-screen feedback-proof">
+<figure><img alt="갤러리에 저장된 최종 영상을 앱 안에서 확인하고 싶다는 사용자 댓글과 업데이트 답변" loading="lazy" src="assets/feedback-gallery-verification.jpg"/><figcaption>출시 후 피드백을 다음 제품 업데이트로 연결한 기록</figcaption></figure>
+</div>
+</article>
 </div>
 </div>
 </section>
@@ -290,7 +309,7 @@
 </article>
 <article class="platform-card reveal" data-delay="100">
 <span>Android</span><h3>MoveNet Thunder + Motion-seeded ROI</h3><p>CameraX YUV 프레임에서 필요한 정사각형 ROI만 256×256 RGB 텐서로 직접 샘플링해 전체 화면 변환 비용을 제거했습니다.</p>
-<ul><li>LiteRT FP16 · XNNPACK</li><li>어깨·골반·팔꿈치·무릎 신뢰 관절 검증</li><li>Android 시작선 4% · 종료선 2%</li></ul>
+<ul><li>LiteRT FP16 · XNNPACK</li><li>어깨·골반·팔꿈치·무릎 4개 그룹 중 3개 이상 신뢰 관절 검증</li><li>Android 시작선 4% · 종료선 2%</li></ul>
 </article>
 </div><div class="parity-strip reveal"><span>CROSS-PLATFORM POLICY</span><strong>초기 탐색·안정 등반 2fps</strong><strong>시작 전·종료 후·복구 4fps</strong><strong>포즈 유실 허용 6초</strong><strong>리뷰 여백 앞뒤 3초</strong></div>
 </div>
@@ -318,6 +337,7 @@
 <div class="section-heading max-copy reveal">
 <p class="eyebrow">08 · REVIEW EXPERIENCE</p>
 <h2>자동 감지의 한계를 숨기지 않고,<br/>검토 비용을 최소화하는 편집 UX로 보완했습니다</h2>
+<p>편집 결과뿐 아니라 시스템 갤러리에 생성된 실제 저장본까지 앱 안에서 다시 열어, 내보내기와 최종 전달 사이의 불확실성도 줄였습니다.</p>
 </div>
 <div class="result-grid">
 <article class="result-card reveal">
@@ -344,7 +364,8 @@
 <div class="privacy-list">
 <div class="privacy-item reveal"><span>01</span><div><strong>On-device Processing &amp; Data Minimization</strong><p>영상 프레임, 신체 관절 좌표와 중간 분석 결과를 외부 서버로 전송하지 않고 기기 내에서 처리합니다.</p></div></div>
 <div class="privacy-item reveal"><span>02</span><div><strong>Recording Resilience</strong><p>백그라운드 전환, 카메라 중단, 저장공간 부족과 같은 예외에서 현재 파일을 먼저 정상 종료하도록 설계했습니다.</p></div></div>
-<div class="privacy-item reveal"><span>03</span><div><strong>Production Release Operations</strong><p>iOS Archive, Android AAB, 서명 키, 비공개 테스트, Privacy Manifest, 개인정보 처리방침과 오픈소스 고지를 직접 관리했습니다.</p></div></div>
+<div class="privacy-item reveal"><span>03</span><div><strong>Verified Gallery Delivery</strong><p>iOS PhotoKit과 Android MediaStore에 저장된 실제 항목을 재조회하고 다시 재생해, export 성공과 사용자가 확인하는 최종 영상 사이를 검증합니다.</p></div></div>
+<div class="privacy-item reveal"><span>04</span><div><strong>Production Release Operations</strong><p>iOS Archive, Android AAB, 서명 키, 배포 테스트, Privacy Manifest, 개인정보 처리방침과 오픈소스 고지를 직접 관리했습니다.</p></div></div>
 </div>
 </div>
 </section>

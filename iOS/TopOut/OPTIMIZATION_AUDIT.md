@@ -1,6 +1,8 @@
 # iOS optimization audit — v1.4 (build 5)
 
-The original optimization pass kept behavior unchanged. This package also includes the later platform-alignment changes listed below.
+> 이 문서는 v1.4 build 5 최적화 당시의 감사 기록입니다. 현재 릴리스는 [v1.5 build 9](V1_5_BUILD_9_NOTES.md)이며 최신 동작은 [iOS README](README.md)를 기준으로 합니다.
+
+The original optimization pass kept behavior unchanged. Later platform-alignment notes below remain historical context.
 
 ## Removed
 
@@ -21,7 +23,7 @@ The original optimization pass kept behavior unchanged. This package also includ
 
 - All Swift production files passed `swiftc -frontend -parse` together.
 - Static declaration scan leaves only UIKit/AVFoundation/application delegate callbacks and protocol requirements as apparent single-reference declarations.
-- Project version remains 1.4 and build remains 5.
+- This audit snapshot was created at version 1.4 build 5; the current project identity is 1.5 build 9.
 
 ## Left unchanged deliberately
 
