@@ -34,6 +34,7 @@ import com.topout.cam.sam.OnnxMobileSamSegmenter
 import com.topout.cam.util.StorageMonitor
 import com.topout.cam.util.createHoldOverlayBitmap
 import java.io.File
+import java.lang.ref.WeakReference
 import kotlin.math.max
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -59,8 +60,10 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private var storageJob: Job? = null
     private var countdownJob: Job? = null
     private var cameraBindingJob: Job? = null
-    private var latestLifecycleOwner: LifecycleOwner? = null
-    private var latestPreviewView: PreviewView? = null
+    // The Activity/PreviewView own their lifecycle. Keep only weak handles for explicit rebinds so
+    // a configuration change cannot leave the previous UI tree retained by this ViewModel.
+    private var latestLifecycleOwner = WeakReference<LifecycleOwner>(null)
+    private var latestPreviewView = WeakReference<PreviewView>(null)
     private var pendingRetakeRecording = false
     private var activeDetectedStart: Double? = null
     private val completedRanges = DetectedClipRangeStore()
@@ -137,8 +140,8 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun bindCamera(owner: LifecycleOwner, previewView: PreviewView) {
-        latestLifecycleOwner = owner
-        latestPreviewView = previewView
+        latestLifecycleOwner = WeakReference(owner)
+        latestPreviewView = WeakReference(previewView)
         cameraBindingJob?.cancel()
         _uiState.update { it.copy(cameraReady = false) }
         cameraBindingJob = viewModelScope.launch {
@@ -365,7 +368,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             // PreviewView.bitmap is the exact displayed crop including the current physical lens and
             // camera zoom. ImageAnalysis is retained only as a fallback for rare TextureView misses.
             val previewSnapshot = runCatching {
-                latestPreviewView?.bitmap?.copy(Bitmap.Config.ARGB_8888, false)
+                latestPreviewView.get()?.bitmap?.copy(Bitmap.Config.ARGB_8888, false)
             }.getOrNull()
             val frame = previewSnapshot
                 ?: poseAnalyzer.captureNextFrame(TopOutConfig.CaptureMaxLongSide)
@@ -919,8 +922,8 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         TopOutCopy.activeRecordingStatus(settings)
 
     private fun rebindLatestCamera() {
-        val owner = latestLifecycleOwner ?: return
-        val preview = latestPreviewView ?: return
+        val owner = latestLifecycleOwner.get() ?: return
+        val preview = latestPreviewView.get() ?: return
         if (_uiState.value.stage == CameraStage.REVIEW) return
         bindCamera(owner, preview)
     }
@@ -939,6 +942,8 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         poseAnalyzer.close()
         cameraEngine.release()
         mobileSam.close()
+        latestLifecycleOwner.clear()
+        latestPreviewView.clear()
         super.onCleared()
     }
 }

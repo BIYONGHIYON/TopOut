@@ -1,6 +1,6 @@
 # MobileSAM Mat Boundary Detector
 
-The iOS automatic mat-line detector mirrors the current Android v1.5 build 9 rule.
+The iOS automatic mat-line detector mirrors the current Android v1.5 build 10 rule.
 
 1. Reuse one MobileSAM image embedding.
 2. Decode masks from center prompts at y = 70%, 80%, 90%, and 95%.

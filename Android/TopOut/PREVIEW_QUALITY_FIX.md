@@ -4,7 +4,7 @@
 
 초기 구현은 `준비 완료` 시점의 ImageAnalysis 비트맵을 선택 화면에 확대 표시해 라이브 CameraX 프리뷰보다 흐리게 보였습니다. 이후 정지 화면을 제거한 뒤에는 앱 콜드 스타트 직후 너무 빨리 Ready를 누를 경우 CameraX/3A/줌이 안정되기 전 프레임이 MobileSAM 입력으로 들어가 첫 매트 경계가 부정확할 수 있었습니다.
 
-## Current fix — v1.5 build 9
+## Introduced in v1.5 build 9
 
 - 선택 화면은 정지 이미지를 표시하지 않고 실제 `PreviewView`의 라이브 프리뷰를 유지합니다.
 - Preview가 `STREAMING` 상태이고 선택한 줌이 적용되기 전에는 Ready를 활성화하지 않습니다.

@@ -10,7 +10,7 @@ TopOut은 한 번의 연속 촬영에서 여러 등반 시도의 시작과 완�
 
 | 항목 | iOS | Android |
 |---|---|---|
-| 버전 | 1.5 (build 9) | 1.5 (versionCode 9) |
+| 버전 | 1.5 (build 10) | 1.5 (versionCode 10) |
 | 최소 OS | iOS 16.0 | Android 8.0 · API 26 |
 | 앱 ID | `com.topout.cam` | `com.topout.cam` |
 | UI | Swift · UIKit | Kotlin · Jetpack Compose · Material 3 |
@@ -42,12 +42,12 @@ TopOut은 한 번의 연속 촬영에서 여러 등반 시도의 시작과 완�
 TopOut/
 ├── iOS/TopOut/
 │   ├── README.md
-│   ├── V1_5_BUILD_9_NOTES.md
+│   ├── V1_5_BUILD_10_NOTES.md
 │   ├── TopOut.xcodeproj/
 │   └── TopOut/
 ├── Android/TopOut/
 │   ├── README.md
-│   ├── V1_5_BUILD_9_NOTES.md
+│   ├── V1_5_BUILD_10_NOTES.md
 │   ├── app/
 │   └── docs/
 ├── portfolio/
@@ -59,12 +59,12 @@ TopOut/
 
 - [iOS 현재 문서](iOS/TopOut/README.md)
 - [Android 현재 문서](Android/TopOut/README.md)
-- [iOS build 9 변경 사항](iOS/TopOut/V1_5_BUILD_9_NOTES.md)
-- [Android build 9 변경 사항](Android/TopOut/V1_5_BUILD_9_NOTES.md)
+- [iOS build 10 변경 사항](iOS/TopOut/V1_5_BUILD_10_NOTES.md)
+- [Android build 10 변경 사항](Android/TopOut/V1_5_BUILD_10_NOTES.md)
 - [제품 포트폴리오](portfolio/index.html)
 - [TopOut 공개 저장소](https://github.com/BIYONGHIYON/TopOut-app)
 
-`V1_4_*`, `V1_5_BUILD_7_*`, `V1_5_BUILD_8_*` 문서는 당시 동작을 보존하는 과거 릴리스 기록입니다. 현재 동작의 기준은 각 플랫폼 README와 build 9 노트입니다.
+`V1_4_*`, `V1_5_BUILD_7_*`, `V1_5_BUILD_8_*`, `V1_5_BUILD_9_*` 문서는 당시 동작을 보존하는 과거 릴리스 기록입니다. 현재 동작의 기준은 각 플랫폼 README와 build 10 노트입니다.
 
 로컬의 `TopOut-app/` 폴더는 별도 Git 이력을 가진 공개 저장소 checkout이므로 이 비공개 저장소의 `.gitignore`에서 제외합니다.
 
@@ -173,6 +173,9 @@ Android 저장 영상 보기에는 앞/뒤 5초 이동, 드래그 즉시 화면�
 - 지원하지 않는 조합은 기기에서 보장되는 포맷으로 폴백
 - Android 60fps는 Preview·VideoCapture·ImageAnalysis의 활성 세션 전체가 정확한 FPS를 보장할 때만 선택
 - 백그라운드 전환, 카메라·마이크 중단, 세션 오류, 저장공간 부족 시 원본을 먼저 안전하게 종료
+- Android는 선택·녹화·저장 중 시스템 뒤로가기가 진행 중인 분석·녹화·내보내기를 중단하지 않도록 상태별로 처리
+- 결과 및 갤러리 저장본 플레이어는 앱이 백그라운드로 이동하면 일시정지
+- iOS는 오디오 인터럽션 종료 후 마이크 캡처 그래프를 복구하고 세로 UI를 하단 안전 영역 안에 유지
 - 최소 저장공간: `max(1GB, 예상 2분 영상 용량 + 256MB)`
 - 저장공간은 녹화 시작 전과 녹화 중 1분 간격으로 확인
 
@@ -185,7 +188,7 @@ Android 저장 영상 보기에는 앞/뒤 5초 이동, 드래그 즉시 화면�
 3. MobileSAM Core ML 모델과 `PrivacyInfo.xcprivacy`의 Target Membership을 확인합니다.
 4. 실제 iPhone/iPad에서 카메라·마이크·사진 보관함 권한과 Archive를 검증합니다.
 
-프로젝트 설정: iOS 16.0, Swift 5, Marketing Version 1.5, Current Project Version 9.
+프로젝트 설정: iOS 16.0, Swift 5, Marketing Version 1.5, Current Project Version 10.
 
 ### Android
 

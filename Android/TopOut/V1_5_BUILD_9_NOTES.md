@@ -1,5 +1,7 @@
 # TopOut Android v1.5 (build 9)
 
+> 과거 릴리스 기록입니다. 현재 릴리스는 [v1.5 build 10](V1_5_BUILD_10_NOTES.md)이며 현재 동작은 [Android README](README.md)를 기준으로 합니다.
+
 ## Camera readiness
 
 - `준비 완료`는 CameraX Preview가 `STREAMING` 상태이고 선택한 줌이 적용된 뒤에만 활성화됩니다.

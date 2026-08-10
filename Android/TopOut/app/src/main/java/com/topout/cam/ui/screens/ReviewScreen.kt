@@ -68,6 +68,9 @@ import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.TimeBar
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.topout.cam.model.AppSettings
 import com.topout.cam.model.GalleryClipSelection
 import com.topout.cam.model.RecordedVideo
@@ -93,6 +96,7 @@ fun ReviewScreen(
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val player = remember(video.uri) {
         ExoPlayer.Builder(context)
@@ -122,12 +126,16 @@ fun ReviewScreen(
     var playbackErrorMessage by remember(video.uri) { mutableStateOf<String?>(null) }
     var showingSavedGalleryVideo by remember(video.uri) { mutableStateOf(false) }
 
-    BackHandler(enabled = !saving) {
-        if (settings.helpEnabled) {
-            pendingDiscardMessage = "저장하지 않은 영상이 삭제됩니다."
-            pendingDiscardAction = onClose
-        } else {
-            onClose()
+    BackHandler {
+        // Saving owns a Media3 export and a MediaStore write. Consume Back until both complete so
+        // Activity destruction cannot cancel the ViewModel coroutine and leave a partial result.
+        if (!saving) {
+            if (settings.helpEnabled) {
+                pendingDiscardMessage = "저장하지 않은 영상이 삭제됩니다."
+                pendingDiscardAction = onClose
+            } else {
+                onClose()
+            }
         }
     }
 
@@ -148,6 +156,17 @@ fun ReviewScreen(
             player.removeListener(listener)
             player.release()
         }
+    }
+
+    DisposableEffect(player, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                player.pause()
+                isPlaying = false
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(player, selectedStart, selectedEnd, isPlaying, isTrimTracking) {
@@ -533,6 +552,7 @@ private fun SavedGalleryVideoDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val player = remember(uri) {
         ExoPlayer.Builder(context)
             .setSeekBackIncrementMs(5_000L)
@@ -559,6 +579,14 @@ private fun SavedGalleryVideoDialog(
             player.removeListener(listener)
             player.release()
         }
+    }
+
+    DisposableEffect(player, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) player.pause()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(player, isGalleryScrubbing) {

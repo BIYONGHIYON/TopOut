@@ -59,6 +59,7 @@ extension HoldVC {
               !isAutomaticStopInProgress else { return }
 
         if mode == .camera, recState == .idle {
+            prepareAudioSessionForCameraUse()
             startCamera()
         }
     }
@@ -96,6 +97,7 @@ extension HoldVC {
             if self.mode == .camera,
                self.recState == .idle,
                !self.isAutomaticStopInProgress {
+                self.prepareAudioSessionForCameraUse()
                 self.startCamera()
             }
         }

@@ -1,6 +1,6 @@
 # TopOut iOS v1.5 (build 7)
 
-> 과거 릴리스 기록입니다. 현재 릴리스는 [v1.5 build 9](V1_5_BUILD_9_NOTES.md)이며 현재 동작은 [iOS README](README.md)를 기준으로 합니다.
+> 과거 릴리스 기록입니다. 현재 릴리스는 [v1.5 build 10](V1_5_BUILD_10_NOTES.md)이며 현재 동작은 [iOS README](README.md)를 기준으로 합니다.
 
 ## Selection and recording UX
 

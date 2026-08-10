@@ -6,6 +6,7 @@ import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.view.OrientationEventListener
+import androidx.activity.compose.BackHandler
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -135,6 +136,26 @@ fun TopOutApp(viewModel: TopOutViewModel) {
         if (!lockCaptureOrientation && listener.canDetectOrientation()) listener.enable()
         previewView?.display?.rotation?.takeIf { !lockCaptureOrientation }?.let(viewModel::updateTargetRotation)
         onDispose { listener.disable() }
+    }
+
+    BackHandler(
+        enabled = state.stage == CameraStage.SELECT || state.stage == CameraStage.RECORDING
+    ) {
+        when (state.stage) {
+            CameraStage.SELECT -> {
+                // Keep an in-flight frame capture/MobileSAM request alive. Once selection is idle,
+                // Back returns to the preview just like the visible retake control.
+                if (!state.isBusy) viewModel.retakeSelection()
+            }
+            CameraStage.RECORDING -> {
+                // Never let the Activity disappear while CameraX is starting or finalizing a file.
+                // A running take is finalized through the same safe stop path as the UI button.
+                if (state.recordingState in setOf(RecordingState.STARTING, RecordingState.RECORDING)) {
+                    viewModel.stopRecording()
+                }
+            }
+            else -> Unit
+        }
     }
 
     if (state.stage == CameraStage.REVIEW && state.recordedVideo != null) {

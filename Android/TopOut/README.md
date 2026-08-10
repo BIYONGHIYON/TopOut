@@ -1,4 +1,4 @@
-# TopOut Android v1.5 (build 9)
+# TopOut Android v1.5 (build 10)
 
 TopOut Android는 오디오가 포함된 연속 촬영에서 등반 구간을 온디바이스로 탐지하고, 결과를 정밀 편집해 시스템 갤러리에 저장·검증하는 앱입니다.
 
@@ -9,7 +9,7 @@ TopOut Android는 오디오가 포함된 연속 촬영에서 등반 구간을 �
 - Application ID: `com.topout.cam`
 - Minimum SDK: `26` (Android 8.0)
 - Compile / Target SDK: `36`
-- Version name / code: `1.5` / `9`
+- Version name / code: `1.5` / `10`
 - UI: Kotlin, Jetpack Compose, Material 3
 - Camera / media: CameraX 1.6.1, Media3 1.10.1
 - AI: MobileSAM ONNX Runtime 1.27.0, MoveNet Thunder FP16 LiteRT 1.4.1
@@ -56,6 +56,10 @@ TopOut Android는 오디오가 포함된 연속 촬영에서 등반 구간을 �
 - Fold 계열의 짧고 넓은 화면에서 저장 영상 슬라이더와 하단 복귀 버튼이 겹치지 않는 레이아웃
 - Android 9(API 28) 이하 저장 권한 흐름
 - 앱 백그라운드, 카메라 중단, 저장공간 부족 시 원본 파일을 먼저 안전하게 종료
+- 선택 화면의 시스템 뒤로가기는 프리뷰로 복귀하고, 카운트다운·녹화 중에는 안전한 종료 경로를 실행
+- 영상 정리·갤러리 저장 중에는 시스템 뒤로가기로 Activity가 종료되지 않도록 보호
+- 결과 영상과 실제 갤러리 저장본은 앱이 백그라운드로 이동하면 자동 일시정지
+- 화면 재생성 시 ViewModel이 이전 Activity와 PreviewView를 유지하지 않도록 약한 참조 사용
 
 ## 모델 파일과 빌드
 
@@ -82,9 +86,9 @@ app/build/generated/moveNetPoseAssets/models/movenet-thunder-fp16.tflite
 
 ## 문서
 
-- [v1.5 build 9 변경 사항](V1_5_BUILD_9_NOTES.md)
+- [v1.5 build 10 변경 사항](V1_5_BUILD_10_NOTES.md)
 - [Android 호환성](ANDROID_COMPATIBILITY_NOTES.md)
 - [기기 호환성 수정](DEVICE_COMPATIBILITY_FIX_NOTES.md)
 - [MobileSAM ONNX 배치와 진단](docs/ONNX_INTEGRATION.md)
 - [iOS UI/UX 대응표](docs/UI_PARITY.md)
-- 과거 릴리스 기록: [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)
+- 과거 릴리스 기록: [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)

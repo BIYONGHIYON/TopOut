@@ -48,7 +48,7 @@
 </div>
 <dl aria-label="프로젝트 요약" class="hero-meta">
 <div><dt>Product</dt><dd>Climbing Video Automation</dd></div>
-<div><dt>Release</dt><dd>v1.5 · build 9</dd></div>
+<div><dt>Release</dt><dd>v1.5 · build 10</dd></div>
 <div><dt>Status</dt><dd>iOS · Android Release</dd></div>
 </dl>
 </div>
@@ -116,7 +116,7 @@
 <div><span>Scope</span><strong>제품 전략 · UX 설계 · iOS/Android 개발 · QA · 배포 운영</strong></div>
 <div><span>iOS</span><strong>Swift · UIKit · AVFoundation · Vision · Core ML</strong></div>
 <div><span>Android</span><strong>Kotlin · Jetpack Compose · CameraX · LiteRT · ONNX Runtime</strong></div>
-<div><span>Release</span><strong>v1.5 build 9 · iOS Archive · Android AAB · Privacy &amp; License Compliance</strong></div>
+<div><span>Release</span><strong>v1.5 build 10 · iOS Archive · Android AAB · Privacy &amp; License Compliance</strong></div>
 </div>
 </div>
 </section>
@@ -201,7 +201,7 @@
 <li>가로 점유율 40% 이상, 최상단 위치 50% 이하, 경계 기울기 15° 이하 조건으로 후보 필터링</li>
 <li>선택된 상단 경계를 x=6%와 x=94%의 편집 가능한 2점 직선으로 변환</li>
 <li>후보가 없으면 화면 높이 75% 기본선을 사용하고 사용자가 최종 보정</li>
-<li>build 9에서는 실제 카메라 스트림과 3A가 안정된 Ready 이후 새 프레임만 분석해 앱 실행 직후 첫 경계의 오차를 방지</li>
+<li>build 9부터 실제 카메라 스트림과 3A가 안정된 Ready 이후 새 프레임만 분석해 앱 실행 직후 첫 경계의 오차를 방지</li>
 </ul>
 </div>
 <div class="case-media dual-screens">
@@ -363,7 +363,7 @@
 </div>
 <div class="privacy-list">
 <div class="privacy-item reveal"><span>01</span><div><strong>On-device Processing &amp; Data Minimization</strong><p>영상 프레임, 신체 관절 좌표와 중간 분석 결과를 외부 서버로 전송하지 않고 기기 내에서 처리합니다.</p></div></div>
-<div class="privacy-item reveal"><span>02</span><div><strong>Recording Resilience</strong><p>백그라운드 전환, 카메라 중단, 저장공간 부족과 같은 예외에서 현재 파일을 먼저 정상 종료하도록 설계했습니다.</p></div></div>
+<div class="privacy-item reveal"><span>02</span><div><strong>Recording Resilience</strong><p>백그라운드 전환, 카메라 중단, 저장공간 부족과 같은 예외에서 현재 파일을 먼저 정상 종료하도록 설계했습니다. build 10에서는 Android의 시스템 뒤로가기와 플레이어 생명주기를 상태별로 보호하고, iOS의 오디오 인터럽션 복구와 하단 안전 영역 대응을 보강했습니다.</p></div></div>
 <div class="privacy-item reveal"><span>03</span><div><strong>Verified Gallery Delivery</strong><p>iOS PhotoKit과 Android MediaStore에 저장된 실제 항목을 재조회하고 다시 재생해, export 성공과 사용자가 확인하는 최종 영상 사이를 검증합니다.</p></div></div>
 <div class="privacy-item reveal"><span>04</span><div><strong>Production Release Operations</strong><p>iOS Archive, Android AAB, 서명 키, 배포 테스트, Privacy Manifest, 개인정보 처리방침과 오픈소스 고지를 직접 관리했습니다.</p></div></div>
 </div>

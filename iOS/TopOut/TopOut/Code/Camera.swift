@@ -69,8 +69,63 @@ extension HoldVC {
     }
 
     func prepareAudioSessionForCameraUse() {
-        isAudioCaptureEnabled = configureAudioSessionForRecording()
-        recorder.setAudioCaptureEnabled(isAudioCaptureEnabled)
+        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
+              configureAudioSessionForRecording() else {
+            disableAudioCaptureForCurrentSession()
+            return
+        }
+
+        // setupCamera() builds the initial graph. After an audio interruption, however,
+        // disableAudioCaptureForCurrentSession() removes only the microphone branch while keeping
+        // the video graph alive. Restore that branch explicitly for the next recording instead of
+        // relying on setupCamera(), which intentionally returns early once the camera is ready.
+        sessionQ.async { [weak self] in
+            guard let self else { return }
+
+            guard self.isCameraReady else {
+                self.recorder.setAudioCaptureEnabled(true)
+                DispatchQueue.main.async { self.isAudioCaptureEnabled = true }
+                return
+            }
+
+            let existingAudioInputs = self.session.inputs.compactMap { $0 as? AVCaptureDeviceInput }
+                .filter { $0.device.hasMediaType(.audio) }
+            let hasAudioOutput = self.session.outputs.contains { $0 === self.audioOutput }
+
+            if !existingAudioInputs.isEmpty, hasAudioOutput {
+                self.recorder.setAudioCaptureEnabled(true)
+                DispatchQueue.main.async { self.isAudioCaptureEnabled = true }
+                return
+            }
+
+            self.session.beginConfiguration()
+            existingAudioInputs.forEach { self.session.removeInput($0) }
+            if hasAudioOutput {
+                self.session.removeOutput(self.audioOutput)
+            }
+
+            var attachedAudioInput: AVCaptureDeviceInput?
+            if let microphone = AVCaptureDevice.default(for: .audio),
+               let audioInput = try? AVCaptureDeviceInput(device: microphone),
+               self.session.canAddInput(audioInput) {
+                self.session.addInput(audioInput)
+                attachedAudioInput = audioInput
+            }
+
+            var didAttachAudio = false
+            if attachedAudioInput != nil, self.session.canAddOutput(self.audioOutput) {
+                self.session.addOutput(self.audioOutput)
+                didAttachAudio = true
+            } else if let attachedAudioInput {
+                self.session.removeInput(attachedAudioInput)
+            }
+            self.session.commitConfiguration()
+
+            self.recorder.setAudioCaptureEnabled(didAttachAudio)
+            DispatchQueue.main.async {
+                self.isAudioCaptureEnabled = didAttachAudio
+            }
+        }
     }
 
     func setupCamera() {

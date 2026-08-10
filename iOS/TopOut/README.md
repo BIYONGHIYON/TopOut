@@ -1,4 +1,4 @@
-# TopOut iOS v1.5 (build 9)
+# TopOut iOS v1.5 (build 10)
 
 TopOut iOS는 오디오가 포함된 연속 촬영에서 등반 구간을 온디바이스로 탐지하고, 결과를 정밀 편집해 시스템 사진 보관함에 저장·검증하는 앱입니다.
 
@@ -8,7 +8,7 @@ TopOut iOS는 오디오가 포함된 연속 촬영에서 등반 구간을 온디
 
 - Bundle ID: `com.topout.cam`
 - Deployment Target: iOS 16.0
-- Marketing / Current Project Version: `1.5` / `9`
+- Marketing / Current Project Version: `1.5` / `10`
 - UI: Swift, UIKit
 - Camera / media: AVFoundation, AVAssetWriter, AVPlayer, PhotoKit
 - AI: MobileSAM Core ML, Apple Vision Human Body Pose
@@ -21,6 +21,8 @@ TopOut iOS는 오디오가 포함된 연속 촬영에서 등반 구간을 온디
 - 자동 매트 분석 프레임은 MobileSAM 입력에만 사용하고, 매트 보정과 탑홀드 선택은 라이브 프리뷰 위에서 진행합니다.
 - MobileSAM은 y=`70%`, `80%`, `90%`, `95%` 프롬프트를 사용하며 후보가 없으면 y=`75%` 기본선을 제안합니다.
 - Ready 이후 카메라 방향·렌즈·줌을 고정합니다. 탑홀드는 탭할 때마다 새 비디오 프레임으로 계산합니다.
+- 전화나 다른 앱의 오디오 점유가 끝나면 다음 녹화를 위해 마이크 입력·출력을 카메라 세션에 다시 연결합니다.
+- 세로 화면의 준비·설정·줌·녹화 컨트롤은 홈 버튼과 홈 인디케이터를 침범하지 않도록 하단 안전 영역 안에 배치합니다.
 
 ## 자동 구간 탐지
 
@@ -60,8 +62,8 @@ xcodebuild -project TopOut.xcodeproj -scheme TopOut -configuration Debug \
 
 ## 문서
 
-- [v1.5 build 9 변경 사항](V1_5_BUILD_9_NOTES.md)
+- [v1.5 build 10 변경 사항](V1_5_BUILD_10_NOTES.md)
 - [MobileSAM 매트 경계](MOBILESAM_MAT_DETECTOR_NOTES.md)
 - [시작과 프레임 처리](STARTUP_OPTIMIZATION_NOTES.md)
 - [Pose 로직](POSE_LOGIC_ROLLBACK_NOTES.md)
-- 과거 릴리스 기록: [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)
+- 과거 릴리스 기록: [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)

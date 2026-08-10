@@ -7,8 +7,10 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import androidx.annotation.OptIn
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.transformer.Composition
@@ -25,6 +27,7 @@ import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 /** Media3 counterpart of ContinuousRecorder's fixed-size writer and review export. */
+@OptIn(UnstableApi::class)
 class VideoExporter(private val context: Context) {
 
 

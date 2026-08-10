@@ -130,12 +130,14 @@ extension HoldVC {
     }
 
     private func layoutPortraitControls(in bounds: CGRect, safe: UIEdgeInsets) {
-        let bottomY = bounds.height - safe.bottom - 40
+        let buttonHeight: CGFloat = 54
+        let bottomPadding: CGFloat = 12
+        let controlY = bounds.height - safe.bottom - buttonHeight - bottomPadding
 
-        let tipFrame = CGRect(x: 32, y: bottomY - 44, width: bounds.width - 64, height: 34)
+        let tipFrame = CGRect(x: 32, y: controlY - 44, width: bounds.width - 64, height: 34)
         previewTipLabel.frame = tipFrame
         selectTipLabel.frame = tipFrame
-        readyBtn.frame = CGRect(x: bounds.midX - 90, y: bottomY + 4, width: 180, height: 54)
+        readyBtn.frame = CGRect(x: bounds.midX - 90, y: controlY, width: 180, height: buttonHeight)
 
         let recordingButtonHeight: CGFloat = 54
         let recordingButtonWidth = min((bounds.width - 58) * 0.5, CGFloat(168))
@@ -145,29 +147,28 @@ extension HoldVC {
             let startX = bounds.midX - totalWidth * 0.5
             livePreviewToggleButton.frame = CGRect(
                 x: startX,
-                y: bottomY,
+                y: controlY,
                 width: recordingButtonWidth,
                 height: recordingButtonHeight
             )
             manualStopBtn.frame = CGRect(
                 x: startX + recordingButtonWidth + recordingButtonSpacing,
-                y: bottomY,
+                y: controlY,
                 width: recordingButtonWidth,
                 height: recordingButtonHeight
             )
         } else {
-            manualStopBtn.frame = CGRect(x: bounds.midX - 105, y: bottomY, width: 210, height: 54)
+            manualStopBtn.frame = CGRect(x: bounds.midX - 105, y: controlY, width: 210, height: buttonHeight)
         }
-        settingsBtn.frame = CGRect(x: bounds.width - safe.right - 70, y: bottomY + 8, width: 44, height: 44)
-        zoomLabel.frame = CGRect(x: safe.left + 22, y: bottomY + 16, width: 64, height: 28)
+        settingsBtn.frame = CGRect(x: bounds.width - safe.right - 70, y: controlY + 5, width: 44, height: 44)
+        zoomLabel.frame = CGRect(x: safe.left + 22, y: controlY + 13, width: 64, height: 28)
 
         let buttonWidth = min((bounds.width - 58) * 0.5, CGFloat(168))
-        let buttonHeight: CGFloat = 54
         let spacing: CGFloat = 12
         let totalWidth = buttonWidth * 2 + spacing
         let startX = bounds.midX - totalWidth * 0.5
-        retakeBtn.frame = CGRect(x: startX, y: bottomY, width: buttonWidth, height: buttonHeight)
-        recordBtn.frame = CGRect(x: startX + buttonWidth + spacing, y: bottomY, width: buttonWidth, height: buttonHeight)
+        retakeBtn.frame = CGRect(x: startX, y: controlY, width: buttonWidth, height: buttonHeight)
+        recordBtn.frame = CGRect(x: startX + buttonWidth + spacing, y: controlY, width: buttonWidth, height: buttonHeight)
     }
 
     private func layoutLandscapeControls(in bounds: CGRect, safe: UIEdgeInsets) {

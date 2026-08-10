@@ -1,5 +1,7 @@
 # TopOut iOS v1.5 (build 9)
 
+> 과거 릴리스 기록입니다. 현재 릴리스는 [v1.5 build 10](V1_5_BUILD_10_NOTES.md)이며 현재 동작은 [iOS README](README.md)를 기준으로 합니다.
+
 ## Camera readiness
 
 - 실제 비디오 프레임 6장이 도착하기 전에는 `준비 완료`를 활성화하지 않습니다.
