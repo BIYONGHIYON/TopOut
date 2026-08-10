@@ -297,6 +297,13 @@ final class ReviewVC: UIViewController {
         view.addSubview(retakeBtn)
         view.addSubview(closeBtn)
 
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onAppDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+
         trimSlider.minimumValue = 0
         trimSlider.maximumValue = duration
         trimSlider.lowerValue = selectedStart
@@ -385,6 +392,11 @@ final class ReviewVC: UIViewController {
         guard !hasRequestedInitialPlayback else { return }
         hasRequestedInitialPlayback = true
         playFromCurrentPlayhead()
+    }
+
+    @objc private func onAppDidEnterBackground() {
+        pausePlayback()
+        (presentedViewController as? AVPlayerViewController)?.player?.pause()
     }
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
@@ -1249,6 +1261,7 @@ final class ReviewVC: UIViewController {
     }
 
     deinit {
+        NotificationCenter.default.removeObserver(self)
         playerItemStatusObservation?.invalidate()
         playerTimeControlStatusObservation?.invalidate()
         if let playbackEndNotificationObserver {

@@ -2,20 +2,20 @@ package com.topout.cam.ui.components
 
 import kotlin.math.abs
 import kotlin.math.min
+import kotlin.math.pow
 
 /**
  * Splits one continuous camera zoom range into physical-lens sections.
  *
- * A pinch may move freely inside one lens section, but it stops immediately before the next
- * physical lens anchor. The user must release and start a new pinch to cross that boundary.
- * This avoids an optical-lens hand-off in the middle of a gesture. CameraEngine maps each section
- * to the matching real rear camera and rebinds only when a new gesture enters the next anchor.
+ * A pinch moves freely inside one lens section. Zoom-in can continue against a frozen frame until
+ * release; zoom-out holds its boundary while CameraEngine immediately rebinds the previous lens.
  */
 internal class LensZoomGestureController(
     minimumZoom: Float,
     maximumZoom: Float,
     lensAnchors: List<Float>,
-    private val transitionGap: Float = DEFAULT_TRANSITION_GAP
+    private val transitionGap: Float = DEFAULT_TRANSITION_GAP,
+    zoomSensitivity: Float = DEFAULT_ZOOM_SENSITIVITY
 ) {
     private enum class Direction { IN, OUT }
 
@@ -24,8 +24,21 @@ internal class LensZoomGestureController(
         val upperStop: Float
     )
 
+    private data class PendingTransition(
+        var zoom: Float,
+        val baseZoom: Float,
+        val baseScale: Float,
+        val minimumZoom: Float,
+        val maximumZoom: Float,
+        val canContinueWhileHeld: Boolean
+    )
+
     private val minimumZoom = minimumZoom
     private val maximumZoom = maximumZoom.coerceAtLeast(minimumZoom)
+    private val zoomSensitivity = zoomSensitivity
+        .takeIf { it.isFinite() }
+        ?.coerceIn(MIN_ZOOM_SENSITIVITY, MAX_ZOOM_SENSITIVITY)
+        ?: DEFAULT_ZOOM_SENSITIVITY
     private val anchors: List<Float> = buildList {
         add(this@LensZoomGestureController.minimumZoom)
         lensAnchors
@@ -60,6 +73,7 @@ internal class LensZoomGestureController(
     private var crossingScale = 1f
     private var crossingBaseZoom = minimumZoom
     private var crossedBoundary = false
+    private var pendingTransition: PendingTransition? = null
 
     fun begin(zoom: Float) {
         startZoom = normalizeToLegalZoom(zoom.coerceIn(minimumZoom, maximumZoom))
@@ -69,11 +83,12 @@ internal class LensZoomGestureController(
         crossingScale = 1f
         crossingBaseZoom = startZoom
         crossedBoundary = false
+        pendingTransition = null
     }
 
     fun update(eventScaleFactor: Float): Float {
-        if (!eventScaleFactor.isFinite() || eventScaleFactor <= 0f) return currentZoom()
-        cumulativeScale *= eventScaleFactor.coerceIn(MIN_EVENT_SCALE, MAX_EVENT_SCALE)
+        pendingTransition?.let { return it.zoom }
+        if (!accumulateScale(eventScaleFactor)) return currentZoom()
 
         if (direction == null) {
             direction = when {
@@ -84,7 +99,8 @@ internal class LensZoomGestureController(
             if (direction != null) configureGesture(direction!!)
         }
 
-        val currentDirection = direction ?: return startZoom
+        pendingTransition?.let { return it.zoom }
+        if (direction == null) return startZoom
         val segment = segments[activeSegmentIndex]
         val rawZoom = if (crossedBoundary) {
             crossingBaseZoom * (cumulativeScale / crossingScale)
@@ -92,16 +108,44 @@ internal class LensZoomGestureController(
             startZoom * cumulativeScale
         }
 
-        return when (currentDirection) {
-            Direction.IN -> rawZoom.coerceIn(segment.anchor, segment.upperStop)
-            Direction.OUT -> rawZoom.coerceIn(segment.anchor, segment.upperStop)
+        return when {
+            activeSegmentIndex < segments.lastIndex && rawZoom > segment.upperStop ->
+                requestTransition(
+                    zoom = segments[activeSegmentIndex + 1].anchor,
+                    targetSegmentIndex = activeSegmentIndex + 1,
+                    allowReturnToPreviousSegment = true
+                )
+            activeSegmentIndex > 0 && rawZoom < segment.anchor ->
+                requestTransition(
+                    zoom = segments[activeSegmentIndex - 1].upperStop,
+                    targetSegmentIndex = activeSegmentIndex - 1
+                )
+            else -> rawZoom.coerceIn(segment.anchor, segment.upperStop)
         }
     }
+
+    /**
+     * Continues a zoom-in gesture against the frozen transition frame. The physical camera stays
+     * unchanged until CameraPreview reports onScaleEnd, while the target remains inside the next
+     * camera's own display-zoom section.
+     */
+    fun updatePendingTransition(eventScaleFactor: Float): Float {
+        val transition = pendingTransition ?: return currentZoom()
+        if (!accumulateScale(eventScaleFactor)) return transition.zoom
+        val rawZoom = transition.baseZoom * (cumulativeScale / transition.baseScale)
+        return rawZoom
+            .coerceIn(transition.minimumZoom, transition.maximumZoom)
+            .also { transition.zoom = it }
+    }
+
+    fun hasContinuablePendingTransition(): Boolean =
+        pendingTransition?.canContinueWhileHeld == true
 
     fun end() {
         direction = null
         cumulativeScale = 1f
         crossedBoundary = false
+        pendingTransition = null
     }
 
     private fun configureGesture(newDirection: Direction) {
@@ -113,6 +157,11 @@ internal class LensZoomGestureController(
                     crossingScale = cumulativeScale
                     crossingBaseZoom = segments[activeSegmentIndex].anchor
                     crossedBoundary = true
+                    requestTransition(
+                        crossingBaseZoom,
+                        activeSegmentIndex,
+                        allowReturnToPreviousSegment = true
+                    )
                 } else {
                     activeSegmentIndex = segmentIndexFor(startZoom)
                 }
@@ -125,6 +174,7 @@ internal class LensZoomGestureController(
                     crossingScale = cumulativeScale
                     crossingBaseZoom = segments[activeSegmentIndex].upperStop
                     crossedBoundary = true
+                    requestTransition(crossingBaseZoom, activeSegmentIndex)
                 } else {
                     activeSegmentIndex = segmentIndexFor(startZoom)
                 }
@@ -133,6 +183,7 @@ internal class LensZoomGestureController(
     }
 
     private fun currentZoom(): Float {
+        pendingTransition?.let { return it.zoom }
         val segment = segments[activeSegmentIndex]
         val rawZoom = if (crossedBoundary) {
             crossingBaseZoom * (cumulativeScale / crossingScale)
@@ -140,6 +191,34 @@ internal class LensZoomGestureController(
             startZoom * cumulativeScale
         }
         return rawZoom.coerceIn(segment.anchor, segment.upperStop)
+    }
+
+    private fun requestTransition(
+        zoom: Float,
+        targetSegmentIndex: Int,
+        allowReturnToPreviousSegment: Boolean = false
+    ): Float {
+        val targetSegment = segments[targetSegmentIndex.coerceIn(0, segments.lastIndex)]
+        pendingTransition = PendingTransition(
+            zoom = zoom,
+            baseZoom = zoom,
+            baseScale = cumulativeScale,
+            minimumZoom = if (allowReturnToPreviousSegment) {
+                minimumZoom
+            } else {
+                targetSegment.anchor
+            },
+            maximumZoom = targetSegment.upperStop,
+            canContinueWhileHeld = allowReturnToPreviousSegment
+        )
+        return zoom
+    }
+
+    private fun accumulateScale(eventScaleFactor: Float): Boolean {
+        if (!eventScaleFactor.isFinite() || eventScaleFactor <= 0f) return false
+        val boundedScale = eventScaleFactor.coerceIn(MIN_EVENT_SCALE, MAX_EVENT_SCALE)
+        cumulativeScale *= boundedScale.toDouble().pow(zoomSensitivity.toDouble()).toFloat()
+        return true
     }
 
     private fun segmentIndexFor(zoom: Float): Int {
@@ -168,6 +247,9 @@ internal class LensZoomGestureController(
         const val ANCHOR_MERGE_EPSILON = 0.04f
         const val BOUNDARY_EPSILON = 0.015f
         const val DIRECTION_DEAD_ZONE = 0.003f
+        const val DEFAULT_ZOOM_SENSITIVITY = 0.95f
+        const val MIN_ZOOM_SENSITIVITY = 0.1f
+        const val MAX_ZOOM_SENSITIVITY = 1f
         const val MIN_EVENT_SCALE = 0.5f
         const val MAX_EVENT_SCALE = 2f
     }

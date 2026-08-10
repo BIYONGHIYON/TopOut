@@ -5,9 +5,12 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.view.OrientationEventListener
 import androidx.activity.compose.BackHandler
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -54,6 +57,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -116,8 +121,17 @@ fun TopOutApp(viewModel: TopOutViewModel) {
             ActivityInfo.SCREEN_ORIENTATION_FULL_USER
         }
     }
+
+    LaunchedEffect(activity, state.stage) {
+        // Capture screens stay awake, while Review follows the user's normal auto-lock timeout.
+        activity?.window?.decorView?.keepScreenOn = state.stage != CameraStage.REVIEW
+    }
+
     DisposableEffect(activity) {
-        onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER }
+        onDispose {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+            activity?.window?.decorView?.keepScreenOn = false
+        }
     }
 
     LaunchedEffect(isLandscape) { viewModel.updateOrientation(isLandscape) }
@@ -188,10 +202,13 @@ fun TopOutApp(viewModel: TopOutViewModel) {
                             modifier = Modifier.fillMaxSize(),
                             onPreviewReady = viewModel::bindCamera,
                             previewViewChanged = { previewView = it },
-                            zoomEnabled = state.stage == CameraStage.PREVIEW &&
+                            zoomEnabled = state.cameraReady &&
+                                state.stage == CameraStage.PREVIEW &&
                                 state.recordingState == RecordingState.IDLE,
-                            zoomTransitionInProgress = state.lensSwitchInProgress,
-                            zoomRebaseToken = state.lensSwitchSequence,
+                            zoomTransitionInProgress = state.lensTransition.inProgress,
+                            zoomTransitionAwaitingGestureEnd =
+                                state.lensTransition.awaitingGestureEnd,
+                            zoomRebaseToken = state.lensTransition.rebaseToken,
                             currentZoom = state.zoomFactor,
                             minimumZoom = state.capabilities.minZoomRatio,
                             maximumZoom = state.capabilities.maxZoomRatio,
@@ -199,9 +216,20 @@ fun TopOutApp(viewModel: TopOutViewModel) {
                             // Keep one TextureView-backed preview in every ratio and stage. It
                             // stays inside AspectFrame and reliably survives live-preview toggles.
                             useCompatibleMode = true,
-                            onZoomChanged = viewModel::setZoom
+                            onZoomChanged = viewModel::setZoom,
+                            onDeferredZoomChanged = viewModel::updateDeferredLensZoom,
+                            onZoomGestureEnded = viewModel::finishZoomGesture
                         )
                     }
+
+                    LensTransitionFrameOverlay(
+                        transitionId = state.lensTransition.id,
+                        frame = state.lensTransition.frame,
+                        scaleTarget = state.lensTransition.frameScale,
+                        fading = state.lensTransition.fading,
+                        onFadeFinished = viewModel::onLensTransitionFadeFinished,
+                        modifier = Modifier.fillMaxSize()
+                    )
 
 
                     if (state.stage == CameraStage.SELECT) {
@@ -272,7 +300,8 @@ fun TopOutApp(viewModel: TopOutViewModel) {
                     showTip = state.settings.helpEnabled,
                     isLandscape = isLandscape,
                     readyTitle = TopOutCopy.readyButtonTitle(state.settings),
-                    enabled = state.cameraReady && !state.isBusy && !state.lensSwitchInProgress,
+                    enabled = state.cameraReady && !state.isBusy &&
+                        !state.lensTransition.inProgress,
                     onReady = {
                         viewModel.onReady(
                             frameProvider = { previewView?.bitmap },
@@ -341,6 +370,47 @@ fun TopOutApp(viewModel: TopOutViewModel) {
             confirmButton = { Button(onClick = viewModel::clearError) { Text("확인") } }
         )
     }
+}
+
+
+@Composable
+private fun LensTransitionFrameOverlay(
+    transitionId: Long?,
+    frame: Bitmap?,
+    scaleTarget: Float,
+    fading: Boolean,
+    onFadeFinished: (Long, Bitmap) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (transitionId == null || frame == null || frame.isRecycled) return
+
+    val image = remember(transitionId, frame) { frame.asImageBitmap() }
+    val alpha = remember(transitionId, frame) { Animatable(1f) }
+    val liveScale = scaleTarget.takeIf { it.isFinite() && it >= 1f } ?: 1f
+    LaunchedEffect(transitionId, frame, fading) {
+        if (!fading) {
+            alpha.snapTo(1f)
+        } else {
+            alpha.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = LENS_TRANSITION_FADE_MILLIS)
+            )
+            onFadeFinished(transitionId, frame)
+        }
+    }
+
+    Image(
+        bitmap = image,
+        contentDescription = null,
+        contentScale = ContentScale.FillBounds,
+        modifier = modifier.graphicsLayer {
+            this.alpha = alpha.value
+            // No tween here: the frozen frame follows the latest pinch ratio on every Compose
+            // frame instead of perpetually chasing rapidly changing animation targets.
+            scaleX = liveScale
+            scaleY = liveScale
+        }
+    )
 }
 
 
@@ -784,6 +854,8 @@ private fun formatElapsed(seconds: Double): String {
     val total = seconds.toInt().coerceAtLeast(0)
     return "%02d:%02d".format(total / 60, total % 60)
 }
+
+private const val LENS_TRANSITION_FADE_MILLIS = 150
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this

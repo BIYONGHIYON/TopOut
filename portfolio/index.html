@@ -10,10 +10,10 @@
 <link href="styles.css" rel="stylesheet"/>
 <script defer="" src="script.js"></script>
 </head>
-<body>
+<body id="top">
 <a class="skip-link" href="#main">본문으로 바로가기</a>
 <div aria-hidden="true" class="page-progress"><span></span></div>
-<header class="site-header" id="top">
+<header class="site-header">
 <div class="header-inner shell">
 <a aria-label="TopOut 맨 위로 이동" class="brand" href="#top">
 <img alt="" class="brand-icon" src="assets/topout-logo.png"/>
@@ -312,6 +312,7 @@
 <ul><li>LiteRT FP16 · XNNPACK</li><li>어깨·골반·팔꿈치·무릎 4개 그룹 중 3개 이상 신뢰 관절 검증</li><li>Android 시작선 4% · 종료선 2%</li></ul>
 </article>
 </div><div class="parity-strip reveal"><span>CROSS-PLATFORM POLICY</span><strong>초기 탐색·안정 등반 2fps</strong><strong>시작 전·종료 후·복구 4fps</strong><strong>포즈 유실 허용 6초</strong><strong>리뷰 여백 앞뒤 3초</strong></div>
+<div class="parity-strip reveal"><span>ANDROID CAMERA UX</span><strong>논리 멀티카메라 연속 줌</strong><strong>혼합형 외부 망원 경로 유지</strong><strong>핀치를 따르는 정지 프레임 전환</strong><strong>전환 ID 기반 복구 상태 머신</strong></div>
 </div>
 </section>
 <section class="recording accent-section">
@@ -363,7 +364,7 @@
 </div>
 <div class="privacy-list">
 <div class="privacy-item reveal"><span>01</span><div><strong>On-device Processing &amp; Data Minimization</strong><p>영상 프레임, 신체 관절 좌표와 중간 분석 결과를 외부 서버로 전송하지 않고 기기 내에서 처리합니다.</p></div></div>
-<div class="privacy-item reveal"><span>02</span><div><strong>Recording Resilience</strong><p>백그라운드 전환, 카메라 중단, 저장공간 부족과 같은 예외에서 현재 파일을 먼저 정상 종료하도록 설계했습니다. build 10에서는 Android의 시스템 뒤로가기와 플레이어 생명주기를 상태별로 보호하고, iOS의 오디오 인터럽션 복구와 하단 안전 영역 대응을 보강했습니다.</p></div></div>
+<div class="privacy-item reveal"><span>02</span><div><strong>Recording Resilience</strong><p>백그라운드 전환, 카메라 중단, 저장공간 부족과 같은 예외에서 현재 파일을 먼저 정상 종료하도록 설계했습니다. build 10에서는 Android의 시스템 뒤로가기와 플레이어 생명주기를 상태별로 보호하고, iOS의 오디오 인터럽션 복구와 하단 안전 영역 대응을 보강했습니다. 결과 화면에서는 시스템 자동 잠금을 허용하고 백그라운드 재생과 불필요한 위치 확인을 중단해 대기 전력도 줄였습니다.</p></div></div>
 <div class="privacy-item reveal"><span>03</span><div><strong>Verified Gallery Delivery</strong><p>iOS PhotoKit과 Android MediaStore에 저장된 실제 항목을 재조회하고 다시 재생해, export 성공과 사용자가 확인하는 최종 영상 사이를 검증합니다.</p></div></div>
 <div class="privacy-item reveal"><span>04</span><div><strong>Production Release Operations</strong><p>iOS Archive, Android AAB, 서명 키, 배포 테스트, Privacy Manifest, 개인정보 처리방침과 오픈소스 고지를 직접 관리했습니다.</p></div></div>
 </div>

@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.viewModelScope
 import com.topout.cam.camera.CameraEngine
+import com.topout.cam.camera.LensTransitionEvent
 import com.topout.cam.data.SettingsRepository
 import com.topout.cam.detection.MotionEvent
 import com.topout.cam.detection.MotionFinishReference
@@ -20,6 +21,8 @@ import com.topout.cam.model.ClipRange
 import com.topout.cam.model.ClipRangeNormalizer
 import com.topout.cam.model.DetectedClipRangeStore
 import com.topout.cam.model.GalleryClipSelection
+import com.topout.cam.model.LensTransitionPhase
+import com.topout.cam.model.LensTransitionUiState
 import com.topout.cam.model.RecordedVideo
 import com.topout.cam.model.SavedGalleryVideo
 import com.topout.cam.model.RecordingFrameRate
@@ -96,18 +99,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         cameraEngine.onZoomCorrected = { correctedZoom ->
             _uiState.update { it.copy(zoomFactor = correctedZoom) }
         }
-        cameraEngine.onLensSwitchingChanged = { switching ->
-            _uiState.update { state ->
-                if (switching) {
-                    state.copy(lensSwitchInProgress = true)
-                } else {
-                    state.copy(
-                        lensSwitchInProgress = false,
-                        lensSwitchSequence = state.lensSwitchSequence + 1
-                    )
-                }
-            }
-        }
+        cameraEngine.onLensTransition = ::handleLensTransition
         cameraEngine.onRecordingAnalysisUnavailable = {
             recordingAnalysisAvailable = false
             if (_uiState.value.recordingState in setOf(RecordingState.STARTING, RecordingState.RECORDING)) {
@@ -139,11 +131,105 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private fun handleLensTransition(event: LensTransitionEvent) {
+        when (event) {
+            is LensTransitionEvent.Started -> {
+                // PreviewView.bitmap is already transformed exactly as displayed. Capture only
+                // once per transition; progress events must never allocate another full frame.
+                val frame = runCatching { latestPreviewView.get()?.bitmap }
+                    .getOrNull()
+                    ?.takeIf { !it.isRecycled && it.width > 0 && it.height > 0 }
+                _uiState.update { state ->
+                    state.copy(
+                        zoomFactor = event.displayZoom,
+                        lensTransition = state.lensTransition.copy(
+                            id = event.id,
+                            phase = if (event.awaitingGestureEnd) {
+                                LensTransitionPhase.AWAITING_GESTURE_END
+                            } else {
+                                LensTransitionPhase.REBINDING
+                            },
+                            frame = frame,
+                            frameScale = event.frameScale.validFrameScale()
+                        )
+                    )
+                }
+            }
+
+            is LensTransitionEvent.Updated -> _uiState.update { state ->
+                val transition = state.lensTransition
+                val validPhase = if (event.awaitingGestureEnd) {
+                    transition.phase == LensTransitionPhase.AWAITING_GESTURE_END
+                } else {
+                    transition.inProgress
+                }
+                if (transition.id != event.id || !validPhase) {
+                    state
+                } else {
+                    state.copy(
+                        zoomFactor = event.displayZoom,
+                        lensTransition = transition.copy(
+                            phase = if (event.awaitingGestureEnd) {
+                                LensTransitionPhase.AWAITING_GESTURE_END
+                            } else {
+                                LensTransitionPhase.REBINDING
+                            },
+                            frameScale = event.frameScale.validFrameScale()
+                        )
+                    )
+                }
+            }
+
+            is LensTransitionEvent.Completed -> _uiState.update { state ->
+                val transition = state.lensTransition
+                if (transition.id != event.id || !transition.inProgress) {
+                    state
+                } else {
+                    val finishedTransition = if (transition.frame == null) {
+                        LensTransitionUiState(rebaseToken = transition.rebaseToken + 1)
+                    } else {
+                        transition.copy(
+                            phase = LensTransitionPhase.FADING,
+                            rebaseToken = transition.rebaseToken + 1
+                        )
+                    }
+                    state.copy(
+                        zoomFactor = event.displayZoom,
+                        lensTransition = finishedTransition
+                    )
+                }
+            }
+
+            is LensTransitionEvent.Aborted -> _uiState.update { state ->
+                val transition = state.lensTransition
+                if (transition.id != event.id || !transition.inProgress) {
+                    state
+                } else {
+                    state.copy(
+                        zoomFactor = event.displayZoom,
+                        lensTransition = LensTransitionUiState(
+                            rebaseToken = transition.rebaseToken + 1
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     fun bindCamera(owner: LifecycleOwner, previewView: PreviewView) {
         latestLifecycleOwner = WeakReference(owner)
         latestPreviewView = WeakReference(previewView)
         cameraBindingJob?.cancel()
-        _uiState.update { it.copy(cameraReady = false) }
+        _uiState.update {
+            val transition = it.lensTransition
+            it.copy(
+                cameraReady = false,
+                lensTransition = LensTransitionUiState(
+                    rebaseToken = transition.rebaseToken +
+                        if (transition.inProgress) 1 else 0
+                )
+            )
+        }
         cameraBindingJob = viewModelScope.launch {
             runCatching {
                 var state = _uiState.value
@@ -256,7 +342,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             current.recordingState != RecordingState.IDLE ||
             current.isBusy ||
             !current.cameraReady ||
-            current.lensSwitchInProgress
+            current.lensTransition.inProgress
         ) return
 
         updateOrientation(isLandscape)
@@ -351,7 +437,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         val state = _uiState.value
         if (state.stage != CameraStage.SELECT ||
             state.isBusy ||
-            state.lensSwitchInProgress ||
+            state.lensTransition.inProgress ||
             !state.settings.requiresTopHoldSelection
         ) return
 
@@ -432,12 +518,26 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         if (currentState.stage != CameraStage.PREVIEW ||
             currentState.recordingState != RecordingState.IDLE ||
             currentState.isBusy ||
-            currentState.lensSwitchInProgress
+            !currentState.cameraReady ||
+            currentState.lensTransition.inProgress
         ) return
         val capabilities = currentState.capabilities
         val value = zoom.coerceIn(capabilities.minZoomRatio, capabilities.maxZoomRatio)
         _uiState.update { state -> state.copy(zoomFactor = value) }
         cameraEngine.setZoom(value)
+    }
+
+    fun updateDeferredLensZoom(zoom: Float) {
+        val state = _uiState.value
+        if (state.stage != CameraStage.PREVIEW ||
+            state.recordingState != RecordingState.IDLE ||
+            !state.lensTransition.awaitingGestureEnd
+        ) return
+        cameraEngine.updateDeferredLensSwitchZoom(zoom)
+    }
+
+    fun finishZoomGesture() {
+        cameraEngine.finishDeferredLensSwitchGesture()
     }
 
     fun retakeSelection() {
@@ -688,6 +788,24 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun clearError() = _uiState.update { it.copy(errorMessage = null) }
+
+    fun onLensTransitionFadeFinished(transitionId: Long, frame: Bitmap) {
+        _uiState.update { state ->
+            val transition = state.lensTransition
+            if (transition.id == transitionId &&
+                transition.phase == LensTransitionPhase.FADING &&
+                transition.frame === frame
+            ) {
+                state.copy(
+                    lensTransition = LensTransitionUiState(
+                        rebaseToken = transition.rebaseToken
+                    )
+                )
+            } else {
+                state
+            }
+        }
+    }
 
     /** Close discards both the review file and selection, matching ReviewVC's close action. */
     fun closeReview() {
@@ -947,3 +1065,6 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         super.onCleared()
     }
 }
+
+private fun Float.validFrameScale(): Float =
+    takeIf { it.isFinite() && it >= 1f } ?: 1f

@@ -33,6 +33,14 @@
     });
   });
 
+  document.querySelectorAll('a[href="#top"]').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      window.scrollTo({ top: 0, behavior: reducedMotion ? 'auto' : 'smooth' });
+    });
+  });
+
   document.querySelectorAll('[data-delay]').forEach((el) => {
     el.style.setProperty('--delay', `${el.dataset.delay}ms`);
   });

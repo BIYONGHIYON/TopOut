@@ -198,11 +198,39 @@ data class CameraCapabilities(
     ),
     val minZoomRatio: Float = TopOutConfig.MinZoom,
     val maxZoomRatio: Float = TopOutConfig.CameraMaxZoom,
-    /** Native optical lens anchors, for example 0.5x, 1.0x and 3.0x. */
+    /** Gesture segment starts that actually require a camera route change after the first value. */
     val lensZoomRatios: List<Float> = listOf(TopOutConfig.MinZoom, 1f)
 ) {
     fun supports(resolution: RecordingResolution, frameRate: RecordingFrameRate): Boolean =
         supportedFrameRates[resolution]?.contains(frameRate) == true
+}
+
+enum class LensTransitionPhase {
+    IDLE,
+    AWAITING_GESTURE_END,
+    REBINDING,
+    FADING
+}
+
+data class LensTransitionUiState(
+    val id: Long? = null,
+    val phase: LensTransitionPhase = LensTransitionPhase.IDLE,
+    /** Captured once when a physical-camera transition starts. */
+    val frame: Bitmap? = null,
+    /** Tracks the live pinch ratio for the captured frame; zoom-out stays at 1x. */
+    val frameScale: Float = 1f,
+    /** Changes after every completion/cancellation so an active detector rebases exactly once. */
+    val rebaseToken: Long = 0L
+) {
+    val inProgress: Boolean
+        get() = phase == LensTransitionPhase.AWAITING_GESTURE_END ||
+            phase == LensTransitionPhase.REBINDING
+
+    val awaitingGestureEnd: Boolean
+        get() = phase == LensTransitionPhase.AWAITING_GESTURE_END
+
+    val fading: Boolean
+        get() = phase == LensTransitionPhase.FADING
 }
 
 data class TopOutUiState(
@@ -214,10 +242,7 @@ data class TopOutUiState(
     val matLine: List<Offset> = emptyList(),
     val holdMask: HoldMask? = null,
     val zoomFactor: Float = TopOutConfig.MinZoom,
-    /** True until the newly bound physical lens is actually streaming at its boundary zoom. */
-    val lensSwitchInProgress: Boolean = false,
-    /** Increments after each completed lens switch so an active pinch can always rebase once. */
-    val lensSwitchSequence: Long = 0L,
+    val lensTransition: LensTransitionUiState = LensTransitionUiState(),
     val recordingElapsedSeconds: Double = 0.0,
     val recordingCountdown: Int? = null,
     val livePreviewEnabled: Boolean = true,

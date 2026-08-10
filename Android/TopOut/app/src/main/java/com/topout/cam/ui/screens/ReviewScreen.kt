@@ -170,17 +170,18 @@ fun ReviewScreen(
     }
 
     LaunchedEffect(player, selectedStart, selectedEnd, isPlaying, isTrimTracking) {
-        while (true) {
+        if (!isPlaying || isTrimTracking) return@LaunchedEffect
+
+        while (isActive) {
             val position = player.currentPosition / 1000.0
-            if (isPlaying && !isTrimTracking) {
-                if (position >= selectedEnd - 0.02) {
-                    playhead = selectedEnd
-                    player.pause()
-                    isPlaying = false
-                    player.seekTo((selectedEnd * 1000).toLong())
-                } else {
-                    playhead = position.coerceIn(selectedStart, selectedEnd)
-                }
+            if (position >= selectedEnd - 0.02) {
+                playhead = selectedEnd
+                player.pause()
+                isPlaying = false
+                player.seekTo((selectedEnd * 1000).toLong())
+                break
+            } else {
+                playhead = position.coerceIn(selectedStart, selectedEnd)
             }
             delay(50.milliseconds)
         }

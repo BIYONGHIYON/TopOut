@@ -99,8 +99,8 @@ class CameraEngine(private val context: Context) {
     /**
      * A display zoom anchor is backed by one actual rear camera. For example, an ultra-wide
      * camera is exposed as the 0.5x anchor, the normal camera as 1.0x, and a tele camera as 3.0x.
-     * Zoom inside a section is digital zoom on that camera; crossing an anchor requires a new
-     * gesture and rebinds the matching camera.
+     * Zoom inside a section is digital zoom on that camera; crossing an anchor rebinds the matching
+     * camera, then the active gesture resumes from that anchor.
      */
     private data class RearLensProfile(
         val cameraId: String,
@@ -110,15 +110,32 @@ class CameraEngine(private val context: Context) {
         val nativeMinZoom: Float,
         val nativeMaxZoom: Float,
         val equivalentFocalLength: Float,
-        val isLogicalMultiCamera: Boolean
+        val isLogicalMultiCamera: Boolean,
+        val logicalPhysicalCameraIds: Set<String> = emptySet()
     )
+
+    private data class LensSwitchRequest(
+        val id: Long,
+        val targetProfile: RearLensProfile,
+        val previousProfile: RearLensProfile?,
+        val targetZoom: Float,
+        val frozenFrameBaseZoom: Float,
+        val returnToPreviousZoom: Float?
+    )
+
+    private sealed interface LensSwitchState {
+        data object Idle : LensSwitchState
+        data class AwaitingGestureEnd(val request: LensSwitchRequest) : LensSwitchState
+        data class Rebinding(val request: LensSwitchRequest) : LensSwitchState
+    }
 
     private var rearLensProfiles: List<RearLensProfile> = emptyList()
     private var activeLensProfile: RearLensProfile? = null
-    private var pendingLensProfile: RearLensProfile? = null
-    private var pendingLensZoom: Float? = null
-    private var lensSwitchInProgress = false
-    private var lensSwitchGeneration = 0L
+    private var lensSwitchState: LensSwitchState = LensSwitchState.Idle
+    private var nextLensSwitchId = 0L
+    private var lensSwitchCleanup: (() -> Unit)? = null
+    private val hasActiveLensSwitch: Boolean
+        get() = lensSwitchState !is LensSwitchState.Idle
     private var effectiveMinZoom = 1f
     private var effectiveMaxZoom = TopOutConfig.CameraMaxZoom
     private var effectiveLensZoomRatios = listOf(1f)
@@ -144,7 +161,7 @@ class CameraEngine(private val context: Context) {
     var onRecordingFinalized: ((Result<FinalizedRecording>) -> Unit)? = null
     var onRecordingAnalysisUnavailable: (() -> Unit)? = null
     var onZoomCorrected: ((Float) -> Unit)? = null
-    var onLensSwitchingChanged: ((Boolean) -> Unit)? = null
+    internal var onLensTransition: ((LensTransitionEvent) -> Unit)? = null
 
     /**
      * Requests an analysis stream whose displayed dimensions already match the selected frame.
@@ -198,9 +215,9 @@ class CameraEngine(private val context: Context) {
             return
         }
 
-        effectiveMinZoom = rearLensProfiles.minOf { profile ->
-            profile.anchorRatio * profile.nativeMinZoom
-        }.coerceAtLeast(TopOutConfig.MinZoom)
+        val firstLens = rearLensProfiles.first()
+        effectiveMinZoom = (firstLens.anchorRatio * firstLens.nativeMinZoom)
+            .coerceAtLeast(TopOutConfig.MinZoom)
 
         // The first profile owns everything below its optical anchor. If that profile is a logical
         // camera with native 0.5x support, 1.0x is not a camera-switch boundary and must not force
@@ -421,6 +438,7 @@ class CameraEngine(private val context: Context) {
         analyzer: ImageAnalysis.Analyzer,
         requiresAnalysis: Boolean
     ): CameraCapabilities {
+        cancelLensSwitch()
         val cameraProvider = provider ?: awaitCameraProvider().also { provider = it }
         cameraProvider.unbindAll()
 
@@ -605,7 +623,26 @@ class CameraEngine(private val context: Context) {
         return capabilities
     }
 
+    private fun cancelLensSwitch() {
+        val request = when (val state = lensSwitchState) {
+            LensSwitchState.Idle -> null
+            is LensSwitchState.AwaitingGestureEnd -> state.request
+            is LensSwitchState.Rebinding -> state.request
+        }
+        lensSwitchState = LensSwitchState.Idle
+        lensSwitchCleanup?.invoke()
+        lensSwitchCleanup = null
+        request?.let {
+            onLensTransition?.invoke(
+                LensTransitionEvent.Aborted(it.id, requestedZoom)
+            )
+        }
+    }
+
     fun unbind() {
+        // Invalidate delayed rebinds and remove their PreviewView observer before unbinding emits
+        // another stream-state event. This also releases the transition overlay on rotation/exit.
+        cancelLensSwitch()
         activeRecording?.stop()
         activeRecording = null
         provider?.unbindAll()
@@ -615,11 +652,6 @@ class CameraEngine(private val context: Context) {
         videoCapture = null
         analysisUseCase = null
         sessionConfig = null
-        pendingLensProfile = null
-        pendingLensZoom = null
-        lensSwitchGeneration += 1
-        if (lensSwitchInProgress) onLensSwitchingChanged?.invoke(false)
-        lensSwitchInProgress = false
         lastSubmittedZoom = Float.NaN
     }
 
@@ -654,13 +686,13 @@ class CameraEngine(private val context: Context) {
     }
 
     /**
-     * The gesture controller already prevents crossing more than one optical boundary per pinch.
+     * The gesture controller emits at most one optical-boundary request before each stream rebase.
      * Here the display ratio is mapped to the camera whose optical anchor owns that section.
      */
     fun setZoom(zoom: Float) {
         // Pinch samples continue arriving while CameraX tears down and opens the next camera.
         // Never let those samples overwrite the transition boundary zoom.
-        if (lensSwitchInProgress) return
+        if (hasActiveLensSwitch) return
 
         val targetZoom = zoom.coerceIn(effectiveMinZoom, effectiveMaxZoom)
         val targetProfile = profileForDisplayZoom(targetZoom) ?: return
@@ -713,80 +745,332 @@ class CameraEngine(private val context: Context) {
         .lastOrNull { zoom + LENS_BOUNDARY_EPSILON >= it.anchorRatio }
         ?: rearLensProfiles.firstOrNull()
 
+    private fun maximumDisplayZoomForProfile(profile: RearLensProfile): Float {
+        val profileIndex = rearLensProfiles.indexOfFirst { it.cameraId == profile.cameraId }
+        val nextProfile = rearLensProfiles.getOrNull(profileIndex + 1)
+        if (profileIndex < 0 || nextProfile == null) return effectiveMaxZoom
+        val safeGap = min(
+            LENS_SWITCH_GAP,
+            (nextProfile.anchorRatio - profile.anchorRatio) * LENS_SWITCH_MAX_GAP_FRACTION
+        )
+        return (nextProfile.anchorRatio - safeGap)
+            .coerceAtLeast(profile.anchorRatio)
+            .coerceAtMost(effectiveMaxZoom)
+    }
+
     private fun requestLensSwitch(
         targetProfile: RearLensProfile,
         transitionZoom: Float
     ) {
-        if (activeRecording != null || lensSwitchInProgress) return
-        pendingLensProfile = targetProfile
-        pendingLensZoom = transitionZoom.coerceIn(effectiveMinZoom, effectiveMaxZoom)
-        performPendingLensSwitch()
+        if (activeRecording != null || hasActiveLensSwitch) return
+        val currentProfile = activeLensProfile
+        val targetZoom = transitionZoom.coerceIn(effectiveMinZoom, effectiveMaxZoom)
+        val frozenFrameBaseZoom = lastSubmittedZoom
+            .takeIf { it.isFinite() && it > 0f }
+            ?: targetZoom
+        val returnToPreviousZoom = currentProfile
+            ?.takeIf {
+                targetProfile.anchorRatio > it.anchorRatio + LENS_BOUNDARY_EPSILON
+            }
+            ?.let(::maximumDisplayZoomForProfile)
+        val zoomingIntoHigherAnchor = returnToPreviousZoom != null
+        val request = LensSwitchRequest(
+            id = ++nextLensSwitchId,
+            targetProfile = targetProfile,
+            previousProfile = currentProfile,
+            targetZoom = targetZoom,
+            frozenFrameBaseZoom = frozenFrameBaseZoom,
+            returnToPreviousZoom = returnToPreviousZoom
+        )
+
+        requestedZoom = targetZoom
+        lensSwitchState = if (zoomingIntoHigherAnchor) {
+            LensSwitchState.AwaitingGestureEnd(request)
+        } else {
+            LensSwitchState.Rebinding(request)
+        }
+        onLensTransition?.invoke(
+            LensTransitionEvent.Started(
+                id = request.id,
+                displayZoom = request.targetZoom,
+                frameScale = frozenFrameScale(request),
+                awaitingGestureEnd = zoomingIntoHigherAnchor
+            )
+        )
+        if (!zoomingIntoHigherAnchor) performLensSwitch(request)
     }
 
-    /**
-     * CameraX cannot change an exact camera ID in place. The display zoom is frozen at the first
-     * boundary sample that requested the switch. Input remains locked until PreviewView reports
-     * that the newly bound camera is STREAMING, then the active pinch is rebased from that ratio.
-     */
-    private fun performPendingLensSwitch() {
-        val cameraProvider = provider ?: return
-        val config = sessionConfig ?: return
-        val targetProfile = pendingLensProfile ?: return
-        val transitionZoom = pendingLensZoom
-            ?.coerceIn(effectiveMinZoom, effectiveMaxZoom)
-            ?: targetProfile.anchorRatio.coerceIn(effectiveMinZoom, effectiveMaxZoom)
-        val previousProfile = activeLensProfile
-
-        if (previousProfile?.cameraId == targetProfile.cameraId) {
-            pendingLensProfile = null
-            pendingLensZoom = null
-            requestedZoom = transitionZoom
-            submitZoomImmediately()
-            onZoomCorrected?.invoke(requestedZoom)
+    /** Applies continued pinch motion to the frozen frame without touching the old camera. */
+    fun updateDeferredLensSwitchZoom(zoom: Float) {
+        val state = lensSwitchState as? LensSwitchState.AwaitingGestureEnd ?: return
+        val request = state.request
+        val returnZoom = request.returnToPreviousZoom
+        if (returnZoom != null && zoom <= returnZoom + LENS_BOUNDARY_EPSILON) {
+            resumePreviousLens(request, zoom.coerceIn(effectiveMinZoom, returnZoom))
             return
         }
 
-        pendingLensProfile = null
-        pendingLensZoom = null
+        val sectionMaximum = maximumDisplayZoomForProfile(request.targetProfile)
+        val pendingMinimum = returnZoom
+            ?.coerceAtMost(request.targetProfile.anchorRatio)
+            ?: request.targetProfile.anchorRatio
+        val targetZoom = zoom.coerceIn(pendingMinimum, sectionMaximum)
+        val updatedRequest = request.copy(targetZoom = targetZoom)
+        lensSwitchState = LensSwitchState.AwaitingGestureEnd(updatedRequest)
+        requestedZoom = targetZoom
+        onLensTransition?.invoke(
+            LensTransitionEvent.Updated(
+                id = updatedRequest.id,
+                displayZoom = updatedRequest.targetZoom,
+                frameScale = frozenFrameScale(updatedRequest),
+                awaitingGestureEnd = true
+            )
+        )
+    }
+
+    private fun resumePreviousLens(request: LensSwitchRequest, zoom: Float) {
+        if ((lensSwitchState as? LensSwitchState.AwaitingGestureEnd)?.request?.id != request.id) {
+            return
+        }
+        lensSwitchState = LensSwitchState.Idle
+        requestedZoom = zoom.coerceIn(effectiveMinZoom, effectiveMaxZoom)
+        submitZoomImmediately()
+        onLensTransition?.invoke(
+            LensTransitionEvent.Aborted(request.id, requestedZoom)
+        )
+    }
+
+    /** Commits a deferred zoom-in switch at the final frozen-frame ratio. */
+    fun finishDeferredLensSwitchGesture() {
+        val state = lensSwitchState as? LensSwitchState.AwaitingGestureEnd ?: return
+        val request = state.request
+        val committedRequest = request.copy(
+            targetZoom = request.targetZoom.coerceAtLeast(request.targetProfile.anchorRatio)
+        )
+        requestedZoom = committedRequest.targetZoom
+        performLensSwitch(committedRequest)
+    }
+
+    private fun frozenFrameScale(request: LensSwitchRequest): Float {
+        val previousProfile = request.previousProfile
+        val zoomingIntoHigherAnchor = previousProfile != null &&
+            request.targetProfile.anchorRatio >
+            previousProfile.anchorRatio + LENS_BOUNDARY_EPSILON
+        return if (
+            zoomingIntoHigherAnchor && request.targetZoom > request.frozenFrameBaseZoom
+        ) {
+            (request.targetZoom / request.frozenFrameBaseZoom).coerceAtLeast(1f)
+        } else {
+            1f
+        }
+    }
+
+    private fun currentLensSwitchId(): Long? = when (val state = lensSwitchState) {
+        LensSwitchState.Idle -> null
+        is LensSwitchState.AwaitingGestureEnd -> state.request.id
+        is LensSwitchState.Rebinding -> state.request.id
+    }
+
+    private fun isCurrentRebind(id: Long): Boolean =
+        (lensSwitchState as? LensSwitchState.Rebinding)?.request?.id == id
+
+    private fun completeLensSwitch(request: LensSwitchRequest) {
+        finishLensSwitch(request, previewReady = true)
+    }
+
+    private fun abortLensSwitch(request: LensSwitchRequest) {
+        finishLensSwitch(request, previewReady = false)
+    }
+
+    private fun finishLensSwitch(request: LensSwitchRequest, previewReady: Boolean) {
+        if (currentLensSwitchId() != request.id) return
+        lensSwitchState = LensSwitchState.Idle
+        lensSwitchCleanup?.invoke()
+        lensSwitchCleanup = null
+        val event = if (previewReady) {
+            LensTransitionEvent.Completed(request.id, requestedZoom)
+        } else {
+            LensTransitionEvent.Aborted(request.id, requestedZoom)
+        }
+        onLensTransition?.invoke(event)
+    }
+
+    /**
+     * CameraX cannot change an exact camera ID in place. Zoom-in reaches this method after finger
+     * release with the final frozen-frame ratio; zoom-out reaches it immediately at its boundary.
+     * The overlay remains until PreviewView is STREAMING at the same requested display zoom.
+     */
+    private fun performLensSwitch(request: LensSwitchRequest) {
+        val cameraProvider = provider ?: run {
+            abortLensSwitch(request)
+            return
+        }
+        val config = sessionConfig ?: run {
+            abortLensSwitch(request)
+            return
+        }
+        val targetProfile = request.targetProfile
+        val transitionZoom = request.targetZoom.coerceIn(effectiveMinZoom, effectiveMaxZoom)
+        val previousProfile = request.previousProfile
+        val wasAwaitingGestureEnd = lensSwitchState is LensSwitchState.AwaitingGestureEnd
+        lensSwitchState = LensSwitchState.Rebinding(request)
+        if (wasAwaitingGestureEnd) {
+            onLensTransition?.invoke(
+                LensTransitionEvent.Updated(
+                    id = request.id,
+                    displayZoom = transitionZoom,
+                    frameScale = frozenFrameScale(request),
+                    awaitingGestureEnd = false
+                )
+            )
+        }
+
+        if (previousProfile?.cameraId == targetProfile.cameraId) {
+            requestedZoom = transitionZoom
+            val future = submitZoomImmediately()
+            if (future == null) {
+                completeLensSwitch(request)
+            } else {
+                future.addListener(
+                    {
+                        if (isCurrentRebind(request.id)) {
+                            if (runCatching { future.get() }.isSuccess) {
+                                completeLensSwitch(request)
+                            } else {
+                                abortLensSwitch(request)
+                            }
+                        }
+                    },
+                    mainExecutor
+                )
+            }
+            return
+        }
+
         requestedZoom = transitionZoom
-        onZoomCorrected?.invoke(requestedZoom)
 
-        lensSwitchInProgress = true
-        lensSwitchGeneration += 1
-        val generation = lensSwitchGeneration
-        onLensSwitchingChanged?.invoke(true)
+        var rebindStarted = false
+        val startRebind = Runnable {
+            if (rebindStarted) return@Runnable
+            if (!isCurrentRebind(request.id)) return@Runnable
+            rebindStarted = true
 
-        mainExecutor.execute {
             var switchFinished = false
             var sawIdleAfterSwitchRequest =
                 config.previewView.previewStreamState.value != PreviewView.StreamState.STREAMING
+            var previewStreamReady = false
+            var boundaryZoomReady = false
+            var readyFinishPosted = false
+            var currentAttemptId = 0
             var streamObserver: Observer<PreviewView.StreamState>? = null
+            var timeoutRunnable: Runnable? = null
 
-            fun finishSwitch() {
-                if (switchFinished || generation != lensSwitchGeneration) return
+            fun cleanupLocalSwitch() {
+                if (switchFinished) return
                 switchFinished = true
                 streamObserver?.let { config.previewView.previewStreamState.removeObserver(it) }
-                lensSwitchInProgress = false
-                onLensSwitchingChanged?.invoke(false)
+                timeoutRunnable?.let(config.previewView::removeCallbacks)
             }
 
-            val observer = Observer<PreviewView.StreamState> { streamState ->
-                when (streamState) {
-                    PreviewView.StreamState.IDLE -> sawIdleAfterSwitchRequest = true
-                    PreviewView.StreamState.STREAMING -> {
-                        if (sawIdleAfterSwitchRequest) finishSwitch()
+            fun finishSwitch(previewReady: Boolean) {
+                if (switchFinished) return
+                cleanupLocalSwitch()
+                if (!isCurrentRebind(request.id)) return
+                if (previewReady) completeLensSwitch(request) else abortLensSwitch(request)
+            }
+
+            fun finishSwitchWhenFullyReady(attemptId: Int) {
+                if (attemptId != currentAttemptId) return
+                if (previewStreamReady && boundaryZoomReady && !readyFinishPosted) {
+                    readyFinishPosted = true
+                    // CameraControl's future confirms the ratio was accepted. Keep the captured
+                    // frame for one more display tick so PreviewView can present that ratio before
+                    // the 150-ms overlay fade begins.
+                    config.previewView.postOnAnimation {
+                        if (attemptId != currentAttemptId) return@postOnAnimation
+                        readyFinishPosted = false
+                        if (previewStreamReady && boundaryZoomReady) {
+                            finishSwitch(previewReady = true)
+                        }
                     }
                 }
             }
-            streamObserver = observer
-            config.previewView.previewStreamState.observe(
-                config.lifecycleOwner,
-                observer
-            )
-            config.previewView.postDelayed(
-                { finishSwitch() },
-                LENS_SWITCH_READY_TIMEOUT_MS
-            )
+
+            fun beginAttempt(): Int {
+                currentAttemptId += 1
+                val attemptId = currentAttemptId
+                streamObserver?.let { config.previewView.previewStreamState.removeObserver(it) }
+                sawIdleAfterSwitchRequest =
+                    config.previewView.previewStreamState.value != PreviewView.StreamState.STREAMING
+                previewStreamReady = false
+                boundaryZoomReady = false
+                readyFinishPosted = false
+                val observer = Observer<PreviewView.StreamState> { streamState ->
+                    if (switchFinished ||
+                        attemptId != currentAttemptId ||
+                        !isCurrentRebind(request.id)
+                    ) return@Observer
+                    when (streamState) {
+                        PreviewView.StreamState.IDLE -> {
+                            sawIdleAfterSwitchRequest = true
+                            previewStreamReady = false
+                        }
+                        PreviewView.StreamState.STREAMING -> {
+                            if (sawIdleAfterSwitchRequest) {
+                                previewStreamReady = true
+                                finishSwitchWhenFullyReady(attemptId)
+                            }
+                        }
+                    }
+                }
+                streamObserver = observer
+                config.previewView.previewStreamState.observe(config.lifecycleOwner, observer)
+                return attemptId
+            }
+
+            fun awaitBoundaryZoom(
+                future: ListenableFuture<*>?,
+                attemptId: Int,
+                onFailure: () -> Unit
+            ) {
+                if (attemptId != currentAttemptId) return
+                boundaryZoomReady = false
+                if (future == null) {
+                    boundaryZoomReady = true
+                    finishSwitchWhenFullyReady(attemptId)
+                    return
+                }
+                future.addListener(
+                    {
+                        if (!switchFinished &&
+                            isCurrentRebind(request.id) &&
+                            attemptId == currentAttemptId
+                        ) {
+                            if (runCatching { future.get() }.isSuccess) {
+                                boundaryZoomReady = true
+                                finishSwitchWhenFullyReady(attemptId)
+                            } else {
+                                onFailure()
+                            }
+                        }
+                    },
+                    mainExecutor
+                )
+            }
+
+            fun scheduleTimeout(attemptId: Int, onTimeout: () -> Unit) {
+                timeoutRunnable?.let(config.previewView::removeCallbacks)
+                timeoutRunnable = Runnable {
+                    if (!switchFinished &&
+                        isCurrentRebind(request.id) &&
+                        attemptId == currentAttemptId
+                    ) onTimeout()
+                }.also { timeout ->
+                    config.previewView.postDelayed(timeout, LENS_SWITCH_READY_TIMEOUT_MS)
+                }
+            }
+
+            lensSwitchCleanup = { cleanupLocalSwitch() }
 
             fun bindProfile(profile: RearLensProfile): Camera {
                 val bound = bindUnifiedSession(cameraProvider, config, profile)
@@ -803,38 +1087,61 @@ class CameraEngine(private val context: Context) {
                 return bound.camera
             }
 
-            try {
-                bindProfile(targetProfile)
-                // Always initialize the newly opened lens at the boundary that triggered it.
-                // Samples generated while this camera was loading were ignored by setZoom().
-                requestedZoom = transitionZoom
-                submitZoomImmediately()
-                onZoomCorrected?.invoke(requestedZoom)
-            } catch (_: Throwable) {
-                if (previousProfile != null) {
-                    val restored = runCatching {
-                        bindProfile(previousProfile)
-                        val nextAnchor = rearLensProfiles
-                            .firstOrNull { it.anchorRatio > previousProfile.anchorRatio }
-                            ?.anchorRatio
-                        requestedZoom = if (nextAnchor == null) {
-                            transitionZoom.coerceAtLeast(previousProfile.anchorRatio)
-                        } else {
-                            transitionZoom.coerceIn(
-                                previousProfile.anchorRatio,
-                                (nextAnchor - LENS_SWITCH_GAP)
-                                    .coerceAtLeast(previousProfile.anchorRatio)
-                            )
-                        }
-                        submitZoomImmediately()
-                        onZoomCorrected?.invoke(requestedZoom)
-                    }.isSuccess
-                    if (!restored) finishSwitch()
-                } else {
-                    finishSwitch()
+            var restoringPreviousProfile = false
+            fun restorePreviousProfile() {
+                val profile = previousProfile
+                if (profile == null || restoringPreviousProfile) {
+                    finishSwitch(previewReady = false)
+                    return
                 }
+                restoringPreviousProfile = true
+                val restored = runCatching {
+                    val restoreAttemptId = beginAttempt()
+                    scheduleTimeout(restoreAttemptId) {
+                        finishSwitch(previewReady = false)
+                    }
+                    bindProfile(profile)
+                    requestedZoom = transitionZoom.coerceIn(
+                        profile.anchorRatio,
+                        maximumDisplayZoomForProfile(profile)
+                    )
+                    awaitBoundaryZoom(
+                        future = submitZoomImmediately(),
+                        attemptId = restoreAttemptId,
+                        onFailure = { finishSwitch(previewReady = false) }
+                    )
+                }.isSuccess
+                if (!restored) finishSwitch(previewReady = false)
+            }
+
+            try {
+                val targetAttemptId = beginAttempt()
+                scheduleTimeout(targetAttemptId, ::restorePreviousProfile)
+                bindProfile(targetProfile)
+                // Zoom-in may carry a final frozen-frame ratio chosen before finger release;
+                // zoom-out still uses the exact boundary that triggered its immediate switch.
+                requestedZoom = transitionZoom
+                awaitBoundaryZoom(
+                    future = submitZoomImmediately(),
+                    attemptId = targetAttemptId,
+                    onFailure = ::restorePreviousProfile
+                )
+            } catch (_: Throwable) {
+                restorePreviousProfile()
             }
         }
+
+        // Give Compose one complete draw between publishing the captured frame and unbinding the
+        // old camera. A single postOnAnimation still runs before that frame's view traversal; the
+        // second one starts the rebind only after the overlay has been presented once.
+        config.previewView.postOnAnimation {
+            if (isCurrentRebind(request.id)) {
+                config.previewView.postOnAnimation(startRebind)
+            }
+        }
+        // A detached or stalled PreviewView may not deliver both animation callbacks. Keep the
+        // transition idempotent and guarantee that its timeout/observer are eventually installed.
+        config.previewView.postDelayed(startRebind, LENS_SWITCH_REBIND_FALLBACK_MS)
     }
 
     /**
@@ -853,7 +1160,8 @@ class CameraEngine(private val context: Context) {
             val equivalentFocalLength: Float,
             val nativeMinZoom: Float,
             val nativeMaxZoom: Float,
-            val isLogicalMultiCamera: Boolean
+            val isLogicalMultiCamera: Boolean,
+            val logicalPhysicalCameraIds: Set<String> = emptySet()
         )
 
         fun equivalentFocalLength(characteristics: CameraCharacteristics): Float? {
@@ -871,7 +1179,9 @@ class CameraEngine(private val context: Context) {
         }
         val candidates = mutableListOf<Candidate>()
         cameraProvider.availableCameraInfos.forEach publicLoop@ { info ->
-            val publicCameraId = runCatching { Camera2CameraInfo.from(info).cameraId }.getOrNull()
+            val camera2Info = runCatching { Camera2CameraInfo.from(info) }.getOrNull()
+                ?: return@publicLoop
+            val publicCameraId = runCatching { camera2Info.cameraId }.getOrNull()
                 ?: return@publicLoop
             val characteristics = runCatching {
                 manager.getCameraCharacteristics(publicCameraId)
@@ -895,9 +1205,36 @@ class CameraEngine(private val context: Context) {
             } else {
                 false
             }
+            val logicalPhysicalCameraIds = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && logical) {
+                runCatching { characteristics.physicalCameraIds.toSet() }.getOrDefault(emptySet())
+            } else {
+                emptySet()
+            }
             val zoomState = info.zoomState.value
             val camera2Max = characteristics
                 .get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM)
+                ?: TopOutConfig.CameraMaxZoom
+            // ZoomState can still expose its pre-bind default (1.0x) while cameras are being
+            // enumerated. On Android 11+ the Camera2 zoom-ratio range is the authoritative static
+            // capability and includes zoom-out through an OEM logical ultra-wide camera.
+            val camera2ZoomRatioRange = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // Camera2CameraInfo applies CameraX's device-quirk-safe characteristic lookup.
+                runCatching {
+                    camera2Info.getCameraCharacteristic(
+                        CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE
+                    )
+                }.getOrNull()
+            } else {
+                null
+            }
+            val publicMinZoom = camera2ZoomRatioRange?.lower
+                ?.takeIf { it.isFinite() && it > 0f }
+                ?: zoomState?.minZoomRatio?.takeIf { it.isFinite() && it > 0f }
+                ?: 1f
+            val publicMaxZoom = camera2ZoomRatioRange?.upper
+                ?.takeIf { it.isFinite() && it >= publicMinZoom }
+                ?: zoomState?.maxZoomRatio?.takeIf { it.isFinite() && it >= publicMinZoom }
+                ?: camera2Max.takeIf { it.isFinite() && it >= publicMinZoom }
                 ?: TopOutConfig.CameraMaxZoom
             equivalentFocalLength(characteristics)?.let { equivalent ->
                 candidates += Candidate(
@@ -905,20 +1242,21 @@ class CameraEngine(private val context: Context) {
                     selector = selector,
                     physicalCameraId = null,
                     equivalentFocalLength = equivalent,
-                    nativeMinZoom = (zoomState?.minZoomRatio ?: 1f)
+                    nativeMinZoom = publicMinZoom
                         .coerceAtLeast(TopOutConfig.MinZoom),
                     nativeMaxZoom = min(
                         TopOutConfig.CameraMaxZoom,
-                        zoomState?.maxZoomRatio ?: camera2Max
+                        publicMaxZoom
                     ).coerceAtLeast(1f),
-                    isLogicalMultiCamera = logical
+                    isLogicalMultiCamera = logical,
+                    logicalPhysicalCameraIds = logicalPhysicalCameraIds
                 )
             }
 
             // Some OEMs hide ultra-wide/tele IDs from CameraX's public camera list but expose
             // them as physical members of a logical rear camera. Pin all use cases to that ID.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && logical) {
-                characteristics.physicalCameraIds.forEach physicalLoop@ { physicalId ->
+                logicalPhysicalCameraIds.forEach physicalLoop@ { physicalId ->
                     val physicalCharacteristics = runCatching {
                         manager.getCameraCharacteristics(physicalId)
                     }.getOrNull() ?: return@physicalLoop
@@ -947,7 +1285,7 @@ class CameraEngine(private val context: Context) {
             ?: return emptyList()
         val referenceFocal = reference.equivalentFocalLength
 
-        return candidates
+        val profiles = candidates
             .map { candidate ->
                 val rawAnchor = candidate.equivalentFocalLength / referenceFocal
                 RearLensProfile(
@@ -958,10 +1296,38 @@ class CameraEngine(private val context: Context) {
                     nativeMinZoom = candidate.nativeMinZoom,
                     nativeMaxZoom = candidate.nativeMaxZoom,
                     equivalentFocalLength = candidate.equivalentFocalLength,
-                    isLogicalMultiCamera = candidate.isLogicalMultiCamera
+                    isLogicalMultiCamera = candidate.isLogicalMultiCamera,
+                    logicalPhysicalCameraIds = candidate.logicalPhysicalCameraIds
                 )
             }
             .filter { it.anchorRatio in TopOutConfig.MinZoom..TopOutConfig.CameraMaxZoom }
+
+        // A public logical camera may cover only ultra-wide + wide while a telephoto is exposed as
+        // another camera ID. Keep non-member higher lenses so only those boundaries require rebind.
+        selectHybridRearLensCandidates(
+            candidates = profiles.map { profile ->
+                HybridRearLensCandidate(
+                    value = profile,
+                    cameraId = profile.cameraId,
+                    physicalCameraId = profile.physicalCameraId,
+                    anchorRatio = profile.anchorRatio,
+                    nativeMinZoom = profile.nativeMinZoom,
+                    nativeMaxZoom = profile.nativeMaxZoom,
+                    equivalentFocalLength = profile.equivalentFocalLength,
+                    isLogicalMultiCamera = profile.isLogicalMultiCamera,
+                    logicalPhysicalCameraIds = profile.logicalPhysicalCameraIds
+                )
+            },
+            referenceFocalLength = referenceFocal,
+            expectedWideEquivalent = EXPECTED_WIDE_EQUIVALENT_MM,
+            boundaryEpsilon = LENS_BOUNDARY_EPSILON,
+            transitionGap = LENS_SWITCH_GAP,
+            maximumGapFraction = LENS_SWITCH_MAX_GAP_FRACTION
+        )?.let { hybridProfiles ->
+            return hybridProfiles.map { it.value }
+        }
+
+        return profiles
             .groupBy { it.anchorRatio }
             .mapNotNull { (_, sameAnchor) ->
                 sameAnchor.minWithOrNull(
@@ -991,27 +1357,13 @@ class CameraEngine(private val context: Context) {
                         nativeMinZoom = reference.nativeMinZoom,
                         nativeMaxZoom = reference.nativeMaxZoom,
                         equivalentFocalLength = reference.equivalentFocalLength,
-                        isLogicalMultiCamera = reference.isLogicalMultiCamera
+                        isLogicalMultiCamera = reference.isLogicalMultiCamera,
+                        logicalPhysicalCameraIds = reference.logicalPhysicalCameraIds
                     )
                 }
             }
             .distinctBy { it.anchorRatio }
             .sortedBy { it.anchorRatio }
-            .let { profiles ->
-                // Modern Samsung/Pixel logical rear cameras already expose their lens system as a
-                // continuous CameraControl zoom range (commonly 0.5x..10x+). In that case let the
-                // OEM logical camera perform all ultra-wide/wide/tele hand-offs. Rebinding pinned
-                // physical members is slower, can break exact FPS negotiation, and used to send an
-                // invalid public 0.5 ratio into a physical stream. Physical profiles remain only as
-                // the fallback for devices whose logical CameraX camera cannot reach below 1x.
-                val seamlessLogical = profiles.firstOrNull { profile ->
-                    abs(profile.anchorRatio - 1f) <= LENS_BOUNDARY_EPSILON &&
-                        profile.physicalCameraId == null &&
-                        profile.isLogicalMultiCamera &&
-                        profile.nativeMinZoom < 0.95f
-                }
-                if (seamlessLogical == null) profiles else listOf(seamlessLogical)
-            }
     }
 
     private fun snapPhysicalLensAnchor(rawRatio: Float): Float {
@@ -1039,6 +1391,8 @@ class CameraEngine(private val context: Context) {
         const val ZOOM_SUBMIT_EPSILON = 0.0005f
         const val LENS_BOUNDARY_EPSILON = 0.001f
         const val LENS_SWITCH_GAP = 0.1f
+        const val LENS_SWITCH_MAX_GAP_FRACTION = 0.25f
+        const val LENS_SWITCH_REBIND_FALLBACK_MS = 100L
         const val LENS_SWITCH_READY_TIMEOUT_MS = 2_500L
         const val PREVIEW_STREAM_READY_TIMEOUT_MS = 3_000L
         const val ZOOM_APPLY_TIMEOUT_MS = 1_500L

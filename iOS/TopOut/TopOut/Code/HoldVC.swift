@@ -425,6 +425,8 @@ final class HoldVC: UIViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        // Review follows the user's normal auto-lock timeout instead of inheriting capture mode.
+        setScreenAwake(false)
         stopCamera()
     }
 
