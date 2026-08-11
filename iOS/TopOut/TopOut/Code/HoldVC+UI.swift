@@ -288,8 +288,8 @@ extension HoldVC {
         guard !hasHiddenLaunchScreen else { return }
         hasHiddenLaunchScreen = true
 
-        // MobileSAM은 시작 썸네일이 표시되는 동안 먼저 로드됩니다.
-        // 모델 로딩 완료 후에만 카메라 세션을 구성·실행하므로 두 고부하 작업이 겹치지 않습니다.
+        // 카메라 진입은 MobileSAM 로딩과 독립적으로 진행됩니다.
+        // 모델은 실제 카메라 프레임이 안정된 뒤 백그라운드에서 준비됩니다.
         overrideUserInterfaceStyle = .dark
         launchImageView.isHidden = true
         showCameraUI()

@@ -291,6 +291,7 @@ final class HoldVC: UIViewController {
     var encoder: MobileSAM_Encoder?
     var decoder: MobileSAM_Decoder?
     let workQ = DispatchQueue(label: "sam.work.queue", qos: .userInitiated)
+    var hasStartedMobileSAMPreload = false
 
     // MARK: Recording State
     let recorder = ContinuousRecorder()
@@ -389,7 +390,10 @@ final class HoldVC: UIViewController {
         setupMotionCallbacks()
         registerTraitChangeHandlers()
         showLaunchScreen()
-        preloadMobileSAMForLaunchThenRequestCameraAccess()
+        // Camera access and the first preview must never wait for Core ML model loading.
+        // Older devices can otherwise remain on the launch image while Core ML allocates
+        // its execution resources, or be terminated under transient memory pressure.
+        requestCameraAccess()
     }
 
     override func viewDidLayoutSubviews() {

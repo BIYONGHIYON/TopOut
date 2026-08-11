@@ -1,8 +1,8 @@
 # TopOut iOS startup sequence
 
-- 시작 썸네일이 표시되는 동안 MobileSAM Encoder/Decoder를 먼저 로드합니다.
-- 모델 로딩이 끝나기 전에는 카메라 권한 흐름, 캡처 세션 구성, `startRunning()`을 시작하지 않습니다.
-- MobileSAM과 카메라 초기화를 겹치지 않게 실행해 순간 부하를 낮춥니다.
+- 카메라 권한 흐름과 캡처 세션 구성, `startRunning()`은 MobileSAM 로딩을 기다리지 않습니다.
+- 실제 비디오 프레임 6장이 도착해 프리뷰가 안정된 뒤 MobileSAM Encoder/Decoder를 백그라운드에서 준비합니다.
+- Core ML은 CPU와 Neural Engine을 사용하고 GPU를 제외해 카메라·UI와의 자원 경합 및 구형 iPhone의 시작 시 메모리 압박을 줄입니다.
 - 모델 로딩이 실패해도 카메라는 정상 진입하며, 매트 경계는 75% fallback을 사용합니다.
 - 카메라 세션이 준비되면 시작 썸네일을 닫고 카메라 UI를 표시합니다.
 - 카메라 프리뷰는 설정에서 선택한 해상도와 FPS를 유지합니다.

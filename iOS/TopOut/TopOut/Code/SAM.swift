@@ -3,35 +3,37 @@ import UIKit
 import CoreML
 
 extension HoldVC {
-    /// 앱 시작 썸네일이 보이는 동안 MobileSAM을 먼저 메모리에 올립니다.
-    /// 카메라 권한 요청·세션 구성·startRunning은 모델 로딩이 끝난 뒤에만 시작해
-    /// 모델 초기화와 카메라 초기화가 동시에 기기 자원을 점유하지 않도록 합니다.
-    func preloadMobileSAMForLaunchThenRequestCameraAccess() {
+    /// 첫 카메라 프레임이 안정된 뒤 MobileSAM을 백그라운드에서 준비합니다.
+    /// 앱 진입과 카메라 권한 흐름은 Core ML 로딩 성공 여부와 독립적으로 진행됩니다.
+    func preloadMobileSAMAfterCameraStarts() {
+        guard !hasStartedMobileSAMPreload else { return }
+        hasStartedMobileSAMPreload = true
+
         workQ.async { [weak self] in
             guard let self else { return }
 
             do {
                 try self.loadModelsIfNeeded()
             } catch {
-                // 모델 로딩에 실패해도 카메라 사용 자체는 허용합니다.
-                // 이후 매트 경계 탐지는 기존 75% fallback으로 안전하게 동작합니다.
-            }
-
-            DispatchQueue.main.async { [weak self] in
-                self?.requestCameraAccess()
+                // 실제 분석 시 다시 로드를 시도하며, 계속 실패하면 기존 fallback을 사용합니다.
             }
         }
     }
 
-    // Loaded during the launch thumbnail screen before the camera session is configured.
     func loadModelsIfNeeded() throws {
         if encoder != nil, decoder != nil { return }
 
         let config = MLModelConfiguration()
-        config.computeUnits = .all
+        // Camera preview and UIKit already use GPU-backed resources. Restricting Core ML to
+        // CPU + Neural Engine avoids an unnecessary Metal allocation spike on older iPhones.
+        config.computeUnits = .cpuAndNeuralEngine
 
-        encoder = try MobileSAM_Encoder(configuration: config)
-        decoder = try MobileSAM_Decoder(configuration: config)
+        if encoder == nil {
+            encoder = try MobileSAM_Encoder(configuration: config)
+        }
+        if decoder == nil {
+            decoder = try MobileSAM_Decoder(configuration: config)
+        }
 
     }
 

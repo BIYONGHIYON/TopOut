@@ -261,46 +261,26 @@ final class ContinuousRecorder: @unchecked Sendable {
 
         let range = CMTimeRange(start: clampedStart, duration: clampedEnd - clampedStart)
 
-        // 마스크 없이 저장하는 경우에는 재인코딩하지 않는 passthrough trim을 먼저 시도합니다.
-        // 이 경로는 보통 가장 빠르고, 오디오도 그대로 유지됩니다.
-        if topHoldOverlayImage == nil {
-            do {
-                return try await exportPassthroughTrim(source: source, outURL: outURL, range: range)
-            } catch {
-                try? FileManager.default.removeItem(at: outURL)
-                return try await exportComposedTrim(source: source, outURL: outURL, range: range, overlayImage: nil)
+        let overlayImage: CIImage?
+        if let topHoldOverlayImage {
+            guard let overlayCG = resizedOverlayCGImage(topHoldOverlayImage, maxLongSide: 1280) else {
+                throw RecorderError.exportFailed
             }
+            overlayImage = CIImage(cgImage: overlayCG)
+        } else {
+            overlayImage = nil
         }
 
-        guard let topHoldOverlayImage,
-              let overlayCG = resizedOverlayCGImage(topHoldOverlayImage, maxLongSide: 1280) else {
-            throw RecorderError.exportFailed
-        }
-
+        // Passthrough trimming can begin between H.264 sync frames. In that case audio starts at
+        // the requested time while video can hold a stale frame until its dependencies arrive.
+        // Always use a high-quality transcode so the exported clip gets a decodable first frame
+        // at the exact user-selected boundary. This also keeps masked and unmasked saves aligned.
         return try await exportComposedTrim(
             source: source,
             outURL: outURL,
             range: range,
-            overlayImage: CIImage(cgImage: overlayCG)
+            overlayImage: overlayImage
         )
-    }
-
-    private static func exportPassthroughTrim(
-        source: AVAsset,
-        outURL: URL,
-        range: CMTimeRange
-    ) async throws -> URL {
-        guard let exporter = AVAssetExportSession(
-            asset: source,
-            presetName: AVAssetExportPresetPassthrough
-        ) else {
-            throw RecorderError.exportFailed
-        }
-
-        exporter.timeRange = range
-        exporter.shouldOptimizeForNetworkUse = false
-        try await exporter.export(to: outURL, as: .mov)
-        return outURL
     }
 
     private static func exportComposedTrim(

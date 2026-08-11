@@ -69,8 +69,8 @@ class MainActivity : ComponentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
 
-        // Resolve the ViewModel before composing the one-second brand thumbnail. Its init block
-        // preloads MobileSAM immediately, while no CameraPreview/CameraX use case exists yet.
+        // Resolve the ViewModel before composing the one-second brand thumbnail so launch state is
+        // ready. Heavy MobileSAM sessions are prepared only after CameraX is already streaming.
         val startupViewModel = viewModel
 
         setContent {

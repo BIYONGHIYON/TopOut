@@ -138,6 +138,7 @@ extension HoldVC {
         videoFrameSink.setStreamReadinessHandler { [weak self] in
             guard let self else { return }
             self.isCameraStreamReady = true
+            self.preloadMobileSAMAfterCameraStarts()
             if self.mode == .camera,
                self.recState == .idle,
                !self.isBusy,

@@ -63,6 +63,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private var storageJob: Job? = null
     private var countdownJob: Job? = null
     private var cameraBindingJob: Job? = null
+    private var mobileSamPreloadJob: Job? = null
     // The Activity/PreviewView own their lifecycle. Keep only weak handles for explicit rebinds so
     // a configuration change cannot leave the previous UI tree retained by this ViewModel.
     private var latestLifecycleOwner = WeakReference<LifecycleOwner>(null)
@@ -118,15 +119,11 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
 
-        // Load MobileSAM while the brand/thumbnail screen is visible. TopOutApp does not create or
-        // bind CameraX until launchVisible becomes false, so model loading and camera startup never
-        // compete for CPU, memory bandwidth, or thermal headroom.
+        // Never gate app or camera entry on two ONNX sessions. The one-second Activity brand screen
+        // normally covers this short in-app delay, and MobileSAM is warmed only after CameraX has
+        // produced a ready preview.
         viewModelScope.launch {
-            val startedAt = System.nanoTime()
-            mobileSam.prepare()
-            val elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L
-            val minimumLaunchMillis = 550L
-            if (elapsedMillis < minimumLaunchMillis) delay(minimumLaunchMillis - elapsedMillis)
+            delay(IN_APP_LAUNCH_DELAY_MILLIS)
             _uiState.update { it.copy(launchVisible = false) }
         }
     }
@@ -274,6 +271,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 if (normalized != previous) settingsRepository.save(normalized)
                 cameraEngine.setZoom(zoom)
+                preloadMobileSamAfterCameraStarts()
                 val currentState = _uiState.value
                 cameraEngine.setPreviewRenderingEnabled(
                     currentState.stage != CameraStage.RECORDING || currentState.livePreviewEnabled
@@ -1046,6 +1044,15 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         bindCamera(owner, preview)
     }
 
+    private fun preloadMobileSamAfterCameraStarts() {
+        if (mobileSamPreloadJob != null) return
+        mobileSamPreloadJob = viewModelScope.launch {
+            // A later detection call uses the same segmenter mutex and safely waits if this warmup
+            // is still running. A failed warmup is retried by the actual detection path.
+            mobileSam.prepare()
+        }
+    }
+
     private fun deleteCurrentRecording() {
         _uiState.value.recordedVideo?.uri?.path?.let { File(it).delete() }
     }
@@ -1056,6 +1063,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         storageJob?.cancel()
         countdownJob?.cancel()
         cameraBindingJob?.cancel()
+        mobileSamPreloadJob?.cancel()
         poseAnalyzer.stop()
         poseAnalyzer.close()
         cameraEngine.release()
@@ -1068,3 +1076,5 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
 
 private fun Float.validFrameScale(): Float =
     takeIf { it.isFinite() && it >= 1f } ?: 1f
+
+private const val IN_APP_LAUNCH_DELAY_MILLIS = 550L

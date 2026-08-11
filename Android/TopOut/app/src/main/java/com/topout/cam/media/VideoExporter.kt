@@ -102,6 +102,10 @@ class VideoExporter(private val context: Context) {
 
     private suspend fun transform(item: EditedMediaItem, output: File) = suspendCancellableCoroutine { continuation ->
         val transformer = Transformer.Builder(context)
+            // Keep OEM gallery players from receiving audio timestamps before the first output
+            // video frame. Media3 already transcodes a non-keyframe clipping start; this additionally
+            // aligns the output beginning for players that otherwise hold the first frame.
+            .setEnsureFileStartsOnVideoFrameEnabled(true)
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                     if (continuation.isActive) continuation.resume(Unit)
