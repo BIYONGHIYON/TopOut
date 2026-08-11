@@ -1,4 +1,4 @@
-# TopOut Android v1.5 (build 10)
+# TopOut Android v1.5 (build 11)
 
 TopOut Android는 오디오가 포함된 연속 촬영에서 등반 구간을 온디바이스로 탐지하고, 결과를 정밀 편집해 시스템 갤러리에 저장·검증하는 앱입니다.
 
@@ -11,7 +11,7 @@ TopOut Android는 오디오가 포함된 연속 촬영에서 등반 구간을 �
 - Application ID: `com.topout.cam`
 - Minimum SDK: `26` (Android 8.0)
 - Compile / Target SDK: `36`
-- Version name / code: `1.5` / `10`
+- Version name / code: `1.5` / `11`
 - UI: Kotlin, Jetpack Compose, Material 3
 - Camera / media: CameraX 1.6.1, Media3 1.10.1
 - AI: MobileSAM ONNX Runtime 1.27.0, MoveNet Thunder FP16 LiteRT 1.4.1
@@ -102,9 +102,9 @@ app/build/generated/moveNetPoseAssets/models/movenet-thunder-fp16.tflite
 
 ## 문서
 
-- [v1.5 build 10 변경 사항](V1_5_BUILD_10_NOTES.md)
+- [v1.5 build 11 변경 사항](V1_5_BUILD_11_NOTES.md)
 - [Android 호환성](ANDROID_COMPATIBILITY_NOTES.md)
 - [기기 호환성 수정](DEVICE_COMPATIBILITY_FIX_NOTES.md)
 - [MobileSAM ONNX 배치와 진단](docs/ONNX_INTEGRATION.md)
 - [iOS UI/UX 대응표](docs/UI_PARITY.md)
-- 과거 릴리스 기록: [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)
+- 과거 릴리스 기록: [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)

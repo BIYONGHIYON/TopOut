@@ -1,6 +1,6 @@
 # Android optimization audit — v1.4 (build 5)
 
-> 이 문서는 v1.4 build 5 최적화 당시의 감사 기록입니다. 현재 릴리스는 [v1.5 build 10](V1_5_BUILD_10_NOTES.md)이며 최신 동작은 [Android README](README.md)를 기준으로 합니다.
+> 이 문서는 v1.4 build 5 최적화 당시의 감사 기록입니다. 현재 릴리스는 [v1.5 build 11](V1_5_BUILD_11_NOTES.md)이며 최신 동작은 [Android README](README.md)를 기준으로 합니다.
 
 The original optimization pass kept behavior unchanged. Later tracking-alignment notes below remain historical context.
 

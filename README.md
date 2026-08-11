@@ -12,7 +12,7 @@ TopOut은 한 번의 연속 촬영에서 여러 등반 시도의 시작과 완�
 
 | 항목 | iOS | Android |
 |---|---|---|
-| 버전 | 1.5 (build 10) | 1.5 (versionCode 10) |
+| 버전 | 1.5 (build 10) | 1.5 (versionCode 11) |
 | 최소 OS | iOS 16.0 | Android 8.0 · API 26 |
 | 앱 ID | `com.topout.cam` | `com.topout.cam` |
 | UI | Swift · UIKit | Kotlin · Jetpack Compose · Material 3 |
@@ -49,6 +49,7 @@ TopOut/
 │   └── TopOut/
 ├── Android/TopOut/
 │   ├── README.md
+│   ├── V1_5_BUILD_11_NOTES.md
 │   ├── V1_5_BUILD_10_NOTES.md
 │   ├── app/
 │   └── docs/
@@ -62,11 +63,11 @@ TopOut/
 - [iOS 현재 문서](iOS/TopOut/README.md)
 - [Android 현재 문서](Android/TopOut/README.md)
 - [iOS build 10 변경 사항](iOS/TopOut/V1_5_BUILD_10_NOTES.md)
-- [Android build 10 변경 사항](Android/TopOut/V1_5_BUILD_10_NOTES.md)
+- [Android build 11 변경 사항](Android/TopOut/V1_5_BUILD_11_NOTES.md)
 - [제품 포트폴리오](portfolio/index.html)
 - [TopOut 공개 저장소](https://github.com/BIYONGHIYON/TopOut-app)
 
-`V1_4_*`, `V1_5_BUILD_7_*`, `V1_5_BUILD_8_*`, `V1_5_BUILD_9_*` 문서는 당시 동작을 보존하는 과거 릴리스 기록입니다. 현재 동작의 기준은 각 플랫폼 README와 build 10 노트입니다.
+`V1_4_*`, `V1_5_BUILD_7_*`, `V1_5_BUILD_8_*`, `V1_5_BUILD_9_*`와 Android build 10 문서는 당시 동작을 보존하는 과거 릴리스 기록입니다. 현재 동작의 기준은 각 플랫폼 README와 최신 빌드 노트입니다.
 
 로컬의 `TopOut-app/` 폴더는 별도 Git 이력을 가진 공개 저장소 checkout이므로 이 비공개 저장소의 `.gitignore`에서 제외합니다.
 
