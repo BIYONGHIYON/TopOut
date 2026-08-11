@@ -1,4 +1,4 @@
-# TopOut iOS v1.5 (build 10)
+# TopOut iOS v1.5 (build 11)
 
 TopOut iOS는 오디오가 포함된 연속 촬영에서 등반 구간을 온디바이스로 탐지하고, 결과를 정밀 편집해 시스템 사진 보관함에 저장·검증하는 앱입니다.
 
@@ -10,7 +10,7 @@ TopOut iOS는 오디오가 포함된 연속 촬영에서 등반 구간을 온디
 
 - Bundle ID: `com.topout.cam`
 - Deployment Target: iOS 16.0
-- Marketing / Current Project Version: `1.5` / `10`
+- Marketing / Current Project Version: `1.5` / `11`
 - UI: Swift, UIKit
 - Camera / media: AVFoundation, AVAssetWriter, AVPlayer, PhotoKit
 - AI: MobileSAM Core ML, Apple Vision Human Body Pose
@@ -68,8 +68,8 @@ xcodebuild -project TopOut.xcodeproj -scheme TopOut -configuration Debug \
 
 ## 문서
 
-- [v1.5 build 10 변경 사항](V1_5_BUILD_10_NOTES.md)
+- [v1.5 build 11 변경 사항](V1_5_BUILD_11_NOTES.md)
 - [MobileSAM 매트 경계](MOBILESAM_MAT_DETECTOR_NOTES.md)
 - [시작과 프레임 처리](STARTUP_OPTIMIZATION_NOTES.md)
 - [Pose 로직](POSE_LOGIC_ROLLBACK_NOTES.md)
-- 과거 릴리스 기록: [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)
+- 과거 릴리스 기록: [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)
