@@ -77,11 +77,13 @@ TopOut/
 │   ├── index.html
 │   ├── styles.css
 │   └── assets/
+├── DEVELOPMENT_HISTORY.md
 └── README.md
 ```
 
 - [iOS 현재 문서](iOS/TopOut/README.md)
 - [Android 현재 문서](Android/TopOut/README.md)
+- [개발 이력과 기술 의사결정](DEVELOPMENT_HISTORY.md)
 - [iOS v1.6 build 13 변경 사항](iOS/TopOut/V1_6_BUILD_13_NOTES.md)
 - [Android v1.6 build 13 변경 사항](Android/TopOut/V1_6_BUILD_13_NOTES.md)
 - [제품 포트폴리오](portfolio/index.html)
@@ -90,6 +92,37 @@ TopOut/
 `V1_4_*`, `V1_5_*`, `V1_6_BUILD_12_NOTES.md`는 당시 동작을 보존하는 과거 릴리스 기록입니다. 현재 동작의 기준은 각 플랫폼 README와 v1.6 build 13 노트입니다.
 
 로컬의 `TopOut-app/` 폴더는 별도 Git 이력을 가진 공개 저장소 checkout이므로 이 비공개 저장소의 `.gitignore`에서 제외합니다.
+
+## 개발 흐름과 의사결정
+
+TopOut은 iOS 카메라·MobileSAM 프로토타입에서 시작해 Motion 기반 연속 촬영, Vision Pose, 결과 편집을 차례로 연결한 뒤 Android로 제품 흐름을 확장했습니다. Android에서는 ML Kit, MediaPipe, EfficientDet, YOLO11 Pose, PP-TinyPose와 MoveNet Lightning을 비교했고, 정확도·장시간 전력·앱 크기·라이선스·배포성을 함께 평가해 MoveNet Thunder FP16과 LiteRT로 정착했습니다.
+
+현재 구조는 한 번에 결정된 결과가 아닙니다.
+
+```text
+규칙 기반 매트 경계
+→ 암장별 조명·그림자·볼륨 예외 확인
+→ MobileSAM 후보 분할 + 구조 필터 + 수동 보정
+
+Motion만으로 시작·종료 판정
+→ 흔들림·노출 변화·주변 사람 오탐 확인
+→ Motion은 Pose 입력 위치 탐색에 사용
+→ 시작·종료는 관절과 x별 매트선 관계로 검증
+
+전체 화면 Pose 추론
+→ 장시간 녹화 비용과 불필요한 배경 분석 확인
+→ 상태별 2fps·4fps + Motion-seeded ROI
+
+저장 API 성공 표시
+→ 실제 사진 앱 결과에 대한 사용자 불확실성 확인
+→ 생성된 Photos·MediaStore 항목을 다시 열어 검증
+
+분석 완료를 무기한 대기
+→ 메모리 제약 기기에서 네이티브 모델 무응답 피드백
+→ 5초 후 기본 경계와 수동 보정으로 복구
+```
+
+세부 커밋 순서, 폐기된 모델과 UI 실험, v1.2부터 v1.6 build 13까지의 정착 과정은 [개발 이력과 기술 의사결정](DEVELOPMENT_HISTORY.md)에 기록합니다. 과거 문서가 현재 README와 충돌할 때는 실제 코드, 현재 플랫폼 README, 최신 빌드 노트 순으로 판단합니다.
 
 ## 촬영 준비와 프레임 정합성
 

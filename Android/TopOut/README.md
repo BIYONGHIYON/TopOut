@@ -71,6 +71,18 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 
 전체 화면 512px RGB Pose 폴백은 사용하지 않습니다. 초기 Motion ROI를 만들 수 없으면 WAITING 상태에 머뭅니다.
 
+### Pose 모델 결정 과정
+
+Android Pose는 초기 ML Kit·MediaPipe에서 시작해 EfficientDet 사람 영역 탐색, YOLO11 Pose, PP-TinyPose, MoveNet Lightning을 순서대로 검토했습니다. 후보 선택은 단일 영상의 정확도뿐 아니라 장시간 녹화 중 발열과 전력, 네이티브 의존성, 앱 크기, 오픈소스 라이선스와 스토어 배포 가능성을 함께 기준으로 삼았습니다.
+
+- ML Kit·MediaPipe: 통합은 쉬웠지만 클라이밍 홀드 오탐과 제품 입력 조건에서의 안정성이 부족했습니다.
+- YOLO11 Pose: 검출은 안정적이었지만 지속 추론 비용과 배포 라이선스 위험 때문에 제외했습니다.
+- PP-TinyPose·PaddleLite: 경량화를 기대했지만 네이티브 번들 크기와 작은 관절·가림 안정성이 부족했습니다.
+- MoveNet Lightning: 처리량은 좋았지만 다이노·모션 블러에서 Pose 유실이 늘었습니다.
+- MoveNet Thunder FP16: 정확도·지속 실행 비용·배포성의 균형이 가장 적합해 채택했습니다.
+
+Thunder의 추가 연산량은 전체 화면 변환을 제거하고 Motion 변화 영역만 256×256로 직접 샘플링하며, 상태별 2fps·4fps로 추론 횟수를 제한하는 방식으로 보완합니다. 전체 실험과 Git 기준점은 [저장소 개발 이력](../../DEVELOPMENT_HISTORY.md)에 정리돼 있습니다.
+
 ## 결과 편집과 갤러리 검증
 
 - 녹화 중 감지된 모든 원본 구간을 보존하고, 2초 미만의 짧은 구간만 인접 구간과의 간격이 3초 이내일 때 병합합니다.
@@ -124,6 +136,7 @@ app/build/generated/moveNetPoseAssets/models/movenet-thunder-fp16.tflite
 ## 문서
 
 - [v1.6 build 13 변경 사항](V1_6_BUILD_13_NOTES.md)
+- [전체 개발 이력과 기술 의사결정](../../DEVELOPMENT_HISTORY.md)
 - [Android 호환성](ANDROID_COMPATIBILITY_NOTES.md)
 - [기기 호환성 수정](DEVICE_COMPATIBILITY_FIX_NOTES.md)
 - [MobileSAM ONNX 배치와 진단](docs/ONNX_INTEGRATION.md)
