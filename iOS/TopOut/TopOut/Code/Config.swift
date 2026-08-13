@@ -43,11 +43,15 @@ enum Cfg {
 
     // MARK: Mat Detection
     static let matDefaultY: CGFloat = 0.75
+    static let matBoundaryAnalysisTimeout: TimeInterval = 5
 
     // MARK: Mat Line UI
     static let matLineWidth: CGFloat = 3
     static let matPointRadius: CGFloat = 8
     static let matHitRadius: CGFloat = 32
+
+    // MARK: Review
+    static let reviewEndPreviewLeadSeconds: TimeInterval = 3
 
     // MARK: Motion Detection
     static let motionDebugLog = false

@@ -41,6 +41,7 @@ extension HoldVC {
 
     @objc private func onAppDidEnterBackground() {
         stopCamera()
+        releaseMobileSAMResources()
 
         if recState == .exporting {
             beginRecordingStopBackgroundTask()
@@ -58,7 +59,8 @@ extension HoldVC {
               pendingAutomaticStopNotice == nil,
               !isAutomaticStopInProgress else { return }
 
-        if mode == .camera, recState == .idle {
+        if recState == .idle,
+           mode == .camera || mode == .select || mode == .processing {
             prepareAudioSessionForCameraUse()
             startCamera()
         }
@@ -239,6 +241,7 @@ extension HoldVC {
                         title: notice.title,
                         message: "\(notice.message)\n\n실제 영상 프레임이 기록되기 전이어서 저장된 영상은 없습니다."
                     )
+                    self.restoreIdleCameraAfterAutomaticStopIfActive()
                     self.deliverPendingAutomaticStopResultIfPossible()
                     return
                 }
@@ -254,6 +257,7 @@ extension HoldVC {
                     title: notice.title,
                     message: "\(notice.message)\n\n녹화 파일을 마무리하지 못했습니다: \(error.localizedDescription)"
                 )
+                self.restoreIdleCameraAfterAutomaticStopIfActive()
                 self.deliverPendingAutomaticStopResultIfPossible()
             }
         }
@@ -272,7 +276,20 @@ extension HoldVC {
             title: notice.title,
             message: "\(notice.message)\n\n실제 녹화가 시작되기 전이어서 저장된 영상은 없습니다."
         )
+        restoreIdleCameraAfterAutomaticStopIfActive()
         deliverPendingAutomaticStopResultIfPossible()
+    }
+
+    private func restoreIdleCameraAfterAutomaticStopIfActive() {
+        guard UIApplication.shared.applicationState == .active,
+              view.window != nil,
+              recState == .idle,
+              mode == .camera else { return }
+
+        // The foreground notification can arrive while recorder.stop is still pending. If that
+        // stop then yields no usable file, no second activation callback follows to revive capture.
+        prepareAudioSessionForCameraUse()
+        startCamera()
     }
 
     func deliverPendingAutomaticStopResultIfPossible() {

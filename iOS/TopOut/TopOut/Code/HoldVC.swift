@@ -206,7 +206,7 @@ final class HoldVC: UIViewController {
 
     let selectHint: UILabel = {
         let label = UILabel()
-        label.text = "탑홀드를 탭하세요 · 파란 점으로 매트 경계를 보정하세요"
+        label.text = "탑홀드를 탭하세요 · 벽과 매트 경계를 보정하세요"
         label.textColor = .white
         label.textAlignment = .center
         label.font = .systemFont(ofSize: 14, weight: .semibold)
@@ -221,7 +221,7 @@ final class HoldVC: UIViewController {
 
     let selectTipLabel: UILabel = {
         let label = UILabel()
-        label.text = "Tip. 준비 완료 후에는 촬영 배율이 고정됩니다"
+        label.text = ""
         label.textColor = UIColor.white.withAlphaComponent(0.92)
         label.textAlignment = .center
         label.font = .systemFont(ofSize: 13, weight: .medium)
@@ -285,6 +285,7 @@ final class HoldVC: UIViewController {
     var pendingTopBox: CGRect?
     var matLinePoints: [CGPoint] = []
     var selectionRequestID = 0
+    var matBoundaryAnalysisTimeoutWorkItem: DispatchWorkItem?
     var samScale: CGFloat = 1
     var isBusy = false
 
@@ -434,6 +435,13 @@ final class HoldVC: UIViewController {
         stopCamera()
     }
 
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
+        // Model teardown is serialized behind any in-flight inference. The next
+        // Ready/tap analysis reloads MobileSAM lazily, so this is safe in every UI mode.
+        releaseMobileSAMResources()
+    }
+
 
     @objc private func onDeviceOrientationChanged() {
         guard canRotatePreview else { return }
@@ -445,6 +453,9 @@ final class HoldVC: UIViewController {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        matBoundaryAnalysisTimeoutWorkItem?.cancel()
+        cancelRecordingCountdown()
+        recordingElapsedTimer?.invalidate()
         recordingStorageTimer?.invalidate()
         endRecordingStopBackgroundTask()
         UIDevice.current.endGeneratingDeviceOrientationNotifications()

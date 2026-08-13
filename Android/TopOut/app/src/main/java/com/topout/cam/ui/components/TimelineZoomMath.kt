@@ -12,6 +12,27 @@ internal data class TimelineViewport(
 }
 
 internal object TimelineZoomMath {
+    fun stableMaximumZoomFactor(
+        allowedMaximum: Double,
+        currentZoom: Double,
+        tolerance: Double = 0.0001
+    ): Double = if (currentZoom > allowedMaximum + tolerance) currentZoom else allowedMaximum
+
+    fun valueForTrackPosition(
+        positionPx: Double,
+        widthPx: Double,
+        minimumValue: Double,
+        maximumValue: Double,
+        horizontalInsetPx: Double
+    ): Double {
+        val lower = min(minimumValue, maximumValue)
+        val upper = max(minimumValue, maximumValue)
+        val safeInset = horizontalInsetPx.coerceAtLeast(0.0)
+        val usableWidth = (widthPx - safeInset * 2.0).coerceAtLeast(1.0)
+        val progress = ((positionPx - safeInset) / usableWidth).coerceIn(0.0, 1.0)
+        return lower + (upper - lower) * progress
+    }
+
     fun minimumViewportSpan(
         durationSeconds: Double,
         lowerSeconds: Double,

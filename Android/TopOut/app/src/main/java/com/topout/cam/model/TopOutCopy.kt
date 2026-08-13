@@ -26,15 +26,15 @@ object TopOutCopy {
 
     fun selectionGuidance(settings: AppSettings): String = when {
         settings.autoClipDetectionEnabled && settings.requiresTopHoldSelection ->
-            "탑홀드를 탭하세요 · 파란 점으로 매트 경계를 보정하세요"
+            "탑홀드를 탭하세요 · 벽과 매트 경계를 보정하세요"
         settings.autoClipDetectionEnabled ->
-            "파란 점으로 매트 경계를 보정한 뒤 녹화 시작을 눌러주세요"
+            "벽과 매트 경계를 보정한 뒤 녹화 시작을 눌러주세요"
         else -> "탑홀드를 탭하세요"
     }
 
     fun selectionTip(settings: AppSettings): String =
         if (settings.requiresTopHoldSelection) {
-            "Tip. 준비 완료 후에는 촬영 배율이 고정됩니다"
+            ""
         } else {
             "Tip. 파란 점은 위아래로 움직일 수 있어요"
         }

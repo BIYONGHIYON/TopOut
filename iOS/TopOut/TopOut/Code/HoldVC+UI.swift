@@ -659,20 +659,21 @@ extension HoldVC {
             recordBtn.isEnabled = false
             setLoading(true)
 
-            if requiresTopHoldSelection {
-                selectHint.text = "AI가 매트 경계를 분석하고 있어요"
-            } else {
-                selectHint.text = "AI가 매트 경계를 분석하고 있어요"
-            }
+            selectHint.text = "매트 경계를 분석하고 있어요"
             selectTipLabel.text = "Tip. 분석이 끝나면 경계선을 직접 보정할 수 있어요"
 
             isBusy = true
-            detectMatBoundaryWithMobileSAM(in: image) { [weak self] detectedLine in
-                guard let self else { return }
-                guard self.selectionRequestID == boundaryRequestID,
+            var didFinishBoundaryAnalysis = false
+            let finishBoundaryAnalysis: ([CGPoint]) -> Void = { [weak self] detectedLine in
+                guard let self,
+                      !didFinishBoundaryAnalysis,
+                      self.selectionRequestID == boundaryRequestID,
                       self.mode == .select,
                       self.frameImage === image else { return }
 
+                didFinishBoundaryAnalysis = true
+                self.matBoundaryAnalysisTimeoutWorkItem?.cancel()
+                self.matBoundaryAnalysisTimeoutWorkItem = nil
                 self.isBusy = false
                 self.matLinePoints = detectedLine
                 self.matLineView.setPoints(detectedLine)
@@ -680,23 +681,36 @@ extension HoldVC {
                 self.setLoading(false)
 
                 if self.requiresTopHoldSelection {
-                    self.selectHint.text = "탑홀드를 탭하세요 · 파란 점으로 매트 경계를 보정하세요"
-                    self.selectTipLabel.text = "Tip. 준비 완료 후에는 촬영 배율이 고정됩니다"
+                    self.selectHint.text = "탑홀드를 탭하세요 · 벽과 매트 경계를 보정하세요"
+                    self.selectTipLabel.text = ""
+                    self.selectTipLabel.isHidden = true
                     // Do not cache the Ready-time embedding for hold selection. Each hold tap
                     // captures a fresh live frame while keeping the Ready-time camera FOV fixed.
                     self.emb = nil
                 } else {
-                    self.selectHint.text = "파란 점으로 매트 경계를 보정한 뒤 녹화 시작을 눌러주세요"
+                    self.selectHint.text = "벽과 매트 경계를 보정한 뒤 녹화 시작을 눌러주세요"
                     self.selectTipLabel.text = "Tip. 파란 점은 위아래로 움직일 수 있어요"
+                    self.selectTipLabel.isHidden = !self.isHelpEnabled
                     self.recordBtn.isEnabled = detectedLine.count >= 2
                 }
             }
+
+            let timeoutWorkItem = DispatchWorkItem {
+                finishBoundaryAnalysis(Self.samMatDefaultLine)
+            }
+            matBoundaryAnalysisTimeoutWorkItem = timeoutWorkItem
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + Cfg.matBoundaryAnalysisTimeout,
+                execute: timeoutWorkItem
+            )
+            detectMatBoundaryWithMobileSAM(in: image, completion: finishBoundaryAnalysis)
         } else {
             matLinePoints = []
             matLineView.clear()
             matLineView.isHidden = true
             selectHint.text = "탑홀드를 탭하세요"
-            selectTipLabel.text = "Tip. 준비 완료 후에는 촬영 배율이 고정됩니다"
+            selectTipLabel.text = ""
+            selectTipLabel.isHidden = true
             recordBtn.isEnabled = false
         }
         resetZoom()
@@ -713,7 +727,7 @@ extension HoldVC {
         manualStopBtn.isHidden = true
         livePreviewToggleButton.isHidden = true
         selectHint.isHidden = !isHelpEnabled
-        selectTipLabel.isHidden = !isHelpEnabled
+        selectTipLabel.isHidden = !isHelpEnabled || (selectTipLabel.text?.isEmpty ?? true)
         selectView.isHidden = false
         retakeBtn.isEnabled = true
         if !isAutoClipDetectionEnabled {
@@ -740,6 +754,8 @@ extension HoldVC {
 
     // MARK: Cache
     func clearSelectionCache(clearPending: Bool) {
+        matBoundaryAnalysisTimeoutWorkItem?.cancel()
+        matBoundaryAnalysisTimeoutWorkItem = nil
         selectionRequestID += 1
 
         if clearPending {

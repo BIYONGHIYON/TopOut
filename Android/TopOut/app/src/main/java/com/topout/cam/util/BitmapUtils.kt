@@ -3,7 +3,6 @@ package com.topout.cam.util
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import androidx.compose.ui.geometry.Offset
@@ -11,12 +10,6 @@ import com.topout.cam.model.HoldMask
 import com.topout.cam.model.TopOutConfig
 import kotlin.math.max
 import kotlin.math.min
-
-fun Bitmap.rotated(degrees: Int): Bitmap {
-    if (degrees % 360 == 0) return this
-    val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
-    return Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
-}
 
 fun createHoldOverlayBitmap(width: Int, height: Int, mask: HoldMask?): Bitmap? {
     mask ?: return null

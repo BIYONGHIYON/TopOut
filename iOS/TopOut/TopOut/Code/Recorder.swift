@@ -76,7 +76,13 @@ final class ContinuousRecorder: @unchecked Sendable {
 
 
     func append(_ sampleBuffer: CMSampleBuffer) {
-        q.async {
+        // Keep capture backpressure on AVCaptureVideoDataOutput's delegate queue.
+        // Enqueuing every 4K/60fps CMSampleBuffer asynchronously can retain an
+        // unbounded number of full-resolution frames when AVAssetWriter stalls.
+        // The capture output already discards late frames, so processing the
+        // append synchronously here bounds memory without changing timestamp or
+        // writer ordering semantics.
+        q.sync {
             guard self.isRunning, !self.isStopping else { return }
             guard CMSampleBufferDataIsReady(sampleBuffer) else { return }
 
@@ -102,7 +108,9 @@ final class ContinuousRecorder: @unchecked Sendable {
     }
 
     func appendAudio(_ sampleBuffer: CMSampleBuffer) {
-        q.async {
+        // Audio follows the same serial writer ordering and must not build a
+        // second retained sample-buffer backlog while video is under pressure.
+        q.sync {
             guard self.isRunning, !self.isStopping else { return }
             guard CMSampleBufferDataIsReady(sampleBuffer) else { return }
             guard let writer = self.writer, writer.status == .writing else { return }

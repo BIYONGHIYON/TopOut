@@ -1,5 +1,7 @@
 # TopOut Android v1.5 (build 11)
 
+> 과거 릴리스 기록입니다. 현재 릴리스는 [v1.6 build 12](V1_6_BUILD_12_NOTES.md)이며 현재 동작은 [Android README](README.md)를 기준으로 합니다.
+
 ## Startup compatibility
 
 - 앱 진입과 CameraX 프리뷰 시작이 MobileSAM ONNX 세션 준비를 기다리지 않도록 분리했습니다.

@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -94,7 +93,6 @@ fun PrecisionTrimSlider(
     var displayPlayhead by remember { mutableDoubleStateOf(playheadValue) }
     var bubbleValue by remember { mutableDoubleStateOf(0.0) }
     var fineMode by remember { mutableStateOf(false) }
-    var requestedZoomFactor by remember(durationSeconds) { mutableDoubleStateOf(1.0) }
     var viewportStart by remember(durationSeconds) { mutableDoubleStateOf(0.0) }
     var viewportSpan by remember(durationSeconds) { mutableDoubleStateOf(safeDuration) }
 
@@ -114,9 +112,22 @@ fun PrecisionTrimSlider(
             requestedZoomFactor = zoom,
             minimumSelectionSeconds = TopOutConfig.MinimumTrimRangeSeconds
         )
-        requestedZoomFactor = viewport.zoomFactor
         viewportSpan = viewport.spanSeconds
         viewportStart = viewport.startSeconds
+    }
+
+    fun updateSelectedRangeZoom(zoom: Double) {
+        if (!zoomTracking) {
+            zoomTracking = true
+            latestTrackingChanged(true)
+        }
+        setViewportCenteredOnSelection(zoom, latestLower, latestUpper)
+    }
+
+    fun finishSelectedRangeZoom() {
+        if (!zoomTracking) return
+        zoomTracking = false
+        latestTrackingChanged(false)
     }
 
     fun recenterViewportPreservingZoom(lower: Double, upper: Double) {
@@ -127,14 +138,16 @@ fun PrecisionTrimSlider(
             currentSpanSeconds = viewportSpan,
             minimumSelectionSeconds = TopOutConfig.MinimumTrimRangeSeconds
         )
-        requestedZoomFactor = viewport.zoomFactor
         viewportSpan = viewport.spanSeconds
         viewportStart = viewport.startSeconds
     }
 
     val maximumZoomFactor = maximumZoomForSelection(lowerValue, upperValue)
     val zoomFactor = (safeDuration / viewportSpan.coerceAtLeast(0.01)).coerceAtLeast(1.0)
-    val sliderMaximumZoomFactor = max(maximumZoomFactor, zoomFactor)
+    val sliderMaximumZoomFactor = TimelineZoomMath.stableMaximumZoomFactor(
+        allowedMaximum = maximumZoomFactor,
+        currentZoom = zoomFactor
+    )
     val viewportEnd = viewportStart + viewportSpan
 
     LaunchedEffect(lowerValue, upperValue, playheadValue, trackingTarget, zoomTracking) {
@@ -147,7 +160,6 @@ fun PrecisionTrimSlider(
     }
 
     LaunchedEffect(durationSeconds) {
-        requestedZoomFactor = 1.0
         viewportStart = 0.0
         viewportSpan = safeDuration
     }
@@ -516,27 +528,17 @@ fun PrecisionTrimSlider(
                 )
             }
 
-            Slider(
-                value = zoomFactor.toFloat().coerceIn(1f, sliderMaximumZoomFactor.toFloat()),
-                onValueChange = { value ->
-                    if (!zoomTracking) {
-                        zoomTracking = true
-                        latestTrackingChanged(true)
-                    }
-                    setViewportCenteredOnSelection(value.toDouble(), latestLower, latestUpper)
-                },
-                onValueChangeFinished = {
-                    if (zoomTracking) {
-                        zoomTracking = false
-                        latestTrackingChanged(false)
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    }
-                },
-                enabled = enabled && sliderMaximumZoomFactor > 1.01,
-                valueRange = 1f..sliderMaximumZoomFactor.toFloat().coerceAtLeast(1.0001f),
+            val zoomSliderEnabled = enabled && sliderMaximumZoomFactor > 1.01
+            val zoomSliderMaximum = sliderMaximumZoomFactor.coerceAtLeast(1.0001)
+            TrackTappableZoomSlider(
+                value = zoomFactor,
+                maximumValue = zoomSliderMaximum,
+                enabled = zoomSliderEnabled,
+                onValueChange = ::updateSelectedRangeZoom,
+                onValueChangeFinished = ::finishSelectedRangeZoom,
                 modifier = Modifier
                     .fillMaxWidth(0.72f)
-                    .height(22.dp)
+                    .height(36.dp)
             )
         }
     }

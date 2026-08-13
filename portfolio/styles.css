@@ -367,6 +367,12 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(-
   object-fit: contain;
   background: #090C10;
 }
+.analysis-feedback-proof { width: min(320px, 100%); }
+.analysis-feedback-proof figure { max-width: 320px; }
+.analysis-feedback-proof img {
+  aspect-ratio: 1179 / 2075;
+  background: #fff;
+}
 
 .parity-strip {
   margin-top: 20px;

@@ -143,8 +143,8 @@ final class ReviewVC: UIViewController {
         return label
     }()
 
-    private let selectedRangeZoomSlider: UISlider = {
-        let slider = UISlider()
+    private let selectedRangeZoomSlider: TrackTappableSlider = {
+        let slider = TrackTappableSlider()
         slider.minimumValue = 1
         slider.maximumValue = 1.0001
         slider.value = 1
@@ -154,8 +154,7 @@ final class ReviewVC: UIViewController {
             systemName: "circle.fill",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
         )
-        slider.setThumbImage(compactThumb, for: .normal)
-        slider.setThumbImage(compactThumb, for: .highlighted)
+        slider.setThumbImage(compactThumb)
         slider.thumbTintColor = .white
         slider.accessibilityLabel = "선택된 구간 확대"
         slider.accessibilityHint = "오른쪽으로 이동하면 선택된 시작과 끝을 화면 안에 유지한 채 확대합니다"
@@ -315,8 +314,11 @@ final class ReviewVC: UIViewController {
         trimSlider.onPlayheadChanged = { [weak self] value in
             self?.handlePlayheadChanged(value)
         }
-        trimSlider.onTrackingEnded = { [weak self] in
+        trimSlider.onTrackingEnded = { [weak self] activeHandle in
             self?.refreshSelectedRangeZoomControl(recenter: true)
+            if let activeHandle {
+                self?.resumePlaybackAfterTrimEdit(activeHandle: activeHandle)
+            }
             self?.scheduleHideSliderTimeBubble(after: 0.55)
         }
         selectedRangeZoomSlider.addTarget(self, action: #selector(onSelectedRangeZoomTouchDown), for: .touchDown)
@@ -703,6 +705,14 @@ final class ReviewVC: UIViewController {
 
     func setSaving(_ saving: Bool) {
         saveBtn.isEnabled = !saving
+        if saving {
+            var config = saveBtn.configuration ?? UIButton.Configuration.filled()
+            config.title = "저장 중..."
+            saveBtn.configuration = config
+            saveBtn.accessibilityLabel = "저장 중..."
+        } else {
+            updateSaveButtonMode()
+        }
         playPauseBtn.isEnabled = !saving
         overlayToggleBtn.isEnabled = !saving && topHoldOverlayImage != nil && !topHoldOverlayToggleLocked
         trimSlider.isEnabled = !saving
@@ -782,6 +792,23 @@ final class ReviewVC: UIViewController {
         showSliderTimeBubble(for: playhead)
         pausePlayback()
         seek(to: playhead)
+    }
+
+    private func resumePlaybackAfterTrimEdit(activeHandle: TrimRangeSlider.ActiveHandle) {
+        pausePlayback()
+        switch activeHandle {
+        case .lower:
+            playhead = selectedStart
+        case .upper:
+            playhead = Swift.max(
+                selectedStart,
+                selectedEnd - Cfg.reviewEndPreviewLeadSeconds
+            )
+        }
+        trimSlider.playheadValue = playhead
+        trimSlider.ensureValueVisible(playhead)
+        showSliderTimeBubble(for: playhead)
+        playFromCurrentPlayhead()
     }
 
     private func showSliderTimeBubble(for seconds: TimeInterval) {
@@ -953,7 +980,8 @@ final class ReviewVC: UIViewController {
 
     @objc private func onTapRetake() {
         confirmDiscardUnsavedClipIfNeeded(
-            message: "기존의 매트경계 위치를 유지하여 다시 촬영합니다.\n저장하지 않은 영상이 삭제됩니다."
+            message: "기존의 매트경계 위치를 유지하여 다시 촬영합니다.\n저장하지 않은 영상이 삭제됩니다.",
+            compactMessage: true
         ) { [weak self] in
             self?.dismissForRetake()
         }
@@ -969,6 +997,7 @@ final class ReviewVC: UIViewController {
 
     private func confirmDiscardUnsavedClipIfNeeded(
         message warningMessage: String,
+        compactMessage: Bool = false,
         _ confirmedAction: @escaping () -> Void
     ) {
         pausePlayback()
@@ -988,7 +1017,18 @@ final class ReviewVC: UIViewController {
         alert.addAction(UIAlertAction(title: "확인", style: .destructive) { _ in
             confirmedAction()
         })
-        present(alert, animated: true)
+        present(alert, animated: true) {
+            guard compactMessage else { return }
+            alert.applyCompactMessageFont(matching: warningMessage)
+        }
+        if compactMessage {
+            // UIAlertController creates its private message label during presentation.
+            // The next run-loop applies the style before the first settled frame; the
+            // presentation completion above is a fallback for slower OS versions.
+            DispatchQueue.main.async {
+                alert.applyCompactMessageFont(matching: warningMessage)
+            }
+        }
     }
 
     private func dismissForRetake() {
@@ -1320,7 +1360,7 @@ private final class TrimRangeSlider: UIControl {
 
     var onRangeChanged: ((_ lower: TimeInterval, _ upper: TimeInterval, _ activeHandle: ActiveHandle) -> Void)?
     var onPlayheadChanged: ((_ value: TimeInterval) -> Void)?
-    var onTrackingEnded: (() -> Void)?
+    var onTrackingEnded: ((_ activeHandle: ActiveHandle?) -> Void)?
 
     override var isEnabled: Bool {
         didSet { alpha = isEnabled ? 1.0 : 0.45 }
@@ -1533,15 +1573,20 @@ private final class TrimRangeSlider: UIControl {
     }
 
     override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
+        let activeHandle: ActiveHandle? = switch dragTarget {
+        case .lower: .lower
+        case .upper: .upper
+        case .playhead, .none: nil
+        }
         resetTrackingState()
         _ = recenterSelectedRangePreservingCurrentZoom()
-        onTrackingEnded?()
+        onTrackingEnded?(activeHandle)
     }
 
     override func cancelTracking(with event: UIEvent?) {
         resetTrackingState()
         _ = recenterSelectedRangePreservingCurrentZoom()
-        onTrackingEnded?()
+        onTrackingEnded?(nil)
     }
 
     var currentSelectedRangeZoomFactor: Double {

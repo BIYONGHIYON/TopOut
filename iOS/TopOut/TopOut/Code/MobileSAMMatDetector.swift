@@ -32,7 +32,7 @@ extension HoldVC {
         let y: CGFloat
     }
 
-    private static let samMatDefaultLine: [CGPoint] = [
+    static let samMatDefaultLine: [CGPoint] = [
         CGPoint(x: 0.06, y: 0.75),
         CGPoint(x: 0.94, y: 0.75)
     ]
@@ -45,7 +45,7 @@ extension HoldVC {
     private static let samMatRightX: CGFloat = 0.94
 
     /// UI를 막지 않도록 기존 SAM 작업 큐에서 실행합니다.
-    /// getEmbedding이 만든 임베딩은 이후 탑홀드 선택에서도 그대로 재사용됩니다.
+    /// UI 쪽 watchdog은 Core ML이 응답하지 않더라도 기본 경계로 촬영 흐름을 계속합니다.
     func detectMatBoundaryWithMobileSAM(
         in image: UIImage,
         completion: @escaping ([CGPoint]) -> Void
@@ -68,45 +68,52 @@ extension HoldVC {
         }
 
         do {
-            let embedding = try getEmbedding(for: image)
+            // Mat analysis and top-hold selection intentionally use different
+            // camera frames. Do not publish this Ready-time embedding to the
+            // shared tap-selection cache.
+            let embedding = try makeEmbedding(for: image)
             var bestCandidate: SAMMatCandidate?
 
             for promptY in Self.samMatPromptLevels {
-                let positive = CGPoint(
-                    x: image.size.width * 0.50,
-                    y: image.size.height * promptY
-                )
-                let negative = CGPoint(
-                    x: image.size.width * 0.50,
-                    y: image.size.height * 0.28
-                )
+                // Decoder outputs and connected-component work buffers are only
+                // needed for one prompt at a time. Drain autoreleased Core ML
+                // objects between prompts to lower the inference peak on small-RAM
+                // devices while preserving the exact candidate ordering.
+                let promptCandidates: [SAMMatCandidate] = try autoreleasepool {
+                    let positive = CGPoint(
+                        x: image.size.width * 0.50,
+                        y: image.size.height * promptY
+                    )
+                    let negative = CGPoint(
+                        x: image.size.width * 0.50,
+                        y: image.size.height * 0.28
+                    )
 
-                let mask = try decodeMatMask(
-                    positive: positive,
-                    negative: negative,
-                    embedding: embedding
-                )
+                    let mask = try decodeMatMask(
+                        positive: positive,
+                        negative: negative,
+                        embedding: embedding
+                    )
 
-                let channelCount = max(1, mask.shape[1].intValue)
-                for channel in 0..<channelCount {
-                    if let candidate = makeSAMMatCandidate(
-                        from: mask,
-                        channel: channel,
-                        positivePoint: positive,
-                        image: image
-                    ) {
-                        if let current = bestCandidate {
-                            let isHigher = candidate.topY < current.topY - 0.000_001
-                            let isWiderAtSameHeight =
-                                abs(candidate.topY - current.topY) <= 0.000_001 &&
-                                candidate.horizontalSpan > current.horizontalSpan
-                            if isHigher || isWiderAtSameHeight {
-                                bestCandidate = candidate
-                            }
-                        } else {
-                            bestCandidate = candidate
+                    var candidates: [SAMMatCandidate] = []
+                    let channelCount = max(1, mask.shape[1].intValue)
+                    for channel in 0..<channelCount {
+                        if let candidate = makeSAMMatCandidate(
+                            from: mask,
+                            channel: channel,
+                            positivePoint: positive,
+                            image: image
+                        ) {
+                            candidates.append(candidate)
                         }
                     }
+                    return candidates
+                }
+
+                // Apply candidates in the original prompt/channel order so the
+                // existing epsilon tie-breaking behavior remains bit-for-bit equivalent.
+                for candidate in promptCandidates where isBetterSAMMatCandidate(candidate, than: bestCandidate) {
+                    bestCandidate = candidate
                 }
             }
 
@@ -114,6 +121,18 @@ extension HoldVC {
         } catch {
             return Self.samMatDefaultLine
         }
+    }
+
+    private func isBetterSAMMatCandidate(
+        _ candidate: SAMMatCandidate,
+        than current: SAMMatCandidate?
+    ) -> Bool {
+        guard let current else { return true }
+        let isHigher = candidate.topY < current.topY - 0.000_001
+        let isWiderAtSameHeight =
+            abs(candidate.topY - current.topY) <= 0.000_001 &&
+            candidate.horizontalSpan > current.horizontalSpan
+        return isHigher || isWiderAtSameHeight
     }
 
     /// MobileSAM decoder의 두 포인트 입력을 양성 1개 + 음성 1개로 사용합니다.

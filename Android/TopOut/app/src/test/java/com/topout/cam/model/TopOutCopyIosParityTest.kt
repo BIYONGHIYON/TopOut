@@ -29,11 +29,11 @@ class TopOutCopyIosParityTest {
     @Test
     fun selectionCopyMatchesIos() {
         assertEquals(
-            "탑홀드를 탭하세요 · 파란 점으로 매트 경계를 보정하세요",
+            "탑홀드를 탭하세요 · 벽과 매트 경계를 보정하세요",
             TopOutCopy.selectionGuidance(settings(auto = true, mask = true))
         )
         assertEquals(
-            "파란 점으로 매트 경계를 보정한 뒤 녹화 시작을 눌러주세요",
+            "벽과 매트 경계를 보정한 뒤 녹화 시작을 눌러주세요",
             TopOutCopy.selectionGuidance(settings(auto = true, mask = false))
         )
         assertEquals(
@@ -41,7 +41,7 @@ class TopOutCopyIosParityTest {
             TopOutCopy.selectionGuidance(settings(auto = false, mask = true))
         )
         assertEquals(
-            "Tip. 준비 완료 후에는 촬영 배율이 고정됩니다",
+            "",
             TopOutCopy.selectionTip(settings(auto = false, mask = true))
         )
         assertEquals(

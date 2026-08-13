@@ -138,7 +138,13 @@ extension HoldVC {
         videoFrameSink.setStreamReadinessHandler { [weak self] in
             guard let self else { return }
             self.isCameraStreamReady = true
-            self.preloadMobileSAMAfterCameraStarts()
+            // A review retake restarts the stream immediately before the recording countdown.
+            // Do not reload models that recording entry deliberately released to lower peak RAM.
+            // Selection states still preload after a background/foreground camera restart.
+            if self.recState == .idle,
+               self.mode == .camera || self.mode == .select || self.mode == .processing {
+                self.preloadMobileSAMAfterCameraStarts()
+            }
             if self.mode == .camera,
                self.recState == .idle,
                !self.isBusy,
@@ -154,7 +160,9 @@ extension HoldVC {
         sessionQ.async { [weak self] in
             guard let self else { return }
             guard !self.isCameraReady else {
-                self.startCamera()
+                DispatchQueue.main.async { [weak self] in
+                    self?.startCamera()
+                }
                 return
             }
 
@@ -264,6 +272,9 @@ extension HoldVC {
     func disableAudioCaptureForCurrentSession() {
         isAudioCaptureEnabled = false
         recorder.setAudioCaptureEnabled(false)
+        let shouldKeepVideoRunning = UIApplication.shared.applicationState == .active
+            && recState != .exporting
+            && recState != .reviewing
 
         sessionQ.async { [weak self] in
             guard let self else { return }
@@ -282,7 +293,7 @@ extension HoldVC {
             }
 
             // 오디오 인터럽션 해소 후 세션이 멈춰 있으면 비디오 전용으로 다시 시작합니다.
-            if self.isCameraReady, !self.session.isRunning {
+            if shouldKeepVideoRunning, self.isCameraReady, !self.session.isRunning {
                 self.session.startRunning()
             }
 
@@ -535,6 +546,10 @@ extension HoldVC {
     }
 
     func startCamera() {
+        // Async camera setup can finish after the user has already backgrounded
+        // the app. Never revive capture until an active lifecycle callback asks again.
+        guard UIApplication.shared.applicationState == .active else { return }
+
         sessionQ.async { [weak self] in
             guard let self else { return }
             guard self.isCameraReady else {

@@ -319,7 +319,8 @@ fun TopOutApp(viewModel: TopOutViewModel) {
                         else -> false
                     },
                     enabled = !state.isBusy,
-                    showTip = state.settings.helpEnabled,
+                    showTip = state.settings.helpEnabled &&
+                        TopOutCopy.selectionTip(state.settings).isNotEmpty(),
                     tipText = TopOutCopy.selectionTip(state.settings),
                     isLandscape = isLandscape,
                     onRetake = viewModel::retakeSelection,

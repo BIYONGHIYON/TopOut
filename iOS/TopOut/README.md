@@ -1,4 +1,4 @@
-# TopOut iOS v1.5 (build 11)
+# TopOut iOS v1.6 (build 12)
 
 TopOut iOS는 오디오가 포함된 연속 촬영에서 등반 구간을 온디바이스로 탐지하고, 결과를 정밀 편집해 시스템 사진 보관함에 저장·검증하는 앱입니다.
 
@@ -10,7 +10,7 @@ TopOut iOS는 오디오가 포함된 연속 촬영에서 등반 구간을 온디
 
 - Bundle ID: `com.topout.cam`
 - Deployment Target: iOS 16.0
-- Marketing / Current Project Version: `1.5` / `11`
+- Marketing / Current Project Version: `1.6` / `12`
 - UI: Swift, UIKit
 - Camera / media: AVFoundation, AVAssetWriter, AVPlayer, PhotoKit
 - AI: MobileSAM Core ML, Apple Vision Human Body Pose
@@ -22,6 +22,7 @@ TopOut iOS는 오디오가 포함된 연속 촬영에서 등반 구간을 온디
 - Ready 이후 최소 4개의 새 프레임과 0.2초를 기다리고, 노출·초점·화이트밸런스가 2프레임 연속 안정된 프레임을 우선 사용합니다. 0.9초가 지나면 최신 프레임으로 진행하며 전체 요청 제한은 1.8초입니다.
 - 자동 매트 분석 프레임은 MobileSAM 입력에만 사용하고, 매트 보정과 탑홀드 선택은 라이브 프리뷰 위에서 진행합니다.
 - MobileSAM은 y=`70%`, `80%`, `90%`, `95%` 프롬프트를 사용하며 후보가 없으면 y=`75%` 기본선을 제안합니다.
+- Core ML 매트 분석이 5초 안에 끝나지 않으면 대기를 끝내고 y=`75%` 기본선을 표시해 사용자가 직접 보정할 수 있습니다. 이후 도착한 분석 결과는 현재 선택 상태를 덮어쓰지 않습니다.
 - Ready 이후 카메라 방향·렌즈·줌을 고정합니다. 탑홀드는 탭할 때마다 새 비디오 프레임으로 계산합니다.
 - 전화나 다른 앱의 오디오 점유가 끝나면 다음 녹화를 위해 마이크 입력·출력을 카메라 세션에 다시 연결합니다.
 - 세로 화면의 준비·설정·줌·녹화 컨트롤은 홈 버튼과 홈 인디케이터를 침범하지 않도록 하단 안전 영역 안에 배치합니다.
@@ -46,12 +47,22 @@ iOS는 단일 인물 선택이나 어깨·골반·팔꿈치·무릎 anatomical g
 
 - 녹화 중 감지된 모든 원본 구간을 보존하고, 2초 미만의 짧은 구간만 인접 구간과의 간격이 3초 이내일 때 병합합니다.
 - 최종 후보에는 앞뒤 3초 편집 여백을 적용합니다.
-- 결과 화면에서 구간 확대, 0.1초 미세 조정, 중복 구간 방지, 같은 촬영 상태를 유지한 재촬영을 지원합니다.
+- 결과 화면에서 구간 확대, 0.1초 미세 조정, 중복 구간 방지, 같은 촬영 상태를 유지한 재촬영을 지원합니다. 확대 배율 슬라이더는 손잡이뿐 아니라 트랙 전체를 탭하거나 진동 없이 바로 드래그해 조절할 수 있습니다. 다시 촬영 확인창은 경고 본문을 13pt 기준의 동적 글꼴로 낮추고 버튼 크기는 유지합니다. 시작점 수정 후에는 새 시작점부터, 끝점 수정 후에는 새 끝점의 3초 전부터 자동 재생합니다.
 - 마스크 포함 여부와 관계없이 선택 구간을 고화질로 다시 인코딩해 비디오 키프레임 사이에서 시작하더라도 첫 프레임부터 오디오와 맞춰 저장합니다.
 - PhotoKit 저장 완료 시 생성된 `localIdentifier`를 보관하고, 같은 `PHAsset`을 다시 조회해 실제 `AVAsset`을 열 수 있을 때만 저장 성공으로 확정합니다.
 - 검증된 구간은 임시 export 파일이 아니라 사진 보관함에서 다시 읽은 실제 asset으로 재생합니다.
 - 여러 구간을 저장해도 구간별 검증 상태와 identifier를 각각 유지합니다.
 - 결과 화면은 시스템 자동 잠금 시간을 따르며, 앱이 백그라운드로 이동하면 결과 영상과 사진 보관함 저장 영상 재생을 즉시 일시정지합니다.
+
+## 저사양·장시간 촬영 자원 관리
+
+- Ready 매트 분석은 탑홀드 선택과 별도의 비캐시 임베딩을 사용하고, 프롬프트마다 Core ML 임시 결과를 정리합니다.
+- MobileSAM 모델과 임베딩은 빠른 재선택이 필요한 동안만 유지하고 녹화 진입·백그라운드·메모리 경고에서는 직렬 분석 큐를 통해 안전하게 해제합니다.
+- 4K·60fps에서도 writer가 처리하지 못한 전체 해상도 `CMSampleBuffer`가 비동기 큐에 계속 쌓이지 않도록 캡처 delegate 큐에 역압력을 적용합니다.
+- 앱이 비활성 상태이거나 결과·내보내기 화면에 있을 때 비동기 카메라·오디오 복구 작업이 캡처 세션을 다시 시작하지 않도록 생명주기를 제한합니다.
+- 결과 화면에서 바로 다시 촬영할 때는 녹화 카운트다운과 MobileSAM 재로딩이 겹치지 않으며, 선택 화면에서 앱으로 복귀할 때만 카메라와 모델 준비를 다시 시작합니다.
+- 백그라운드 자동 종료가 실제 영상 프레임 없이 끝난 경우에도 앱이 이미 활성 상태라면 카메라 프리뷰를 즉시 복구합니다.
+- 시뮬레이터 빌드는 실제 iPhone의 peak RSS·Neural Engine 할당·프레임 드롭·발열을 측정하지 않으므로, 4K·60fps와 iPhone 12 mini급 기기는 별도 실기기 검증이 필요합니다.
 
 ## 빌드
 
@@ -59,7 +70,7 @@ iOS는 단일 인물 선택이나 어깨·골반·팔꿈치·무릎 anatomical g
 2. Development Team과 Bundle Identifier를 확인합니다.
 3. `MobileSAM_Encoder.mlmodel`, `MobileSAM_Decoder.mlmodel`, `PrivacyInfo.xcprivacy`의 Target Membership을 확인합니다.
 4. 카메라·마이크·사진 보관함 권한 문구를 확인합니다.
-5. 실제 iPhone 또는 iPad에서 Archive/실행 검증을 수행합니다.
+5. 실제 iPhone에서 Archive/실행 검증을 수행합니다.
 
 ```bash
 xcodebuild -project TopOut.xcodeproj -scheme TopOut -configuration Debug \
@@ -68,8 +79,8 @@ xcodebuild -project TopOut.xcodeproj -scheme TopOut -configuration Debug \
 
 ## 문서
 
-- [v1.5 build 11 변경 사항](V1_5_BUILD_11_NOTES.md)
+- [v1.6 build 12 변경 사항](V1_6_BUILD_12_NOTES.md)
 - [MobileSAM 매트 경계](MOBILESAM_MAT_DETECTOR_NOTES.md)
 - [시작과 프레임 처리](STARTUP_OPTIMIZATION_NOTES.md)
 - [Pose 로직](POSE_LOGIC_ROLLBACK_NOTES.md)
-- 과거 릴리스 기록: [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)
+- 과거 릴리스 기록: [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)

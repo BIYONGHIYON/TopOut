@@ -12,7 +12,7 @@ TopOut은 한 번의 연속 촬영에서 여러 등반 시도의 시작과 완�
 
 | 항목 | iOS | Android |
 |---|---|---|
-| 버전 | 1.5 (build 11) | 1.5 (versionCode 11) |
+| 버전 | 1.6 (build 12) | 1.6 (versionCode 12) |
 | 최소 OS | iOS 16.0 | Android 8.0 · API 26 |
 | 앱 ID | `com.topout.cam` | `com.topout.cam` |
 | UI | Swift · UIKit | Kotlin · Jetpack Compose · Material 3 |
@@ -44,12 +44,14 @@ TopOut은 한 번의 연속 촬영에서 여러 등반 시도의 시작과 완�
 TopOut/
 ├── iOS/TopOut/
 │   ├── README.md
+│   ├── V1_6_BUILD_12_NOTES.md
 │   ├── V1_5_BUILD_11_NOTES.md
 │   ├── V1_5_BUILD_10_NOTES.md
 │   ├── TopOut.xcodeproj/
 │   └── TopOut/
 ├── Android/TopOut/
 │   ├── README.md
+│   ├── V1_6_BUILD_12_NOTES.md
 │   ├── V1_5_BUILD_11_NOTES.md
 │   ├── V1_5_BUILD_10_NOTES.md
 │   ├── app/
@@ -63,12 +65,12 @@ TopOut/
 
 - [iOS 현재 문서](iOS/TopOut/README.md)
 - [Android 현재 문서](Android/TopOut/README.md)
-- [iOS build 11 변경 사항](iOS/TopOut/V1_5_BUILD_11_NOTES.md)
-- [Android build 11 변경 사항](Android/TopOut/V1_5_BUILD_11_NOTES.md)
+- [iOS v1.6 build 12 변경 사항](iOS/TopOut/V1_6_BUILD_12_NOTES.md)
+- [Android v1.6 build 12 변경 사항](Android/TopOut/V1_6_BUILD_12_NOTES.md)
 - [제품 포트폴리오](portfolio/index.html)
 - [TopOut 공개 저장소](https://github.com/BIYONGHIYON/TopOut-app)
 
-`V1_4_*`, `V1_5_BUILD_7_*`, `V1_5_BUILD_8_*`, `V1_5_BUILD_9_*`와 각 플랫폼 build 10 문서는 당시 동작을 보존하는 과거 릴리스 기록입니다. 현재 동작의 기준은 각 플랫폼 README와 build 11 노트입니다.
+`V1_4_*`와 `V1_5_*` 문서는 당시 동작을 보존하는 과거 릴리스 기록입니다. 현재 동작의 기준은 각 플랫폼 README와 v1.6 build 12 노트입니다.
 
 로컬의 `TopOut-app/` 폴더는 별도 Git 이력을 가진 공개 저장소 checkout이므로 이 비공개 저장소의 `.gitignore`에서 제외합니다.
 
@@ -113,6 +115,7 @@ TopOut/
 - 유효 후보 중 화면에서 가장 높은 상단 경계 선택
 - 경계를 `x = 6%`, `x = 94%`의 편집 가능한 두 점으로 변환
 - 후보가 없으면 `y = 75%` 수평 기본선 사용
+- Core ML 또는 ONNX Runtime 분석이 5초 안에 끝나지 않으면 로딩을 종료하고 `y = 75%` 기본선을 표시하며, 늦게 도착한 결과는 현재 선택 화면에 반영하지 않음
 - 별도의 10px 하향 보정 없음
 
 기울어진 매트는 평균 Y 하나로 축약하지 않고 관절의 x 위치마다 직선을 보간해 시작선·종료선을 계산합니다.
@@ -153,7 +156,7 @@ Android의 4개 그룹은 어깨·골반·팔꿈치·무릎이며, 각 그룹은
 6. 각 구간에 앞뒤 3초 편집 여백을 적용합니다.
 7. 녹화 전체 길이 안으로 범위를 제한합니다.
 
-결과 화면은 전체·확대 타임라인, 0.1초 미세 조정, 구간별 저장 상태, 중복 범위 방지, 촬영 컨텍스트를 유지한 재촬영을 제공합니다.
+결과 화면은 전체·확대 타임라인, 0.1초 미세 조정, 구간별 저장 상태, 중복 범위 방지, 촬영 컨텍스트를 유지한 재촬영을 제공합니다. 선택 구간 확대 배율은 작은 손잡이를 정확히 잡지 않아도 슬라이더 트랙을 탭하거나 진동 없이 바로 드래그해 조절할 수 있습니다. 다시 촬영 확인창은 긴 경고 본문만 작게 표시해 확인·취소 버튼과 정보의 위계를 분리합니다. 시작점을 수정하고 손을 떼면 새 시작점부터, 끝점을 수정하면 새 끝점의 3초 전부터 자동 재생해 편집 결과를 바로 확인합니다.
 
 iOS는 선택 구간 시작점이 H.264 키프레임 사이에 있어도 저장 영상 첫 화면이 멈추지 않도록 마스크 포함 여부와 관계없이 고화질 재인코딩합니다. Android는 Media3 Transformer로 비키프레임 시작 구간을 재인코딩하고 결과 파일이 첫 영상 프레임부터 시작하도록 타임스탬프를 정렬합니다.
 
@@ -195,6 +198,14 @@ Android 저장 영상 보기에는 앞/뒤 5초 이동, 드래그 즉시 화면�
 - 최소 저장공간: `max(1GB, 예상 2분 영상 용량 + 256MB)`
 - 저장공간은 녹화 시작 전과 녹화 중 1분 간격으로 확인
 
+### 저사양·장시간 촬영 자원 관리
+
+- iOS는 매트 분석용 임베딩을 탑홀드 선택 캐시와 분리하고, 녹화 진입·백그라운드·메모리 경고 시 MobileSAM 모델과 임베딩 참조를 직렬 작업 큐에서 해제합니다.
+- iOS 녹화기는 4K·60fps 입력이 writer 처리 속도보다 빨라도 전체 해상도 프레임이 메모리에 계속 쌓이지 않도록 캡처 큐에 역압력을 적용합니다.
+- Android MobileSAM은 네 프롬프트를 순차 평가하고 ONNX direct buffer와 고정 zero-mask 입력을 재사용해 분석 순간의 중간 메모리와 복사를 줄입니다.
+- Android Motion/Pose 분석은 2fps·4fps 주기를 유지하면서 두 개의 luma 버퍼를 순환해 장시간 촬영 중 할당·GC 부하를 줄입니다.
+- 두 플랫폼 모두 분석 결과·타이머·카메라·플레이어 수명을 화면 상태에 맞춰 정리합니다. 시뮬레이터와 빌드 검증은 실제 저사양 기기의 peak RSS·프레임 드롭·발열을 대신하지 않으므로 릴리스 전 실기기 점검이 필요합니다.
+
 ## 빌드
 
 ### iOS
@@ -202,9 +213,9 @@ Android 저장 영상 보기에는 앞/뒤 5초 이동, 드래그 즉시 화면�
 1. `iOS/TopOut/TopOut.xcodeproj`를 엽니다.
 2. Development Team과 Bundle Identifier를 확인합니다.
 3. MobileSAM Core ML 모델과 `PrivacyInfo.xcprivacy`의 Target Membership을 확인합니다.
-4. 실제 iPhone/iPad에서 카메라·마이크·사진 보관함 권한과 Archive를 검증합니다.
+4. 실제 iPhone에서 카메라·마이크·사진 보관함 권한과 Archive를 검증합니다.
 
-프로젝트 설정: iOS 16.0, Swift 5, Marketing Version 1.5, Current Project Version 10.
+프로젝트 설정: iOS 16.0, Swift 5, Marketing Version 1.6, Current Project Version 12.
 
 ### Android
 

@@ -53,6 +53,7 @@ extension HoldVC {
         )
 
         clearSelectionCache(clearPending: true)
+        releaseMobileSAMResources()
         showCameraUI()
         startCamera()
         startRecording()

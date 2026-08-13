@@ -60,8 +60,11 @@ internal object MobileSamMatBoundaryDetector {
     val defaultLine: List<Offset>
         get() = listOf(Offset(LEFT_X, 0.75f), Offset(RIGHT_X, 0.75f))
 
-    /** Returns the highest valid upper boundary from all four centre prompts. */
-    fun select(results: List<PromptResult>): List<Offset>? {
+    /** Convenience overload for tests and already-materialized callers. */
+    fun select(results: Iterable<PromptResult>): List<Offset>? = select(results.asSequence())
+
+    /** Returns the highest valid upper boundary while consuming prompt results one at a time. */
+    fun select(results: Sequence<PromptResult>): List<Offset>? {
         val comparator = compareBy<Candidate> { it.topY }
             .thenByDescending { it.horizontalSpan }
         return results

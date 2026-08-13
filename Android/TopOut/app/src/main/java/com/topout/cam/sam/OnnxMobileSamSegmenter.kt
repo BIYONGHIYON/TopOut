@@ -26,6 +26,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -48,7 +49,8 @@ class OnnxMobileSamSegmenter(
     @Volatile private var decoderSession: OrtSession? = null
     private var sessionOptions: OrtSession.SessionOptions? = null
     @Volatile private var closed = false
-    private var cachedEmbedding: CachedEmbedding? = null
+    @Volatile private var cachedEmbedding: CachedEmbedding? = null
+    private var cachedZeroMaskInput: FloatBuffer? = null
 
     /** Loads the ONNX encoder/decoder sessions without starting the camera or running an image. */
     suspend fun prepare(): Result<Unit> = withContext(Dispatchers.Default) {
@@ -76,15 +78,20 @@ class OnnxMobileSamSegmenter(
             sessionMutex.withLock {
                 val sessions = ensureSessionsLocked()
                 val embedding = obtainEmbedding(bitmap, sessions.encoder)
-                val results = floatArrayOf(0.70f, 0.80f, 0.90f, 0.95f).map { promptY ->
-                    val masks = decodeMatMasks(
-                        bitmap = bitmap,
-                        positive = Offset(0.50f, promptY),
-                        negative = Offset(0.50f, 0.28f),
-                        embedding = embedding,
-                        decoder = sessions.decoder
+                val results = MAT_PROMPT_Y_VALUES.asSequence().map { promptY ->
+                    // A timeout/canceled selection can stop after the current native decoder call
+                    // instead of running the remaining prompts in the background.
+                    ensureActive()
+                    MobileSamMatBoundaryDetector.PromptResult(
+                        promptY = promptY,
+                        masks = decodeMatMasks(
+                            bitmap = bitmap,
+                            positive = Offset(0.50f, promptY),
+                            negative = Offset(0.50f, 0.28f),
+                            embedding = embedding,
+                            decoder = sessions.decoder
+                        )
                     )
-                    MobileSamMatBoundaryDetector.PromptResult(promptY, masks)
                 }
 
                 MobileSamMatBoundaryDetector.select(results)
@@ -136,6 +143,7 @@ class OnnxMobileSamSegmenter(
         if (closed) return
         closed = true
         cachedEmbedding = null
+        cachedZeroMaskInput = null
         runCatching { encoderSession?.close() }
         runCatching { decoderSession?.close() }
         runCatching { sessionOptions?.close() }
@@ -255,7 +263,7 @@ class OnnxMobileSamSegmenter(
                 val outputTensor = result.tensor(outputName, "encoder 출력")
                 return CachedEmbedding(
                     cacheKey = cacheKey,
-                    data = outputTensor.copyFloatData(),
+                    buffer = outputTensor.copyDirectFloatData(),
                     shape = outputTensor.info.shape.copyOf(),
                     transform = preprocessing.transform
                 ).also { cachedEmbedding = it }
@@ -478,10 +486,10 @@ class OnnxMobileSamSegmenter(
         )
         val inputs = linkedMapOf<String, OnnxTensor>()
         try {
-            inputs[embeddingName] = tensor(embedding.data, embedding.shape)
+            inputs[embeddingName] = tensor(embedding.buffer, embedding.shape)
             inputs[pointCoordsName] = tensor(coords, coordsShape)
             inputs[pointLabelsName] = tensor(labels, labelsShape)
-            inputs[maskInputName] = tensor(FloatArray(maskShape.elementCountOrThrow("mask 입력")), maskShape)
+            inputs[maskInputName] = tensor(zeroMaskInput(maskShape), maskShape)
             inputs[hasMaskInputName] = tensor(
                 floatArrayOf(0f),
                 positiveShape(
@@ -583,10 +591,10 @@ class OnnxMobileSamSegmenter(
         )
         val inputs = linkedMapOf<String, OnnxTensor>()
         try {
-            inputs[embeddingName] = tensor(embedding.data, embedding.shape)
+            inputs[embeddingName] = tensor(embedding.buffer, embedding.shape)
             inputs[pointCoordsName] = tensor(coords, coordsShape)
             inputs[pointLabelsName] = tensor(labels, labelsShape)
-            inputs[maskInputName] = tensor(FloatArray(maskShape.elementCountOrThrow("mask 입력")), maskShape)
+            inputs[maskInputName] = tensor(zeroMaskInput(maskShape), maskShape)
             inputs[hasMaskInputName] = tensor(
                 floatArrayOf(0f),
                 positiveShape(
@@ -1014,31 +1022,39 @@ class OnnxMobileSamSegmenter(
         resized.getPixels(pixels, 0, resizedWidth, 0, 0, resizedWidth, resizedHeight)
         if (resized !== bitmap) resized.recycle()
 
-        val values = FloatArray(targetWidth * targetHeight * 3)
+        // Write normalized pixels straight into ONNX's direct input buffer. Keeping an additional
+        // 1024x1024x3 FloatArray here would add roughly 12 MB to MobileSAM's peak heap usage.
+        val values = ByteBuffer.allocateDirect(targetWidth * targetHeight * 3 * Float.SIZE_BYTES)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+        val redMean = TopOutConfig.SamMean[0]
+        val greenMean = TopOutConfig.SamMean[1]
+        val blueMean = TopOutConfig.SamMean[2]
+        val redStd = TopOutConfig.SamStd[0]
+        val greenStd = TopOutConfig.SamStd[1]
+        val blueStd = TopOutConfig.SamStd[2]
+        val plane = targetWidth * targetHeight
         for (y in 0 until resizedHeight) {
             for (x in 0 until resizedWidth) {
                 val pixel = pixels[y * resizedWidth + x]
-                val normalized = floatArrayOf(
-                    (((pixel shr 16) and 0xFF) - TopOutConfig.SamMean[0]) / TopOutConfig.SamStd[0],
-                    (((pixel shr 8) and 0xFF) - TopOutConfig.SamMean[1]) / TopOutConfig.SamStd[1],
-                    ((pixel and 0xFF) - TopOutConfig.SamMean[2]) / TopOutConfig.SamStd[2]
-                )
+                val red = (((pixel shr 16) and 0xFF) - redMean) / redStd
+                val green = (((pixel shr 8) and 0xFF) - greenMean) / greenStd
+                val blue = ((pixel and 0xFF) - blueMean) / blueStd
                 if (channelsFirst) {
-                    val plane = targetWidth * targetHeight
                     val index = y * targetWidth + x
-                    values[index] = normalized[0]
-                    values[plane + index] = normalized[1]
-                    values[plane * 2 + index] = normalized[2]
+                    values.put(index, red)
+                    values.put(plane + index, green)
+                    values.put(plane * 2 + index, blue)
                 } else {
                     val index = (y * targetWidth + x) * 3
-                    values[index] = normalized[0]
-                    values[index + 1] = normalized[1]
-                    values[index + 2] = normalized[2]
+                    values.put(index, red)
+                    values.put(index + 1, green)
+                    values.put(index + 2, blue)
                 }
             }
         }
         return PreprocessedImage(
-            directFloatBuffer(values),
+            values.apply { rewind() },
             shape,
             ImageTransform(
                 inputWidth = targetWidth,
@@ -1060,6 +1076,24 @@ class OnnxMobileSamSegmenter(
 
     private fun tensor(values: FloatArray, shape: LongArray): OnnxTensor =
         OnnxTensor.createTensor(environment, directFloatBuffer(values), shape)
+
+    private fun tensor(values: FloatBuffer, shape: LongArray): OnnxTensor =
+        OnnxTensor.createTensor(
+            environment,
+            values.duplicate().apply { rewind() },
+            shape
+        )
+
+    /** Reuses the decoder's immutable all-zero mask input across serialized MobileSAM calls. */
+    private fun zeroMaskInput(shape: LongArray): FloatBuffer {
+        val elementCount = shape.elementCountOrThrow("mask 입력")
+        val cached = cachedZeroMaskInput
+        if (cached != null && cached.capacity() == elementCount) return cached
+        return ByteBuffer.allocateDirect(elementCount * Float.SIZE_BYTES)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+            .also { cachedZeroMaskInput = it }
+    }
 
     private fun resolveName(available: Set<String>, preferred: List<String>, description: String): String =
         resolveNameOrNull(available, preferred)
@@ -1088,6 +1122,19 @@ class OnnxMobileSamSegmenter(
         }.duplicate()
         duplicate.rewind()
         return FloatArray(duplicate.remaining()).also { duplicate.get(it) }
+    }
+
+    private fun OnnxTensor.copyDirectFloatData(): FloatBuffer {
+        val source = requireNotNull(floatBuffer) {
+            "ONNX 출력 텐서를 FloatBuffer로 변환하지 못했습니다. 모델 출력 타입이 float32인지 확인해주세요."
+        }.duplicate().apply { rewind() }
+        return ByteBuffer.allocateDirect(source.remaining() * Float.SIZE_BYTES)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer()
+            .apply {
+                put(source)
+                rewind()
+            }
     }
 
     private fun positiveShape(raw: LongArray, fallback: LongArray): LongArray {
@@ -1136,7 +1183,7 @@ class OnnxMobileSamSegmenter(
     private data class BitmapCacheKey(val identity: Int, val width: Int, val height: Int, val generationId: Int)
     private data class CachedEmbedding(
         val cacheKey: BitmapCacheKey,
-        val data: FloatArray,
+        val buffer: FloatBuffer,
         val shape: LongArray,
         val transform: ImageTransform
     )
@@ -1227,5 +1274,6 @@ class OnnxMobileSamSegmenter(
         private val ORIGINAL_SIZE_ALIASES = listOf("orig_im_size", "original_image_size", "original_size")
         private val FULL_MASK_ALIASES = listOf("masks", "mask", "high_res_masks")
         private val LOW_RES_MASK_ALIASES = listOf("low_res_masks", "low_resolution_masks")
+        private val MAT_PROMPT_Y_VALUES = floatArrayOf(0.70f, 0.80f, 0.90f, 0.95f)
     }
 }

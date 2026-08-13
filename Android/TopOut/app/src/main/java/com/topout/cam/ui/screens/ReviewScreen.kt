@@ -75,12 +75,24 @@ import com.topout.cam.model.AppSettings
 import com.topout.cam.model.GalleryClipSelection
 import com.topout.cam.model.RecordedVideo
 import com.topout.cam.model.SavedGalleryVideo
+import com.topout.cam.model.TopOutConfig
 import com.topout.cam.ui.components.PrecisionTrimSlider
 import com.topout.cam.ui.components.TopOutCapsuleButton
 import com.topout.cam.ui.components.TopStatusBanner
 import com.topout.cam.ui.theme.TopOutColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+
+private enum class TrimEditEdge { START, END }
+private const val RETAKE_WARNING_MESSAGE =
+    "기존의 매트경계 위치를 유지하여 다시 촬영합니다.\n저장하지 않은 영상이 삭제됩니다."
+private const val CLOSE_WARNING_MESSAGE = "저장하지 않은 영상이 삭제됩니다."
+
+private data class DiscardConfirmation(
+    val message: String,
+    val compactText: Boolean,
+    val confirmedAction: () -> Unit
+)
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
@@ -112,6 +124,7 @@ fun ReviewScreen(
     var playhead by remember(video.uri) { mutableDoubleStateOf(video.defaultStartSeconds) }
     var isPlaying by remember { mutableStateOf(true) }
     var isTrimTracking by remember(video.uri) { mutableStateOf(false) }
+    var pendingTrimEditEdge by remember(video.uri) { mutableStateOf<TrimEditEdge?>(null) }
     var pendingSeekPositionMs by remember(video.uri) {
         mutableLongStateOf((video.defaultStartSeconds * 1000.0).roundToLong())
     }
@@ -121,21 +134,31 @@ fun ReviewScreen(
         mutableIntStateOf(video.detectedRanges.lastIndex.coerceAtLeast(0))
     }
     var stopNotice by remember(video.uri) { mutableStateOf(video.automaticStopNotice) }
-    var pendingDiscardAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var pendingDiscardMessage by remember { mutableStateOf("") }
+    var discardConfirmation by remember { mutableStateOf<DiscardConfirmation?>(null) }
     var playbackErrorMessage by remember(video.uri) { mutableStateOf<String?>(null) }
     var showingSavedGalleryVideo by remember(video.uri) { mutableStateOf(false) }
+
+    fun requestDiscardConfirmation(
+        message: String,
+        compactText: Boolean,
+        confirmedAction: () -> Unit
+    ) {
+        if (settings.helpEnabled) {
+            discardConfirmation = DiscardConfirmation(message, compactText, confirmedAction)
+        } else {
+            confirmedAction()
+        }
+    }
 
     BackHandler {
         // Saving owns a Media3 export and a MediaStore write. Consume Back until both complete so
         // Activity destruction cannot cancel the ViewModel coroutine and leave a partial result.
         if (!saving) {
-            if (settings.helpEnabled) {
-                pendingDiscardMessage = "저장하지 않은 영상이 삭제됩니다."
-                pendingDiscardAction = onClose
-            } else {
-                onClose()
-            }
+            requestDiscardConfirmation(
+                CLOSE_WARNING_MESSAGE,
+                compactText = false,
+                confirmedAction = onClose
+            )
         }
     }
 
@@ -329,6 +352,7 @@ fun ReviewScreen(
                 onRangeChanged = { lower, upper, lowerChanged ->
                     selectedStart = lower
                     selectedEnd = upper
+                    pendingTrimEditEdge = if (lowerChanged) TrimEditEdge.START else TrimEditEdge.END
                     if (isPlaying) {
                         player.pause()
                         isPlaying = false
@@ -336,6 +360,7 @@ fun ReviewScreen(
                     seek(if (lowerChanged) lower else upper)
                 },
                 onPlayheadChanged = { value ->
+                    pendingTrimEditEdge = null
                     if (isPlaying) {
                         player.pause()
                         isPlaying = false
@@ -344,6 +369,7 @@ fun ReviewScreen(
                 },
                 onTrackingChanged = { tracking ->
                     if (tracking) {
+                        pendingTrimEditEdge = null
                         if (isPlaying) {
                             player.pause()
                             isPlaying = false
@@ -355,8 +381,22 @@ fun ReviewScreen(
                         isTrimTracking = false
                         player.isScrubbingModeEnabled = false
                         player.setSeekParameters(SeekParameters.EXACT)
-                        // Finish on the exact requested frame after the fast scrub preview.
-                        player.seekTo(pendingSeekPositionMs)
+                        val editedEdge = pendingTrimEditEdge
+                        pendingTrimEditEdge = null
+                        if (editedEdge == null) {
+                            // Finish playhead/zoom interaction on the exact requested frame.
+                            player.seekTo(pendingSeekPositionMs)
+                        } else {
+                            val resumeFrom = when (editedEdge) {
+                                TrimEditEdge.START -> selectedStart
+                                TrimEditEdge.END -> (
+                                    selectedEnd - TopOutConfig.ReviewEndPreviewLeadSeconds
+                                ).coerceAtLeast(selectedStart)
+                            }
+                            seek(resumeFrom)
+                            player.play()
+                            isPlaying = true
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth().height(if (isLandscape) 104.dp else 116.dp)
@@ -370,20 +410,18 @@ fun ReviewScreen(
                 } else player.pause()
             }
             val requestRetake = {
-                if (settings.helpEnabled) {
-                    pendingDiscardMessage = "기존의 매트경계 위치를 유지하여 다시 촬영합니다.\n저장하지 않은 영상이 삭제됩니다."
-                    pendingDiscardAction = onRetake
-                } else {
-                    onRetake()
-                }
+                requestDiscardConfirmation(
+                    RETAKE_WARNING_MESSAGE,
+                    compactText = true,
+                    confirmedAction = onRetake
+                )
             }
             val requestClose = {
-                if (settings.helpEnabled) {
-                    pendingDiscardMessage = "저장하지 않은 영상이 삭제됩니다."
-                    pendingDiscardAction = onClose
-                } else {
-                    onClose()
-                }
+                requestDiscardConfirmation(
+                    CLOSE_WARNING_MESSAGE,
+                    compactText = false,
+                    confirmedAction = onClose
+                )
             }
 
             if (isLandscape) {
@@ -489,20 +527,20 @@ fun ReviewScreen(
         )
     }
 
-    pendingDiscardAction?.let { action ->
+    discardConfirmation?.let { confirmation ->
         AlertDialog(
-            onDismissRequest = {
-                pendingDiscardAction = null
-                pendingDiscardMessage = ""
-            },
+            onDismissRequest = { discardConfirmation = null },
             title = null,
-            text = { Text(pendingDiscardMessage) },
+            text = {
+                Text(
+                    text = confirmation.message,
+                    fontSize = if (confirmation.compactText) 13.sp else 14.sp,
+                    lineHeight = if (confirmation.compactText) 18.sp else 20.sp
+                )
+            },
             dismissButton = {
                 Button(
-                    onClick = {
-                        pendingDiscardAction = null
-                        pendingDiscardMessage = ""
-                    },
+                    onClick = { discardConfirmation = null },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = TopOutColors.GrayButton,
                         contentColor = Color.White
@@ -512,9 +550,8 @@ fun ReviewScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        pendingDiscardAction = null
-                        pendingDiscardMessage = ""
-                        action()
+                        discardConfirmation = null
+                        confirmation.confirmedAction()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = TopOutColors.Red)
                 ) { Text("확인") }

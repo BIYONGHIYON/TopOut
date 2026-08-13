@@ -37,24 +37,41 @@ extension HoldVC {
 
     }
 
-    func warmUpEmbedding(for image: UIImage) {
-        workQ.async { [weak self] in
-            do {
-                _ = try self?.getEmbedding(for: image)
-            } catch {
-            }
-        }
-    }
-
     func getEmbedding(for image: UIImage) throws -> MLMultiArray {
         if let emb { return emb }
+        let embedding = try makeEmbedding(for: image)
+        self.emb = embedding
+        return embedding
+    }
+
+    /// Creates an embedding without publishing it to the tap-selection cache.
+    /// Ready-time mat analysis uses this path because its image differs from the
+    /// fresh frame captured for a later top-hold tap. It also prevents a model
+    /// result that finishes after the UI timeout from becoming a stale cache hit.
+    func makeEmbedding(for image: UIImage) throws -> MLMultiArray {
         try loadModelsIfNeeded()
         guard let encoder else { throw AppError.modelNotReady }
 
         let input = try preprocess(image)
         let output = try encoder.prediction(input: MobileSAM_EncoderInput(image: input))
-        self.emb = output.var_1415
         return output.var_1415
+    }
+
+    /// Releases heavyweight Core ML state after selection or under memory pressure.
+    /// All inference uses `workQ`, so enqueuing cleanup on the same serial queue
+    /// cannot tear down a model while a prediction is running. The next analysis
+    /// lazily reloads the models through `loadModelsIfNeeded()`.
+    func releaseMobileSAMResources() {
+        // Callers are MainActor-isolated. Reset before enqueueing teardown so a
+        // quick background -> active transition can enqueue preload immediately;
+        // workQ ordering guarantees that preload then runs after this teardown.
+        hasStartedMobileSAMPreload = false
+        workQ.async { [weak self] in
+            guard let self else { return }
+            self.emb = nil
+            self.encoder = nil
+            self.decoder = nil
+        }
     }
 
     func decode(point: CGPoint, embedding: MLMultiArray) throws -> MLMultiArray {

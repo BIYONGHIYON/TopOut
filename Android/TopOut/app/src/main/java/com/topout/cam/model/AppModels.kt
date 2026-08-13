@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
 
@@ -170,7 +171,7 @@ data class RecordingStopNotice(val title: String, val message: String) {
         )
         val CaptureInterruption = RecordingStopNotice(
             "녹화가 중단되었습니다",
-            "전화 수신 또는 다른 앱의 카메라·마이크 사용으로 촬영 장치가 중단되어 녹화를 안전하게 종료했습니다."
+            "다른 앱의 카메라·마이크 사용으로 촬영 장치가 중단되어 녹화를 안전하게 종료했습니다."
         )
         val SessionError = RecordingStopNotice(
             "카메라 오류로 녹화가 종료되었습니다",
@@ -186,7 +187,11 @@ data class RecordingStopNotice(val title: String, val message: String) {
 
         private fun formatBytes(bytes: Long): String {
             val gb = bytes / 1_073_741_824.0
-            return if (gb >= 1) String.format("%.1fGB", gb) else String.format("%.0fMB", bytes / 1_048_576.0)
+            return if (gb >= 1) {
+                String.format(Locale.US, "%.1fGB", gb)
+            } else {
+                String.format(Locale.US, "%.0fMB", bytes / 1_048_576.0)
+            }
         }
     }
 }
@@ -308,6 +313,8 @@ object TopOutConfig {
     const val ContourMinPoints = 8
 
     const val MatDefaultY = 0.75f
+    const val MatBoundaryAnalysisTimeoutMillis = 5_000L
+    const val ReviewEndPreviewLeadSeconds = 3.0
     /** The lowest reliable joint must clear the edited mat line by 4% of frame height. */
     const val PoseStartAboveMatMarginRatio = 0.04f
     /** Finish when the lowest reliable joint drops below a boundary 2% above the edited mat line. */

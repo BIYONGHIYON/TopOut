@@ -753,7 +753,11 @@ final class MotionDetector {
 
     private func closestDistanceToTopHold(from snapshot: PoseSnapshot) -> CGFloat? {
         guard !snapshot.allReliablePoints.isEmpty else { return nil }
-        return snapshot.allReliablePoints.map { distanceFromPoint($0, to: topBox) }.min()
+        var closest = CGFloat.greatestFiniteMagnitude
+        for point in snapshot.allReliablePoints {
+            closest = Swift.min(closest, distanceFromPoint(point, to: topBox))
+        }
+        return closest
     }
 
     private func distanceFromPoint(_ point: CGPoint, to rect: CGRect) -> CGFloat {

@@ -64,6 +64,8 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private var countdownJob: Job? = null
     private var cameraBindingJob: Job? = null
     private var mobileSamPreloadJob: Job? = null
+    private var matBoundaryTimeoutJob: Job? = null
+    private var selectionAnalysisJob: Job? = null
     // The Activity/PreviewView own their lifecycle. Keep only weak handles for explicit rebinds so
     // a configuration change cannot leave the previous UI tree retained by this ViewModel.
     private var latestLifecycleOwner = WeakReference<LifecycleOwner>(null)
@@ -357,7 +359,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         // When only top-hold selection is enabled there is nothing to freeze at Ready. Enter the
         // transparent live editor immediately; each hold tap captures its own fresh frame.
         if (!settings.autoClipDetectionEnabled) {
-            selectionRequestId += 1
+            invalidateSelectionRequest()
             mobileSam.releaseCachedEmbedding()
             _uiState.update { state ->
                 state.copy(
@@ -372,9 +374,16 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
-        _uiState.update { it.copy(isBusy = true, statusText = "AI가 매트 경계를 분석하고 있어요") }
+        val requestId = beginSelectionRequest()
+        _uiState.update { it.copy(isBusy = true, statusText = "매트 경계를 분석하고 있어요") }
 
-        viewModelScope.launch {
+        matBoundaryTimeoutJob = viewModelScope.launch {
+            delay(TopOutConfig.MatBoundaryAnalysisTimeoutMillis)
+            cancelSelectionAnalysis(requestId)
+            completeMatBoundaryAnalysis(requestId, defaultMatLine())
+        }
+
+        selectionAnalysisJob = viewModelScope.launch {
             // The preview may report STREAMING on its very first rendered buffer. Consume several
             // new ImageAnalysis frames after Ready so CameraX/3A/lens transitions cannot feed a
             // cold-start frame into MobileSAM. If an OEM rejected ImageAnalysis, take a fresh
@@ -394,40 +403,81 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
 
             if (frame == null || frame.width <= 0 || frame.height <= 0) {
                 frame?.recycle()
-                _uiState.update {
-                    it.copy(
-                        isBusy = false,
-                        statusText = "현재 카메라 프레임을 캡처하지 못했습니다."
-                    )
+                if (finishSelectionRequest(requestId)) {
+                    _uiState.update {
+                        it.copy(
+                            isBusy = false,
+                            statusText = "현재 카메라 프레임을 캡처하지 못했습니다."
+                        )
+                    }
                 }
+                return@launch
+            }
+
+            if (requestId != selectionRequestId) {
+                frame.recycle()
                 return@launch
             }
 
             val mat = try {
                 mobileSam.detectMatBoundary(frame).getOrElse {
-                    listOf(
-                        Offset(0.06f, TopOutConfig.MatDefaultY),
-                        Offset(0.94f, TopOutConfig.MatDefaultY)
-                    )
+                    defaultMatLine()
                 }
             } finally {
-                // The Ready image must not leak into later hold taps. A new embedding is generated
-                // from the frame captured at each tap instead.
+                // A later hold tap captures a different live frame, so this embedding cannot be
+                // reused and should not occupy memory while the user edits the boundary.
                 mobileSam.releaseCachedEmbedding()
                 if (!frame.isRecycled) frame.recycle()
             }
 
-            selectionRequestId += 1
-            _uiState.update { state ->
-                state.copy(
-                    stage = CameraStage.SELECT,
-                    frozenFrame = null,
-                    matLine = mat,
-                    holdMask = null,
-                    isBusy = false,
-                    statusText = selectionGuidance(state.settings)
-                )
-            }
+            completeMatBoundaryAnalysis(requestId, mat)
+        }
+    }
+
+    private fun beginSelectionRequest(): Long {
+        invalidateSelectionRequest()
+        return selectionRequestId
+    }
+
+    private fun invalidateSelectionRequest() {
+        matBoundaryTimeoutJob?.cancel()
+        matBoundaryTimeoutJob = null
+        selectionAnalysisJob?.cancel()
+        selectionAnalysisJob = null
+        selectionRequestId += 1
+    }
+
+    private fun finishSelectionRequest(requestId: Long): Boolean {
+        if (requestId != selectionRequestId) return false
+        matBoundaryTimeoutJob?.cancel()
+        matBoundaryTimeoutJob = null
+        selectionAnalysisJob = null
+        selectionRequestId += 1
+        return true
+    }
+
+    private fun cancelSelectionAnalysis(requestId: Long) {
+        if (requestId != selectionRequestId) return
+        selectionAnalysisJob?.cancel()
+        selectionAnalysisJob = null
+    }
+
+    private fun defaultMatLine(): List<Offset> = listOf(
+        Offset(0.06f, TopOutConfig.MatDefaultY),
+        Offset(0.94f, TopOutConfig.MatDefaultY)
+    )
+
+    private fun completeMatBoundaryAnalysis(requestId: Long, matLine: List<Offset>) {
+        if (!finishSelectionRequest(requestId)) return
+        _uiState.update { state ->
+            state.copy(
+                stage = CameraStage.SELECT,
+                frozenFrame = null,
+                matLine = matLine,
+                holdMask = null,
+                isBusy = false,
+                statusText = selectionGuidance(state.settings)
+            )
         }
     }
 
@@ -439,7 +489,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             !state.settings.requiresTopHoldSelection
         ) return
 
-        val requestId = ++selectionRequestId
+        val requestId = beginSelectionRequest()
         _uiState.update {
             it.copy(
                 holdMask = null,
@@ -448,7 +498,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
 
-        viewModelScope.launch {
+        selectionAnalysisJob = viewModelScope.launch {
             // PreviewView.bitmap is the exact displayed crop including the current physical lens and
             // camera zoom. ImageAnalysis is retained only as a fallback for rare TextureView misses.
             val previewSnapshot = runCatching {
@@ -459,7 +509,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
 
             if (frame == null || frame.width <= 0 || frame.height <= 0) {
                 frame?.recycle()
-                if (requestId == selectionRequestId) {
+                if (finishSelectionRequest(requestId)) {
                     _uiState.update {
                         it.copy(isBusy = false, statusText = "현재 카메라 프레임을 캡처하지 못했습니다. 다시 탭해주세요")
                     }
@@ -470,7 +520,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             try {
                 holdSegmenter.segment(frame, normalizedPoint, 1f)
                     .onSuccess { mask ->
-                        if (requestId != selectionRequestId) return@onSuccess
+                        if (!finishSelectionRequest(requestId)) return@onSuccess
                         _uiState.update { currentState ->
                             if (currentState.stage != CameraStage.SELECT) currentState
                             else currentState.copy(
@@ -481,7 +531,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                         }
                     }
                     .onFailure { error ->
-                        if (requestId != selectionRequestId) return@onFailure
+                        if (!finishSelectionRequest(requestId)) return@onFailure
                         _uiState.update {
                             it.copy(
                                 isBusy = false,
@@ -539,7 +589,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun retakeSelection() {
-        selectionRequestId += 1
+        invalidateSelectionRequest()
         cameraEngine.setPreviewRenderingEnabled(true)
         _uiState.update { state ->
             state.copy(
@@ -557,7 +607,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         val state = _uiState.value
         val settings = state.settings
         if (state.recordingState != RecordingState.IDLE || state.isBusy) return
-        selectionRequestId += 1
+        invalidateSelectionRequest()
         if (settings.requiresTopHoldSelection && state.holdMask == null) {
             setError("먼저 탑홀드를 선택해주세요.")
             return
@@ -595,8 +645,9 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             poseAnalyzer.stop()
         }
 
-        // The mat line and optional hold mask are self-contained. Drop any transient MobileSAM
-        // embedding before the long recording begins to reduce steady-state RAM.
+        // The mat line and optional hold mask are self-contained. Drop the transient MobileSAM
+        // embedding before the long recording begins to reduce steady-state RAM. Keep the sessions
+        // warm so a retake does not move model loading into the five-second analysis watchdog.
         mobileSam.releaseCachedEmbedding()
         _uiState.update {
             it.copy(
@@ -665,7 +716,11 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             it.copy(
                 recordingState = RecordingState.FINALIZING,
                 recordingCountdown = null,
-                statusText = "영상 정리 중..."
+                statusText = if (notice == null) {
+                    "영상 정리 중..."
+                } else {
+                    "녹화를 안전하게 종료하는 중..."
+                }
             )
         }
         cameraEngine.stopRecording(notice)
@@ -807,7 +862,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Close discards both the review file and selection, matching ReviewVC's close action. */
     fun closeReview() {
-        selectionRequestId += 1
+        invalidateSelectionRequest()
         cameraEngine.setPreviewRenderingEnabled(true)
         deleteCurrentRecording()
         completedRanges.clear()
@@ -827,7 +882,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Retake preserves the selected top hold/mat and starts the countdown again automatically. */
     fun retakeFromReview() {
-        selectionRequestId += 1
+        invalidateSelectionRequest()
         cameraEngine.setPreviewRenderingEnabled(true)
         deleteCurrentRecording()
         completedRanges.clear()
@@ -852,7 +907,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 // would be drawn over a different camera crop.
                 isLandscape = activeRecordingLandscape,
                 cameraTargetRotation = activeRecordingTargetRotation,
-                statusText = "기존 매트 경계를 유지하여 녹화를 다시 준비합니다"
+                statusText = "녹화 준비 중"
             )
         }
         // The camera composable is recreated on leaving review; bindCamera starts the retake.
@@ -1064,6 +1119,8 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         countdownJob?.cancel()
         cameraBindingJob?.cancel()
         mobileSamPreloadJob?.cancel()
+        matBoundaryTimeoutJob?.cancel()
+        selectionAnalysisJob?.cancel()
         poseAnalyzer.stop()
         poseAnalyzer.close()
         cameraEngine.release()

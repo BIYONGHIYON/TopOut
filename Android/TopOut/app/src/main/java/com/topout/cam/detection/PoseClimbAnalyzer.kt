@@ -60,7 +60,8 @@ class PoseClimbAnalyzer(
     private data class ReliablePose(val points: List<Offset>)
     private data class FrameCaptureRequest(
         val maxLongSide: Int,
-        val result: CompletableDeferred<Bitmap?>,
+        val ready: CompletableDeferred<Unit>,
+        val bitmap: AtomicReference<Bitmap?> = AtomicReference(null),
         val framesToSkip: Int
     )
 
@@ -101,6 +102,11 @@ class PoseClimbAnalyzer(
     private var isPostClimbTracking = false
     private var postClimbConsecutivePoseMisses = 0
     private var rgbScratchPixels = IntArray(0)
+    // Analyzer callbacks are serialized by CameraX's single-thread executor. Two buffers preserve
+    // the immediately previous frame while the next frame is filled, avoiding a new ByteArray at
+    // every 2/4-fps analysis tick.
+    private var lumaScratchFrames: Array<ByteArray?> = arrayOfNulls(2)
+    private var nextLumaScratchIndex = 0
 
     suspend fun captureNextFrame(
         maxLongSide: Int = TopOutConfig.CaptureMaxLongSide,
@@ -108,17 +114,28 @@ class PoseClimbAnalyzer(
     ): Bitmap? {
         val request = FrameCaptureRequest(
             maxLongSide = max(1, maxLongSide),
-            result = CompletableDeferred(),
+            ready = CompletableDeferred(),
             framesToSkip = max(0, minimumFramesAfterRequest)
         )
-        frameCaptureRequest.getAndSet(request)?.result?.complete(null)
-        val bitmap = withTimeoutOrNull(1_800L) { request.result.await() }
-        frameCaptureRequest.get()?.let { pending ->
-            if (pending.result === request.result) {
-                frameCaptureRequest.compareAndSet(pending, null)
+        frameCaptureRequest.getAndSet(request)?.ready?.complete(Unit)
+        var bitmap: Bitmap? = null
+        try {
+            withTimeoutOrNull(1_800L) { request.ready.await() }
+            bitmap = request.bitmap.getAndSet(null)
+            return bitmap
+        } finally {
+            if (bitmap == null) {
+                // Also runs when the owning UI coroutine is canceled before its timeout. If the
+                // analyzer finishes conversion later, ready.complete() fails and recycles it.
+                request.ready.cancel()
+                request.bitmap.getAndSet(null)?.recycle()
+            }
+            frameCaptureRequest.get()?.let { pending ->
+                if (pending.ready === request.ready) {
+                    frameCaptureRequest.compareAndSet(pending, null)
+                }
             }
         }
-        return bitmap
     }
 
     @Synchronized
@@ -170,7 +187,10 @@ class PoseClimbAnalyzer(
                 val bitmap = runCatching {
                     imageProxyToBitmap(image, request.maxLongSide, geometryForFrame())
                 }.getOrNull()
-                request.result.complete(bitmap)
+                request.bitmap.set(bitmap)
+                if (!request.ready.complete(Unit)) {
+                    request.bitmap.getAndSet(null)?.recycle()
+                }
             }
         }
 
@@ -220,7 +240,10 @@ class PoseClimbAnalyzer(
         } catch (_: Exception) {
             handlePoseMiss(seconds, currentFrame, previousFrame)
         } finally {
-            synchronized(this) { previousMotionFrame = currentFrame }
+            synchronized(this) {
+                previousMotionFrame = currentFrame
+                nextLumaScratchIndex = (nextLumaScratchIndex + 1) % lumaScratchFrames.size
+            }
             image.close()
         }
     }
@@ -637,7 +660,14 @@ class PoseClimbAnalyzer(
         val cropPixelHeight = max(1f, crop.height * geometry.displayHeight)
         val outputWidth = max(32, TopOutConfig.MotionFrameWidth)
         val outputHeight = max(32, (outputWidth * cropPixelHeight / cropPixelWidth).roundToInt())
-        val output = ByteArray(outputWidth * outputHeight)
+        val requiredBytes = outputWidth * outputHeight
+        val output = synchronized(this) {
+            lumaScratchFrames[nextLumaScratchIndex]
+                ?.takeIf { it.size == requiredBytes }
+                ?: ByteArray(requiredBytes).also {
+                    lumaScratchFrames[nextLumaScratchIndex] = it
+                }
+        }
         val buffer = plane.buffer.duplicate()
         val bufferBase = buffer.position()
 
@@ -793,7 +823,16 @@ class PoseClimbAnalyzer(
     }
 
     fun close() {
-        frameCaptureRequest.getAndSet(null)?.result?.complete(null)
+        frameCaptureRequest.getAndSet(null)?.let { request ->
+            request.ready.cancel()
+            request.bitmap.getAndSet(null)?.recycle()
+        }
+        synchronized(this) {
+            previousMotionFrame = null
+            rgbScratchPixels = IntArray(0)
+            lumaScratchFrames = arrayOfNulls(2)
+            nextLumaScratchIndex = 0
+        }
         poseDetector.close()
     }
 

@@ -131,7 +131,7 @@ struct RecordingStopNotice {
 
     static let captureInterruption = RecordingStopNotice(
         title: "녹화가 중단되었습니다",
-        message: "전화 수신 또는 다른 앱의 카메라·마이크 사용으로 촬영 장치가 중단되어 녹화를 안전하게 종료했습니다."
+        message: "다른 앱의 카메라·마이크 사용으로 촬영 장치가 중단되어 녹화를 안전하게 종료했습니다."
     )
 
     static let sessionError = RecordingStopNotice(

@@ -374,6 +374,7 @@ extension HoldVC {
             aspectRatio: selectedRecordingAspectRatio
         )
         clearSelectionCache(clearPending: true)
+        releaseMobileSAMResources()
         setLoading(false)
         startRecording()
     }

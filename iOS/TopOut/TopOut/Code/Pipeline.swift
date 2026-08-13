@@ -40,6 +40,11 @@ extension HoldVC {
                 self.pendingOverlay = selection.overlay
                 self.pendingTopBox = selection.box
                 self.selectOverlayView.image = selection.overlay
+                // Pixel RGB data and this frame's embedding are no longer needed.
+                // Keep the already loaded models until recording starts so Retake
+                // can analyze promptly without putting model load inside the 5s watchdog.
+                self.pixels = nil
+                self.emb = nil
                 self.mode = .select
                 self.isBusy = false
                 self.retakeBtn.isEnabled = true
@@ -59,11 +64,11 @@ extension HoldVC {
                     self.selectHint.text = "선택 완료 · 다시 탭해서 수정하거나 녹화 시작을 눌러주세요"
                 } else {
                     self.recordBtn.isEnabled = self.pendingOverlay != nil
-                    self.selectHint.text = self.pendingOverlay == nil
-                        ? "선택 실패 · 다시 탭해보세요"
-                        : "선택 실패 · 기존 선택을 유지합니다"
+                    self.selectHint.text = "선택 실패 · 다시 탭해보세요"
                 }
 
+                self.pixels = nil
+                self.emb = nil
                 self.isBusy = false
                 self.mode = .select
                 self.retakeBtn.isEnabled = true

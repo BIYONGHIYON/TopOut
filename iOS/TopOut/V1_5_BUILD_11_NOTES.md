@@ -1,5 +1,7 @@
 # TopOut iOS v1.5 (build 11)
 
+> 과거 릴리스 기록입니다. 현재 릴리스는 [v1.6 build 12](V1_6_BUILD_12_NOTES.md)이며 현재 동작은 [iOS README](README.md)를 기준으로 합니다.
+
 ## iPhone startup compatibility
 
 - MobileSAM 로딩이 앱 진입과 카메라 권한·프리뷰 준비를 막지 않도록 시작 순서를 분리했습니다.
