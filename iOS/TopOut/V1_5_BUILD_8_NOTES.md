@@ -1,6 +1,6 @@
 # TopOut 1.5 (Build 8)
 
-> 과거 릴리스 기록입니다. 현재 릴리스는 [v1.6 build 12](V1_6_BUILD_12_NOTES.md)이며 현재 동작은 [iOS README](README.md)를 기준으로 합니다.
+> 과거 릴리스 기록입니다. 현재 릴리스는 [v1.6 build 13](V1_6_BUILD_13_NOTES.md)이며 현재 동작은 [iOS README](README.md)를 기준으로 합니다.
 
 ## Saved-video verification
 - Saving is no longer considered complete solely because the export/write API returned success.

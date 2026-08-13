@@ -1,5 +1,7 @@
 # TopOut iOS v1.6 (build 12)
 
+> 과거 릴리스 기록입니다. 현재 릴리스는 [v1.6 build 13](V1_6_BUILD_13_NOTES.md)이며 현재 동작은 [iOS README](README.md)를 기준으로 합니다.
+
 ## Mat analysis recovery
 
 - 메모리 제약 기기 사용자 피드백을 반영해 매트 경계 분석 대기를 5초로 제한했습니다.

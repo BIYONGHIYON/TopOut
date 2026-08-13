@@ -1,4 +1,4 @@
-# TopOut iOS v1.6 (build 12)
+# TopOut iOS v1.6 (build 13)
 
 > 등반 시작부터 완등 순간까지, 자동으로 찾아주는 클라이밍 촬영 앱
 
@@ -27,7 +27,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 
 - Bundle ID: `com.topout.cam`
 - Deployment Target: iOS 16.0
-- Marketing / Current Project Version: `1.6` / `12`
+- Marketing / Current Project Version: `1.6` / `13`
 - UI: Swift, UIKit
 - Camera / media: AVFoundation, AVAssetWriter, AVPlayer, PhotoKit
 - AI: MobileSAM Core ML, Apple Vision Human Body Pose
@@ -49,7 +49,9 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 - Motion: 160px luma, 현재 프레임과 직전 분석 프레임 비교, 기본 2fps
 - 초기 탐색: 편집된 매트선 위 화면 높이 40% 영역
 - Pose: `VNDetectHumanBodyPoseRequest`, 활성 촬영 영역의 긴 변 최대 384px
-- confidence `0.25` 이상의 모든 Vision observation 비얼굴 관절을 하나의 집합으로 결합
+- 8열 Motion 격자의 변화 영역과 가장 잘 맞는 Vision observation 한 명을 최초 대상으로 선택
+- 추적 중에는 직전 대상의 관절 경계·중심과 가장 자연스럽게 이어지는 한 명만 유지
+- 선택된 사람의 confidence `0.25` 이상 비얼굴 관절만 시작·종료·완등 판단에 사용
 - 시작선: x별 매트선보다 화면 높이 `6%` 위
 - 종료선: x별 매트선보다 화면 높이 `2%` 위
 - 시작 전·종료 후·Pose 유실 복구: 4fps
@@ -58,7 +60,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 
 녹화 설정의 30fps·60fps는 카메라와 인코더 프레임률입니다. 분석기는 `CMSampleBuffer`의 presentation timestamp를 기준으로 0.5초 또는 0.25초가 지나기 전 프레임을 건너뛰므로 두 설정 모두 상태별 분석 상한은 2fps·4fps로 같습니다. 분석 중에는 최신 대기 프레임 한 장만 유지하므로 처리 시간이 길어지면 큐를 쌓지 않고 실제 분석 빈도가 이 상한보다 낮아질 수 있습니다.
 
-iOS는 단일 인물 선택이나 어깨·골반·팔꿈치·무릎 anatomical gate를 사용하지 않습니다. 이는 현장 테스트에서 기존 다중 observation 결합 방식이 더 정확했던 결과를 반영한 의도된 플랫폼 차이입니다.
+iOS는 Vision 추론을 사람별로 반복하지 않습니다. 한 번의 다중 observation 결과에서 초기 Motion 격자 겹침과 거리, 이후 프레임의 대상 연속성을 비교하므로 추가 모델 추론 없이 주변 인물의 관절이 주 등반자의 판정에 섞이는 것을 방지합니다. 직전 대상과 겹치지 않고 정규화된 촬영 영역에서 중심 거리가 `0.40`보다 먼 인물은 즉시 대체하지 않습니다. Android의 anatomical group gate는 적용하지 않으며, 기존 Pose 유실 정책을 거쳐 초기 Motion 탐색으로 돌아왔을 때만 새 대상을 선택합니다.
 
 ## 결과 편집과 사진 보관함 검증
 
@@ -96,8 +98,8 @@ xcodebuild -project TopOut.xcodeproj -scheme TopOut -configuration Debug \
 
 ## 문서
 
-- [v1.6 build 12 변경 사항](V1_6_BUILD_12_NOTES.md)
+- [v1.6 build 13 변경 사항](V1_6_BUILD_13_NOTES.md)
 - [MobileSAM 매트 경계](MOBILESAM_MAT_DETECTOR_NOTES.md)
 - [시작과 프레임 처리](STARTUP_OPTIMIZATION_NOTES.md)
 - [Pose 로직](POSE_LOGIC_ROLLBACK_NOTES.md)
-- 과거 릴리스 기록: [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)
+- 과거 릴리스 기록: [v1.6 build 12](V1_6_BUILD_12_NOTES.md), [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)

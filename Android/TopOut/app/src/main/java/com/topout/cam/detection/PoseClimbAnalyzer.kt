@@ -482,7 +482,7 @@ class PoseClimbAnalyzer(
         return if (finishBase > start) ClipRange(start, finishBase) else null
     }
 
-    /** Start requires a 4%-of-frame clearance above the edited mat line. */
+    /** Start requires a 6%-of-frame clearance above the edited mat line. */
     private fun isAboveStartBoundary(point: Offset): Boolean {
         val startBoundary = (lineY(point.x) - TopOutConfig.PoseStartAboveMatMarginRatio)
             .coerceAtLeast(0f)

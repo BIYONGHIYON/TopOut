@@ -315,8 +315,8 @@ object TopOutConfig {
     const val MatDefaultY = 0.75f
     const val MatBoundaryAnalysisTimeoutMillis = 5_000L
     const val ReviewEndPreviewLeadSeconds = 3.0
-    /** The lowest reliable joint must clear the edited mat line by 4% of frame height. */
-    const val PoseStartAboveMatMarginRatio = 0.04f
+    /** The lowest reliable joint must clear the edited mat line by 6% of frame height. */
+    const val PoseStartAboveMatMarginRatio = 0.06f
     /** Finish when the lowest reliable joint drops below a boundary 2% above the edited mat line. */
     const val PoseFinishAboveMatMarginRatio = 0.02f
 

@@ -1,6 +1,6 @@
 # iOS optimization audit — v1.4 (build 5)
 
-> 이 문서는 v1.4 build 5 최적화 당시의 감사 기록입니다. 현재 릴리스는 [v1.6 build 12](V1_6_BUILD_12_NOTES.md)이며 최신 동작은 [iOS README](README.md)를 기준으로 합니다.
+> 이 문서는 v1.4 build 5 최적화 당시의 감사 기록입니다. 현재 릴리스는 [v1.6 build 13](V1_6_BUILD_13_NOTES.md)이며 최신 동작은 [iOS README](README.md)를 기준으로 합니다.
 
 The original optimization pass kept behavior unchanged. Later platform-alignment notes below remain historical context.
 
@@ -23,7 +23,7 @@ The original optimization pass kept behavior unchanged. Later platform-alignment
 
 - All Swift production files passed `swiftc -frontend -parse` together.
 - Static declaration scan leaves only UIKit/AVFoundation/application delegate callbacks and protocol requirements as apparent single-reference declarations.
-- This audit snapshot was created at version 1.4 build 5; the current project identity is 1.6 build 12.
+- This audit snapshot was created at version 1.4 build 5; the current project identity is 1.6 build 13.
 
 ## Left unchanged deliberately
 
@@ -35,7 +35,7 @@ The original optimization pass kept behavior unchanged. Later platform-alignment
 - Initial motion analysis and active climbing remain at 2 fps and use only the immediately previous motion frame.
 - Reliable pre-start/post-climb pose tracking and pose-loss recovery run at 4 fps; recovery timeout is 6 seconds.
 - Motion activation is aligned to the Android 2.5% noise margin plus 2% adjusted threshold.
-- Vision observations are combined into one non-face joint set, matching the earlier iOS pose behavior; the removed person-selection and body-group validation code no longer adds state or per-frame distance calculations.
+- Vision still runs once per analysis frame, but multiple observations are no longer merged. The initial 160px motion grid selects one nearby person, and later frames retain the observation that best overlaps the previous joint bounds and center. This adds only small scalar scoring and no extra Vision inference.
 - Two consecutive misses after a normal finish return to initial motion search.
 
 ## v1.6 review UI cleanup

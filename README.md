@@ -27,7 +27,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 
 | 항목 | iOS | Android |
 |---|---|---|
-| 버전 | 1.6 (build 12) | 1.6 (versionCode 12) |
+| 버전 | 1.6 (build 13) | 1.6 (versionCode 13) |
 | 최소 OS | iOS 16.0 | Android 8.0 · API 26 |
 | 앱 ID | `com.topout.cam` | `com.topout.cam` |
 | UI | Swift · UIKit | Kotlin · Jetpack Compose · Material 3 |
@@ -59,6 +59,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 TopOut/
 ├── iOS/TopOut/
 │   ├── README.md
+│   ├── V1_6_BUILD_13_NOTES.md
 │   ├── V1_6_BUILD_12_NOTES.md
 │   ├── V1_5_BUILD_11_NOTES.md
 │   ├── V1_5_BUILD_10_NOTES.md
@@ -66,6 +67,7 @@ TopOut/
 │   └── TopOut/
 ├── Android/TopOut/
 │   ├── README.md
+│   ├── V1_6_BUILD_13_NOTES.md
 │   ├── V1_6_BUILD_12_NOTES.md
 │   ├── V1_5_BUILD_11_NOTES.md
 │   ├── V1_5_BUILD_10_NOTES.md
@@ -80,12 +82,12 @@ TopOut/
 
 - [iOS 현재 문서](iOS/TopOut/README.md)
 - [Android 현재 문서](Android/TopOut/README.md)
-- [iOS v1.6 build 12 변경 사항](iOS/TopOut/V1_6_BUILD_12_NOTES.md)
-- [Android v1.6 build 12 변경 사항](Android/TopOut/V1_6_BUILD_12_NOTES.md)
+- [iOS v1.6 build 13 변경 사항](iOS/TopOut/V1_6_BUILD_13_NOTES.md)
+- [Android v1.6 build 13 변경 사항](Android/TopOut/V1_6_BUILD_13_NOTES.md)
 - [제품 포트폴리오](portfolio/index.html)
 - [TopOut 공개 저장소](https://github.com/BIYONGHIYON/TopOut-app)
 
-`V1_4_*`와 `V1_5_*` 문서는 당시 동작을 보존하는 과거 릴리스 기록입니다. 현재 동작의 기준은 각 플랫폼 README와 v1.6 build 12 노트입니다.
+`V1_4_*`, `V1_5_*`, `V1_6_BUILD_12_NOTES.md`는 당시 동작을 보존하는 과거 릴리스 기록입니다. 현재 동작의 기준은 각 플랫폼 README와 v1.6 build 13 노트입니다.
 
 로컬의 `TopOut-app/` 폴더는 별도 Git 이력을 가진 공개 저장소 checkout이므로 이 비공개 저장소의 `.gitignore`에서 제외합니다.
 
@@ -152,12 +154,12 @@ TopOut/
 
 | 판정 | iOS | Android |
 |---|---|---|
-| 시작선 | x별 매트선보다 화면 높이 6% 위 | x별 매트선보다 화면 높이 4% 위 |
+| 시작선 | x별 매트선보다 화면 높이 6% 위 | x별 매트선보다 화면 높이 6% 위 |
 | 종료선 | x별 매트선보다 화면 높이 2% 위 | x별 매트선보다 화면 높이 2% 위 |
 | Pose 입력 | active crop, 긴 변 최대 384px | Motion/Pose ROI, 256×256 RGB |
-| 사람 검증 | 모든 Vision observation의 비얼굴 관절 결합 | SinglePose의 4개 신체 그룹 중 3개 이상 |
+| 사람 검증 | Motion 격자와 직전 추적 대상에 가장 잘 이어지는 Vision observation 1명 | SinglePose의 4개 신체 그룹 중 3개 이상 |
 
-Android의 4개 그룹은 어깨·골반·팔꿈치·무릎이며, 각 그룹은 좌우 중 하나가 confidence `0.25` 이상이면 충족합니다. iOS는 현장 정확도를 위해 단일 인물 선택이나 anatomical gate 없이 모든 observation의 신뢰 비얼굴 관절을 합칩니다.
+Android의 4개 그룹은 어깨·골반·팔꿈치·무릎이며, 각 그룹은 좌우 중 하나가 confidence `0.25` 이상이면 충족합니다. iOS는 8열 저해상도 Motion 격자의 변화 영역과 겹치고 가까운 사람을 최초 대상으로 선택합니다. 이후에는 직전 선택 인물의 관절 경계와 중심에 가장 자연스럽게 이어지는 Vision observation 한 명만 시작·종료·완등 판단에 사용합니다. 선택 대상과 겹치지 않고 정규화된 촬영 영역에서 중심 거리가 `0.40`보다 먼 인물은 대체 대상으로 받지 않으며, 기존 Pose 유실 정책을 거쳐 초기 탐색으로 복귀하면 새 Motion 격자를 기준으로 대상을 다시 선택합니다.
 
 시작·종료·최고점·탑홀드 판단에는 어깨, 팔꿈치, 손목, 골반, 무릎, 발목을 사용하며 얼굴 관절은 제외합니다.
 
@@ -230,7 +232,7 @@ Android 저장 영상 보기에는 앞/뒤 5초 이동, 드래그 즉시 화면�
 3. MobileSAM Core ML 모델과 `PrivacyInfo.xcprivacy`의 Target Membership을 확인합니다.
 4. 실제 iPhone에서 카메라·마이크·사진 보관함 권한과 Archive를 검증합니다.
 
-프로젝트 설정: iOS 16.0, Swift 5, Marketing Version 1.6, Current Project Version 12.
+프로젝트 설정: iOS 16.0, Swift 5, Marketing Version 1.6, Current Project Version 13.
 
 ### Android
 
@@ -254,7 +256,7 @@ cd Android/TopOut
 - [ ] 선택 화면이 라이브 프리뷰를 유지하고 분석 정지 화면을 노출하지 않는가
 - [ ] 탑홀드를 다시 누를 때마다 현재 프레임으로 마스크가 갱신되는가
 - [ ] 수평·경사 매트에서 x별 경계 보간이 올바른가
-- [ ] iOS 6%, Android 4% 시작선과 공통 2% 종료선이 적용되는가
+- [ ] iOS·Android 공통 6% 시작선과 2% 종료선이 적용되는가
 - [ ] Android Pose gate가 4/4·3/4는 통과하고 2/4는 거부하는가
 - [ ] 활성 등반 중 6초 복구와 정상 종료 후 2회 미검출 복귀가 동작하는가
 - [ ] 유효한 연속 등반이 가까워도 서로 다른 구간으로 남는가
@@ -264,13 +266,14 @@ cd Android/TopOut
 - [ ] Android Fold·가로 모드에서 영상 슬라이더와 하단 버튼이 겹치지 않는가
 - [ ] Android 60fps 선택이 실제 활성 세션의 보장 여부와 일치하는가
 - [ ] Android 30fps·60fps 녹화에서 상태별 2fps·4fps 분석 주기가 타임스탬프 기준으로 유지되는가
+- [ ] iOS 다중 인물 환경에서 초기 Motion 위치의 등반자를 선택하고 추적 중 주변 인물로 전환되지 않는가
 - [ ] Android 논리 멀티 카메라에서 0.5x→1x가 재바인딩 없이 이어지고, 혼합형·분리형 기기에서는 필요한 망원 경계만 전환되는가
 - [ ] Android 분리 렌즈 확대 중 정지 프레임이 핀치를 따라가고, 손을 떼면 최종 배율로 바인딩되며, 이전 경계로 돌아오면 전환이 취소되는가
 - [ ] Android release AAB의 16KB page alignment를 확인했는가
 
 ## 알려진 플랫폼 차이
 
-- iOS는 여러 Vision observation의 신뢰 관절을 하나의 판단 집합으로 합칩니다.
+- iOS는 Vision이 반환한 여러 observation 중 Motion 격자와 직전 추적 위치에 가장 잘 맞는 한 명을 선택합니다.
 - Android는 MoveNet SinglePose 한 명과 3-of-4 anatomical group gate를 사용합니다.
 - iOS는 active crop 전체를 Vision 입력으로 사용하고, Android는 Motion/Pose ROI를 동적으로 갱신합니다.
 - Core ML, Vision, LiteRT, ONNX Runtime의 처리 시간과 카메라 포맷 지원 범위는 기기별로 달라질 수 있습니다.

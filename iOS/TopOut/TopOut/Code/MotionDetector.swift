@@ -26,6 +26,8 @@ enum MotionFinishReference: String {
 /// 기준:
 /// - 별도 환경 보정 없이 녹화 시작 후 고정 2fps로 현재 프레임과 직전 분석 프레임을 비교합니다.
 /// - CV 탐색 영역은 매트 경계선 바로 위쪽부터 화면 높이의 40% 구간입니다.
+/// - 초기 CV 변화를 8열 격자로 보존하고 여러 Vision observation 중 가장 가까운 한 명을 선택합니다.
+/// - 선택 후에는 직전 관절 경계와 중심의 연속성으로 같은 등반자를 추적합니다.
 /// - 초기 탐색과 등반 중 pose 추적은 2fps를 유지합니다.
 /// - pose를 잡았지만 아직 등반 전인 구간과 pose 유실 복구 구간은 4fps로 분석합니다.
 /// - 가장 낮은 pose 점이 매트 기준선 위로 올라가면 START, 다시 아래로 내려오면 FINISH로 봅니다.
@@ -47,20 +49,39 @@ final class MotionDetector {
         let luma: [UInt8]
     }
 
+    private struct MotionCellScore {
+        let bounds: CGRect
+        let score: CGFloat
+    }
+
+    private struct MotionTarget {
+        let weightedCenter: CGPoint
+        let cells: [MotionCellScore]
+    }
+
     private struct CVRegionMotion {
         let rawSignal: CGFloat
         let adjustedSignal: CGFloat
+        let target: MotionTarget
+    }
+
+    private struct PoseCandidate {
+        let observationIndex: Int
+        let reliablePoints: [CGPoint]
+        let bounds: CGRect
+        let center: CGPoint
     }
 
     private struct PoseSnapshot {
         let observationCount: Int
-        let allReliablePoints: [CGPoint]
+        let selectedObservationIndex: Int?
+        let reliablePoints: [CGPoint]
 
-        var hasPose: Bool { observationCount > 0 && !allReliablePoints.isEmpty }
+        var hasPose: Bool { selectedObservationIndex != nil && !reliablePoints.isEmpty }
     }
 
     var onEvent: ((MotionEvent) -> Void)?
-    private let q = DispatchQueue(label: "topout.motion.detector.pose.v39", qos: .userInitiated)
+    private let q = DispatchQueue(label: "topout.motion.detector.pose.v40", qos: .userInitiated)
 
     // 카메라 프레임(최대 60fps)이 포즈 분석 직렬 큐에 계속 쌓이지 않도록
     // 처리 대기 중에는 가장 최신 프레임 한 장만 유지합니다.
@@ -104,6 +125,9 @@ final class MotionDetector {
     private var postClimbConsecutivePoseMisses = 0
     private var hasSeenReliablePose = false
     private var isPoseLossRecovery = false
+    private var pendingMotionTarget: MotionTarget?
+    private var lastSelectedPoseCenter: CGPoint?
+    private var lastSelectedPoseBounds: CGRect?
 
     // MARK: Public
 
@@ -295,7 +319,8 @@ final class MotionDetector {
     ) {
         let poseText: String
         if let latestPose {
-            poseText = "obs=\(latestPose.observationCount) points=\(latestPose.allReliablePoints.count)"
+            let selected = latestPose.selectedObservationIndex.map(String.init) ?? "-"
+            poseText = "obs=\(latestPose.observationCount) selected=\(selected) points=\(latestPose.reliablePoints.count)"
         } else {
             poseText = "-"
         }
@@ -303,10 +328,13 @@ final class MotionDetector {
         let cvText: String
         if let cvMotion {
             cvText = String(
-                format: "raw=%.3f adjusted=%.3f threshold=%.3f",
+                format: "raw=%.3f adjusted=%.3f threshold=%.3f cells=%d center=(%.3f,%.3f)",
                 Double(cvMotion.rawSignal),
                 Double(cvMotion.adjustedSignal),
-                Double(Cfg.motionCVRegionActiveThreshold)
+                Double(Cfg.motionCVRegionActiveThreshold),
+                cvMotion.target.cells.count,
+                Double(cvMotion.target.weightedCenter.x),
+                Double(cvMotion.target.weightedCenter.y)
             )
         } else {
             cvText = "-"
@@ -347,13 +375,14 @@ final class MotionDetector {
 
         enterPoseTrackingFromCV(
             at: pts,
+            motionTarget: motion.target,
             reason: String(format: "CV region changed adjusted=%.3f", Double(motion.adjustedSignal))
         )
         guard let snapshot = pose("cvMotionPose") else { return }
         handlePoseTrackingSnapshot(snapshot, pts: pts)
     }
 
-    private func enterPoseTrackingFromCV(at pts: CMTime, reason: String) {
+    private func enterPoseTrackingFromCV(at pts: CMTime, motionTarget: MotionTarget, reason: String) {
         previousCVFrame = nil
         state = .tracking
         poseTrackingStartedPTS = pts
@@ -364,6 +393,8 @@ final class MotionDetector {
         postClimbConsecutivePoseMisses = 0
         hasSeenReliablePose = false
         isPoseLossRecovery = false
+        resetPoseSelectionTracking()
+        pendingMotionTarget = motionTarget
         resetFinishReferenceTracking()
         debug("🏃 pose tracking started after CV: \(reason)")
     }
@@ -471,6 +502,7 @@ final class MotionDetector {
         postClimbConsecutivePoseMisses = 0
         hasSeenReliablePose = false
         isPoseLossRecovery = false
+        resetPoseSelectionTracking()
         resetFinishReferenceTracking()
     }
 
@@ -515,6 +547,7 @@ final class MotionDetector {
         postClimbConsecutivePoseMisses = 0
         hasSeenReliablePose = false
         isPoseLossRecovery = false
+        resetPoseSelectionTracking()
         resetFinishReferenceTracking()
     }
 
@@ -587,22 +620,184 @@ final class MotionDetector {
         from observations: [VNHumanBodyPoseObservation],
         coordinateSpace: PoseCoordinateSpace
     ) -> PoseSnapshot {
-        var points: [CGPoint] = []
+        var candidates: [PoseCandidate] = []
+        candidates.reserveCapacity(observations.count)
 
-        // 기존 방식 유지: Vision이 반환한 모든 사람의 신뢰 가능한 관절을 하나의 판단 집합으로 사용합니다.
-        // 코는 reliablePoseJoints에 포함하지 않아 시작/종료/완등 판단에서 제외됩니다.
-        for observation in observations {
+        // Vision 추론은 한 번만 수행합니다. 각 observation의 관절은 섞지 않고, 초기 움직임
+        // 격자 또는 직전 선택 대상과 가장 잘 이어지는 한 사람만 상태 판단에 사용합니다.
+        for (index, observation) in observations.enumerated() {
+            var points: [CGPoint] = []
+            points.reserveCapacity(reliablePoseJoints.count)
             for joint in reliablePoseJoints {
                 if let point = recognizedPoint(joint, in: observation, coordinateSpace: coordinateSpace) {
                     points.append(point)
                 }
             }
+            let reliablePoints = uniquePoints(points)
+            guard let bounds = pointBounds(reliablePoints) else { continue }
+            candidates.append(
+                PoseCandidate(
+                    observationIndex: index,
+                    reliablePoints: reliablePoints,
+                    bounds: bounds,
+                    center: CGPoint(x: bounds.midX, y: bounds.midY)
+                )
+            )
         }
+
+        guard let selected = selectPoseCandidate(candidates) else {
+            return PoseSnapshot(
+                observationCount: observations.count,
+                selectedObservationIndex: nil,
+                reliablePoints: []
+            )
+        }
+        lastSelectedPoseCenter = selected.center
+        lastSelectedPoseBounds = selected.bounds
+        pendingMotionTarget = nil
 
         return PoseSnapshot(
             observationCount: observations.count,
-            allReliablePoints: uniquePoints(points)
+            selectedObservationIndex: selected.observationIndex,
+            reliablePoints: selected.reliablePoints
         )
+    }
+
+    private func selectPoseCandidate(_ candidates: [PoseCandidate]) -> PoseCandidate? {
+        guard var best = candidates.first else { return nil }
+
+        if let target = pendingMotionTarget {
+            var bestMetrics = motionMatchMetrics(candidate: best, target: target)
+            for candidate in candidates.dropFirst() {
+                let metrics = motionMatchMetrics(candidate: candidate, target: target)
+                if metrics.overlap > bestMetrics.overlap + 0.000_001 ||
+                    (abs(metrics.overlap - bestMetrics.overlap) <= 0.000_001 &&
+                        (metrics.distance < bestMetrics.distance - 0.000_001 ||
+                            (abs(metrics.distance - bestMetrics.distance) <= 0.000_001 &&
+                                candidate.reliablePoints.count > best.reliablePoints.count))) {
+                    best = candidate
+                    bestMetrics = metrics
+                }
+            }
+            return best
+        }
+
+        if let previousCenter = lastSelectedPoseCenter {
+            var bestDistance = squaredDistance(best.center, previousCenter)
+            var bestOverlap = temporalOverlap(candidate: best)
+            for candidate in candidates.dropFirst() {
+                let distance = squaredDistance(candidate.center, previousCenter)
+                let overlap = temporalOverlap(candidate: candidate)
+                if overlap > bestOverlap + 0.000_001 ||
+                    (abs(overlap - bestOverlap) <= 0.000_001 &&
+                        (distance < bestDistance - 0.000_001 ||
+                            (abs(distance - bestDistance) <= 0.000_001 &&
+                                candidate.reliablePoints.count > best.reliablePoints.count))) {
+                    best = candidate
+                    bestDistance = distance
+                    bestOverlap = overlap
+                }
+            }
+            let maximumDistance = Cfg.motionPoseSelectionMaxCenterDistanceRatio
+            // A distant bystander must not silently replace a lost climber. Returning no pose here
+            // lets the existing two-miss post-finish or six-second active-climb recovery policy
+            // return to Motion search before choosing a new person.
+            guard bestOverlap > 0 || bestDistance <= maximumDistance * maximumDistance else {
+                return nil
+            }
+            return best
+        }
+
+        return candidates.max {
+            if $0.reliablePoints.count == $1.reliablePoints.count {
+                return $0.observationIndex > $1.observationIndex
+            }
+            return $0.reliablePoints.count < $1.reliablePoints.count
+        }
+    }
+
+    private func motionMatchMetrics(
+        candidate: PoseCandidate,
+        target: MotionTarget
+    ) -> (overlap: CGFloat, distance: CGFloat) {
+        let candidateBounds = expanded(
+            candidate.bounds,
+            by: Cfg.motionPoseSelectionBoundsPaddingRatio
+        )
+        var overlap: CGFloat = 0
+        for cell in target.cells {
+            let intersection = candidateBounds.intersection(cell.bounds)
+            guard !intersection.isNull, intersection.width > 0, intersection.height > 0 else { continue }
+            let cellArea = Swift.max(cell.bounds.width * cell.bounds.height, 0.000_001)
+            overlap += cell.score * (intersection.width * intersection.height / cellArea)
+        }
+        return (
+            overlap: overlap,
+            distance: squaredDistance(from: target.weightedCenter, to: candidateBounds)
+        )
+    }
+
+    private func temporalOverlap(candidate: PoseCandidate) -> CGFloat {
+        guard let previousBounds = lastSelectedPoseBounds else { return 0 }
+        let previous = expanded(
+            previousBounds,
+            by: Cfg.motionPoseSelectionBoundsPaddingRatio
+        )
+        let current = expanded(
+            candidate.bounds,
+            by: Cfg.motionPoseSelectionBoundsPaddingRatio
+        )
+        let intersection = previous.intersection(current)
+        guard !intersection.isNull, intersection.width > 0, intersection.height > 0 else { return 0 }
+        let intersectionArea = intersection.width * intersection.height
+        let unionArea = previous.width * previous.height + current.width * current.height - intersectionArea
+        return intersectionArea / Swift.max(unionArea, 0.000_001)
+    }
+
+    private func pointBounds(_ points: [CGPoint]) -> CGRect? {
+        guard let first = points.first else { return nil }
+        var minX = first.x
+        var minY = first.y
+        var maxX = first.x
+        var maxY = first.y
+        for point in points.dropFirst() {
+            minX = Swift.min(minX, point.x)
+            minY = Swift.min(minY, point.y)
+            maxX = Swift.max(maxX, point.x)
+            maxY = Swift.max(maxY, point.y)
+        }
+        return CGRect(
+            x: minX,
+            y: minY,
+            width: Swift.max(0.000_001, maxX - minX),
+            height: Swift.max(0.000_001, maxY - minY)
+        )
+    }
+
+    private func squaredDistance(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
+        let dx = lhs.x - rhs.x
+        let dy = lhs.y - rhs.y
+        return dx * dx + dy * dy
+    }
+
+    private func squaredDistance(from point: CGPoint, to rect: CGRect) -> CGFloat {
+        let dx: CGFloat
+        if point.x < rect.minX {
+            dx = rect.minX - point.x
+        } else if point.x > rect.maxX {
+            dx = point.x - rect.maxX
+        } else {
+            dx = 0
+        }
+        let dy: CGFloat
+        if point.y < rect.minY {
+            dy = rect.minY - point.y
+        } else if point.y > rect.maxY {
+            dy = point.y - rect.maxY
+        } else {
+            dy = 0
+        }
+        return dx * dx + dy * dy
     }
 
     private func recognizedPoint(
@@ -635,7 +830,8 @@ final class MotionDetector {
     private func emptyPoseSnapshot() -> PoseSnapshot {
         PoseSnapshot(
             observationCount: 0,
-            allReliablePoints: []
+            selectedObservationIndex: nil,
+            reliablePoints: []
         )
     }
 
@@ -680,7 +876,7 @@ final class MotionDetector {
     }
 
     private func lowestReliablePoint(in snapshot: PoseSnapshot) -> CGPoint? {
-        snapshot.allReliablePoints.max { lhs, rhs in
+        snapshot.reliablePoints.max { lhs, rhs in
             lhs.y < rhs.y
         }
     }
@@ -713,7 +909,7 @@ final class MotionDetector {
         case .highestPosePoint:
             // Vision 좌표를 화면 좌표로 정규화한 뒤 사용하므로 y가 작을수록 화면의 더 높은 위치입니다.
             // 각 프레임에서 가장 높은 관절점을 찾고, 등반 전체에서 그 y가 가장 작았던 시점을 저장합니다.
-            guard let highestPoint = snapshot.allReliablePoints.min(by: { $0.y < $1.y }) else { return }
+            guard let highestPoint = snapshot.reliablePoints.min(by: { $0.y < $1.y }) else { return }
             if activeHighestPoseY == nil || highestPoint.y < (activeHighestPoseY ?? .greatestFiniteMagnitude) {
                 activeHighestPoseY = highestPoint.y
                 activeHighestPosePTS = pts
@@ -752,9 +948,9 @@ final class MotionDetector {
     }
 
     private func closestDistanceToTopHold(from snapshot: PoseSnapshot) -> CGFloat? {
-        guard !snapshot.allReliablePoints.isEmpty else { return nil }
+        guard !snapshot.reliablePoints.isEmpty else { return nil }
         var closest = CGFloat.greatestFiniteMagnitude
-        for point in snapshot.allReliablePoints {
+        for point in snapshot.reliablePoints {
             closest = Swift.min(closest, distanceFromPoint(point, to: topBox))
         }
         return closest
@@ -806,11 +1002,22 @@ final class MotionDetector {
         let height = frame.height
         let regionHeight = clamp(Cfg.motionCVRegionAboveMatHeightRatio, min: 0.02, max: 1.0)
         let threshold = Int(Cfg.motionPixelDiff)
+        let columns = Swift.max(2, Swift.min(width, Cfg.motionSeedGridColumns))
+        let rows = Swift.max(
+            2,
+            Swift.min(
+                height,
+                Int((CGFloat(columns) * CGFloat(height) / CGFloat(width)).rounded())
+            )
+        )
+        var cellChanged = [Int](repeating: 0, count: columns * rows)
+        var cellTotal = [Int](repeating: 0, count: columns * rows)
 
         var changed = 0
         var total = 0
 
         for x in 0..<width {
+            let cellX = Swift.min(columns - 1, x * columns / width)
             let xNorm = (CGFloat(x) + 0.5) / CGFloat(width)
             let boundary = lineY(at: xNorm)
             let yStartNorm = Swift.max(0.0, boundary - regionHeight)
@@ -822,10 +1029,14 @@ final class MotionDetector {
 
             for y in y0..<y1 {
                 let idx = y * width + x
+                let cellY = Swift.min(rows - 1, y * rows / height)
+                let cellIndex = cellY * columns + cellX
                 if abs(Int(frame.luma[idx]) - Int(base.luma[idx])) >= threshold {
                     changed += 1
+                    cellChanged[cellIndex] += 1
                 }
                 total += 1
+                cellTotal[cellIndex] += 1
             }
         }
 
@@ -833,7 +1044,60 @@ final class MotionDetector {
         let rawSignal = CGFloat(changed) / CGFloat(total)
         let adjustedSignal = Swift.max(0, rawSignal - Cfg.motionBaseDiffMargin)
         guard adjustedSignal >= Cfg.motionCVRegionActiveThreshold else { return nil }
-        return CVRegionMotion(rawSignal: rawSignal, adjustedSignal: adjustedSignal)
+
+        var cells: [MotionCellScore] = []
+        cells.reserveCapacity(columns * rows)
+        for row in 0..<rows {
+            for column in 0..<columns {
+                let index = row * columns + column
+                guard cellTotal[index] > 0 else { continue }
+                let score = CGFloat(cellChanged[index]) / CGFloat(cellTotal[index])
+                let left = CGFloat(column) / CGFloat(columns)
+                let top = CGFloat(row) / CGFloat(rows)
+                cells.append(
+                    MotionCellScore(
+                        bounds: CGRect(
+                            x: left,
+                            y: top,
+                            width: 1.0 / CGFloat(columns),
+                            height: 1.0 / CGFloat(rows)
+                        ),
+                        score: score
+                    )
+                )
+            }
+        }
+        let sorted = cells.sorted { $0.score > $1.score }
+        guard let strongest = sorted.first,
+              strongest.score >= Cfg.motionSeedMinimumCellChangedRatio else { return nil }
+        let cutoff = Swift.max(
+            Cfg.motionSeedMinimumCellChangedRatio,
+            strongest.score * Cfg.motionSeedRelativeCellThreshold
+        )
+        let selected = Array(
+            sorted
+                .filter { $0.score >= cutoff }
+                .prefix(Swift.max(1, Cfg.motionSeedMaximumSelectedCells))
+        )
+        guard !selected.isEmpty else { return nil }
+
+        var totalWeight: CGFloat = 0
+        var weightedX: CGFloat = 0
+        var weightedY: CGFloat = 0
+        for cell in selected {
+            let weight = Swift.max(cell.score, 0.000_001)
+            totalWeight += weight
+            weightedX += cell.bounds.midX * weight
+            weightedY += cell.bounds.midY * weight
+        }
+        let target = MotionTarget(
+            weightedCenter: CGPoint(
+                x: weightedX / Swift.max(totalWeight, 0.000_001),
+                y: weightedY / Swift.max(totalWeight, 0.000_001)
+            ),
+            cells: selected
+        )
+        return CVRegionMotion(rawSignal: rawSignal, adjustedSignal: adjustedSignal, target: target)
     }
 
     // MARK: Region Geometry
@@ -911,6 +1175,12 @@ final class MotionDetector {
         activeHighestPoseY = nil
     }
 
+    private func resetPoseSelectionTracking() {
+        pendingMotionTarget = nil
+        lastSelectedPoseCenter = nil
+        lastSelectedPoseBounds = nil
+    }
+
     private func resetStateLocked(keepConfig: Bool) {
         isActive = false
         state = .idle
@@ -925,6 +1195,7 @@ final class MotionDetector {
         postClimbConsecutivePoseMisses = 0
         hasSeenReliablePose = false
         isPoseLossRecovery = false
+        resetPoseSelectionTracking()
         resetFinishReferenceTracking()
 
         if !keepConfig {

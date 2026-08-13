@@ -64,6 +64,11 @@ enum Cfg {
     // 전체 탐색 영역에서 기준 노이즈를 제외한 변화 픽셀 비율
     static let motionCVRegionActiveThreshold: CGFloat = 0.02
     static let motionBaseDiffMargin: CGFloat = 0.025
+    // Android와 같은 저해상도 격자 정책으로 초기 움직임의 위치를 보존합니다.
+    static let motionSeedGridColumns = 8
+    static let motionSeedMaximumSelectedCells = 8
+    static let motionSeedRelativeCellThreshold: CGFloat = 0.45
+    static let motionSeedMinimumCellChangedRatio: CGFloat = 0.02
 
     // MARK: Pose Detection
     static let motionPoseStartVerificationInterval: TimeInterval = 0.5
@@ -71,6 +76,8 @@ enum Cfg {
     static let motionPoseFastTrackingInterval: TimeInterval = 0.25
     static let motionPoseInputMaxLongSide: CGFloat = 384
     static let motionPoseMinConfidence: Float = 0.25
+    static let motionPoseSelectionBoundsPaddingRatio: CGFloat = 0.04
+    static let motionPoseSelectionMaxCenterDistanceRatio: CGFloat = 0.40
     static let motionPoseNoPoseRetrySeconds: TimeInterval = 6.0
     static let motionClipBoundaryPaddingSeconds: TimeInterval = 3.0
     static let motionShortClipMinimumDetectionSeconds: TimeInterval = 2.0
