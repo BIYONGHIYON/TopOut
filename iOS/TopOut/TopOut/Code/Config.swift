@@ -82,8 +82,8 @@ enum Cfg {
     static let motionClipBoundaryPaddingSeconds: TimeInterval = 3.0
     static let motionShortClipMinimumDetectionSeconds: TimeInterval = 2.0
     static let motionShortClipMergeGapSeconds: TimeInterval = 3.0
-    // 시작 판정: 가장 낮은 관절이 실제 매트선보다 화면 높이의 6% 위에 있어야 함
-    static let motionPoseStartAboveMatOffsetRatio: CGFloat = 0.06
-    // 종료 판정: 가장 낮은 관절이 실제 매트선보다 화면 높이의 2% 위에 설정한 종료선을 아래로 통과하면 종료
-    static let motionPoseFinishAboveMatOffsetRatio: CGFloat = 0.02
+    // 시작 판정: 선택 영상 높이의 6%만큼 실제 매트선 위에 설정한 시작선을 사용
+    static let motionPoseStartAboveMatVideoHeightRatio: CGFloat = 0.06
+    // 종료 판정: 선택 영상 높이의 4%만큼 실제 매트선 위에 설정한 종료선을 아래로 통과하면 종료
+    static let motionPoseFinishAboveMatVideoHeightRatio: CGFloat = 0.04
 }

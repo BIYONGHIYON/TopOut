@@ -1,4 +1,4 @@
-# TopOut iOS v1.6 (build 13)
+# TopOut iOS v1.6 (build 14)
 
 > 등반 시작부터 완등 순간까지, 자동으로 찾아주는 클라이밍 촬영 앱
 
@@ -27,7 +27,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 
 - Bundle ID: `com.topout.cam`
 - Deployment Target: iOS 16.0
-- Marketing / Current Project Version: `1.6` / `13`
+- Marketing / Current Project Version: `1.6` / `14`
 - UI: Swift, UIKit
 - Camera / media: AVFoundation, AVAssetWriter, AVPlayer, PhotoKit
 - AI: MobileSAM Core ML, Apple Vision Human Body Pose
@@ -47,13 +47,13 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 ## 자동 구간 탐지
 
 - Motion: 160px luma, 현재 프레임과 직전 분석 프레임 비교, 기본 2fps
-- 초기 탐색: 편집된 매트선 위 화면 높이 40% 영역
+- 초기 탐색: 편집된 매트선 위 선택 영상 높이 40% 영역
 - Pose: `VNDetectHumanBodyPoseRequest`, 활성 촬영 영역의 긴 변 최대 384px
 - 8열 Motion 격자의 변화 영역과 가장 잘 맞는 Vision observation 한 명을 최초 대상으로 선택
 - 추적 중에는 직전 대상의 관절 경계·중심과 가장 자연스럽게 이어지는 한 명만 유지
 - 선택된 사람의 confidence `0.25` 이상 비얼굴 관절만 시작·종료·완등 판단에 사용
-- 시작선: x별 매트선보다 화면 높이 `6%` 위
-- 종료선: x별 매트선보다 화면 높이 `2%` 위
+- 시작선: x별 매트선보다 선택 영상 높이 `6%` 위
+- 종료선: x별 매트선보다 선택 영상 높이 `4%` 위
 - 시작 전·종료 후·Pose 유실 복구: 4fps
 - 활성 등반 Pose 유실 허용: 최대 6초
 - 정상 종료 후 Pose 2회 연속 미검출: 초기 Motion 탐색으로 복귀
@@ -112,9 +112,9 @@ xcodebuild -project TopOut.xcodeproj -scheme TopOut -configuration Debug \
 
 ## 문서
 
-- [v1.6 build 13 변경 사항](V1_6_BUILD_13_NOTES.md)
+- [v1.6 build 14 변경 사항](V1_6_BUILD_14_NOTES.md)
 - [전체 개발 이력과 기술 의사결정](../../DEVELOPMENT_HISTORY.md)
 - [MobileSAM 매트 경계](MOBILESAM_MAT_DETECTOR_NOTES.md)
 - [시작과 프레임 처리](STARTUP_OPTIMIZATION_NOTES.md)
 - [Pose 로직](POSE_LOGIC_ROLLBACK_NOTES.md)
-- 과거 릴리스 기록: [v1.6 build 12](V1_6_BUILD_12_NOTES.md), [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)
+- 과거 릴리스 기록: [v1.6 build 13](V1_6_BUILD_13_NOTES.md), [v1.6 build 12](V1_6_BUILD_12_NOTES.md), [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)

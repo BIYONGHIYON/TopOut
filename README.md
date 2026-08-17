@@ -27,7 +27,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 
 | 항목 | iOS | Android |
 |---|---|---|
-| 버전 | 1.6 (build 13) | 1.6 (versionCode 13) |
+| 버전 | 1.6 (build 14) | 1.6 (versionCode 14) |
 | 최소 OS | iOS 16.0 | Android 8.0 · API 26 |
 | 앱 ID | `com.topout.cam` | `com.topout.cam` |
 | UI | Swift · UIKit | Kotlin · Jetpack Compose · Material 3 |
@@ -59,6 +59,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 TopOut/
 ├── iOS/TopOut/
 │   ├── README.md
+│   ├── V1_6_BUILD_14_NOTES.md
 │   ├── V1_6_BUILD_13_NOTES.md
 │   ├── V1_6_BUILD_12_NOTES.md
 │   ├── V1_5_BUILD_11_NOTES.md
@@ -67,6 +68,7 @@ TopOut/
 │   └── TopOut/
 ├── Android/TopOut/
 │   ├── README.md
+│   ├── V1_6_BUILD_14_NOTES.md
 │   ├── V1_6_BUILD_13_NOTES.md
 │   ├── V1_6_BUILD_12_NOTES.md
 │   ├── V1_5_BUILD_11_NOTES.md
@@ -84,12 +86,12 @@ TopOut/
 - [iOS 현재 문서](iOS/TopOut/README.md)
 - [Android 현재 문서](Android/TopOut/README.md)
 - [개발 이력과 기술 의사결정](DEVELOPMENT_HISTORY.md)
-- [iOS v1.6 build 13 변경 사항](iOS/TopOut/V1_6_BUILD_13_NOTES.md)
-- [Android v1.6 build 13 변경 사항](Android/TopOut/V1_6_BUILD_13_NOTES.md)
+- [iOS v1.6 build 14 변경 사항](iOS/TopOut/V1_6_BUILD_14_NOTES.md)
+- [Android v1.6 build 14 변경 사항](Android/TopOut/V1_6_BUILD_14_NOTES.md)
 - [제품 포트폴리오](portfolio/index.html)
 - [TopOut 공개 저장소](https://github.com/BIYONGHIYON/TopOut-app)
 
-`V1_4_*`, `V1_5_*`, `V1_6_BUILD_12_NOTES.md`는 당시 동작을 보존하는 과거 릴리스 기록입니다. 현재 동작의 기준은 각 플랫폼 README와 v1.6 build 13 노트입니다.
+`V1_4_*`, `V1_5_*`, `V1_6_BUILD_12_NOTES.md`, `V1_6_BUILD_13_NOTES.md`는 당시 동작을 보존하는 과거 릴리스 기록입니다. 현재 동작의 기준은 각 플랫폼 README와 v1.6 build 14 노트입니다.
 
 로컬의 `TopOut-app/` 폴더는 별도 Git 이력을 가진 공개 저장소 checkout이므로 이 비공개 저장소의 `.gitignore`에서 제외합니다.
 
@@ -122,7 +124,7 @@ Motion만으로 시작·종료 판정
 → 5초 후 기본 경계와 수동 보정으로 복구
 ```
 
-세부 커밋 순서, 폐기된 모델과 UI 실험, v1.2부터 v1.6 build 13까지의 정착 과정은 [개발 이력과 기술 의사결정](DEVELOPMENT_HISTORY.md)에 기록합니다. 과거 문서가 현재 README와 충돌할 때는 실제 코드, 현재 플랫폼 README, 최신 빌드 노트 순으로 판단합니다.
+세부 커밋 순서, 폐기된 모델과 UI 실험, v1.2부터 v1.6 build 14까지의 정착 과정은 [개발 이력과 기술 의사결정](DEVELOPMENT_HISTORY.md)에 기록합니다. 과거 문서가 현재 README와 충돌할 때는 실제 코드, 현재 플랫폼 README, 최신 빌드 노트 순으로 판단합니다.
 
 ## 촬영 준비와 프레임 정합성
 
@@ -159,12 +161,12 @@ Motion만으로 시작·종료 판정
 - Positive X: `50%`
 - Positive Y: `70%`, `80%`, `90%`, `95%`
 - Negative point: `x = 50%`, `y = 28%`
-- 가로 점유 폭: 화면 너비 `40%` 이상
-- 마스크 최상단: 화면 높이 `50%` 이하 영역에서 시작
+- 가로 점유 폭: 선택 영상 너비 `40%` 이상
+- 마스크 최상단: 선택 영상 높이 `50%` 이하 영역에서 시작
 - 상단 경계 기울기: 최대 `15°`
 - 유효 후보 중 화면에서 가장 높은 상단 경계 선택
 - 경계를 `x = 6%`, `x = 94%`의 편집 가능한 두 점으로 변환
-- 후보가 없으면 `y = 75%` 수평 기본선 사용
+- 후보가 없으면 선택 영상의 `y = 75%` 수평 기본선 사용
 - Core ML 또는 ONNX Runtime 분석이 5초 안에 끝나지 않으면 로딩을 종료하고 `y = 75%` 기본선을 표시하며, 늦게 도착한 결과는 현재 선택 화면에 반영하지 않음
 - 별도의 10px 하향 보정 없음
 
@@ -178,7 +180,7 @@ Motion만으로 시작·종료 판정
 - 현재 분석 프레임과 직전 분석 프레임 비교
 - 기본 주기 `2fps`, 시작 전·종료 후·유실 복구 `4fps`
 - 픽셀 밝기 차이 기준 `20`
-- 매트선 위 화면 높이 최대 `40%`에서 초기 탐색
+- 매트선 위 선택 영상 높이 최대 `40%`에서 초기 탐색
 - 노이즈 보정 `2.5%`, 보정 후 활성 기준 `2%`
 - 활성 등반 중 Pose 유실 허용 `6초`
 - 정상 종료 후 Pose 2회 연속 미검출 시 초기 Motion 탐색 복귀
@@ -187,8 +189,8 @@ Motion만으로 시작·종료 판정
 
 | 판정 | iOS | Android |
 |---|---|---|
-| 시작선 | x별 매트선보다 화면 높이 6% 위 | x별 매트선보다 화면 높이 6% 위 |
-| 종료선 | x별 매트선보다 화면 높이 2% 위 | x별 매트선보다 화면 높이 2% 위 |
+| 시작선 | x별 매트선보다 선택 영상 높이 6% 위 | x별 매트선보다 선택 영상 높이 6% 위 |
+| 종료선 | x별 매트선보다 선택 영상 높이 4% 위 | x별 매트선보다 선택 영상 높이 4% 위 |
 | Pose 입력 | active crop, 긴 변 최대 384px | Motion/Pose ROI, 256×256 RGB |
 | 사람 검증 | Motion 격자와 직전 추적 대상에 가장 잘 이어지는 Vision observation 1명 | SinglePose의 4개 신체 그룹 중 3개 이상 |
 
@@ -265,7 +267,7 @@ Android 저장 영상 보기에는 앞/뒤 5초 이동, 드래그 즉시 화면�
 3. MobileSAM Core ML 모델과 `PrivacyInfo.xcprivacy`의 Target Membership을 확인합니다.
 4. 실제 iPhone에서 카메라·마이크·사진 보관함 권한과 Archive를 검증합니다.
 
-프로젝트 설정: iOS 16.0, Swift 5, Marketing Version 1.6, Current Project Version 13.
+프로젝트 설정: iOS 16.0, Swift 5, Marketing Version 1.6, Current Project Version 14.
 
 ### Android
 
@@ -289,7 +291,7 @@ cd Android/TopOut
 - [ ] 선택 화면이 라이브 프리뷰를 유지하고 분석 정지 화면을 노출하지 않는가
 - [ ] 탑홀드를 다시 누를 때마다 현재 프레임으로 마스크가 갱신되는가
 - [ ] 수평·경사 매트에서 x별 경계 보간이 올바른가
-- [ ] iOS·Android 공통 6% 시작선과 2% 종료선이 적용되는가
+- [ ] 9:16·4:5·3:4·1:1에서 iOS·Android 공통 선택 영상 높이 6% 시작선과 4% 종료선이 적용되는가
 - [ ] Android Pose gate가 4/4·3/4는 통과하고 2/4는 거부하는가
 - [ ] 활성 등반 중 6초 복구와 정상 종료 후 2회 미검출 복귀가 동작하는가
 - [ ] 유효한 연속 등반이 가까워도 서로 다른 구간으로 남는가

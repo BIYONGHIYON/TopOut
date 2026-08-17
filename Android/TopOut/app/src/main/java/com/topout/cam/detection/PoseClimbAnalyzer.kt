@@ -482,16 +482,16 @@ class PoseClimbAnalyzer(
         return if (finishBase > start) ClipRange(start, finishBase) else null
     }
 
-    /** Start requires a 6%-of-frame clearance above the edited mat line. */
+    /** Points and the mat line share the selected CameraX ViewPort's normalized video space. */
     private fun isAboveStartBoundary(point: Offset): Boolean {
-        val startBoundary = (lineY(point.x) - TopOutConfig.PoseStartAboveMatMarginRatio)
+        val startBoundary = (lineY(point.x) - TopOutConfig.PoseStartAboveMatVideoHeightRatio)
             .coerceAtLeast(0f)
         return point.y <= startBoundary
     }
 
-    /** Finish uses a boundary 2% of frame height above the edited mat line. */
+    /** The finish line sits above the mat line by a fraction of the selected video's height. */
     private fun isAtOrAboveFinishBoundary(point: Offset): Boolean {
-        val finishBoundary = (lineY(point.x) - TopOutConfig.PoseFinishAboveMatMarginRatio)
+        val finishBoundary = (lineY(point.x) - TopOutConfig.PoseFinishAboveMatVideoHeightRatio)
             .coerceAtLeast(0f)
         return point.y <= finishBoundary
     }

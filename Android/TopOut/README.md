@@ -1,4 +1,4 @@
-# TopOut Android v1.6 (build 13)
+# TopOut Android v1.6 (build 14)
 
 > 등반 시작부터 완등 순간까지, 자동으로 찾아주는 클라이밍 촬영 앱
 
@@ -28,7 +28,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 - Application ID: `com.topout.cam`
 - Minimum SDK: `26` (Android 8.0)
 - Compile / Target SDK: `36`
-- Version name / code: `1.6` / `13`
+- Version name / code: `1.6` / `14`
 - UI: Kotlin, Jetpack Compose, Material 3
 - Camera / media: CameraX 1.6.1, Media3 1.10.1
 - AI: MobileSAM ONNX Runtime 1.27.0, MoveNet Thunder FP16 LiteRT 1.4.1
@@ -57,12 +57,12 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 ## 자동 구간 탐지
 
 - Motion: 160px luma, 현재 프레임과 직전 분석 프레임 비교, 기본 2fps
-- 초기 탐색: 편집된 매트선 위 화면 높이 40% 영역
+- 초기 탐색: 편집된 매트선 위 선택 영상 높이 40% 영역
 - Pose 입력: 변화 픽셀로 만든 화면 면적 약 25%의 정사각형 ROI를 YUV에서 256×256 RGB로 직접 샘플링
 - Pose: MoveNet SinglePose Thunder FP16, confidence `0.25`
 - Human gate: 어깨·골반·팔꿈치·무릎 4개 그룹 중 3개 이상 충족
-- 시작선: x별 매트선보다 화면 높이 `6%` 위(iOS와 동일)
-- 종료선: x별 매트선보다 화면 높이 `2%` 위
+- 시작선: x별 매트선보다 선택 영상 높이 `6%` 위
+- 종료선: x별 매트선보다 선택 영상 높이 `4%` 위
 - 시작 전·종료 후·Pose 유실 복구: 4fps
 - 활성 등반 Pose 유실 허용: 최대 6초
 - 정상 종료 후 Pose 2회 연속 미검출: 초기 Motion 탐색으로 복귀
@@ -135,10 +135,10 @@ app/build/generated/moveNetPoseAssets/models/movenet-thunder-fp16.tflite
 
 ## 문서
 
-- [v1.6 build 13 변경 사항](V1_6_BUILD_13_NOTES.md)
+- [v1.6 build 14 변경 사항](V1_6_BUILD_14_NOTES.md)
 - [전체 개발 이력과 기술 의사결정](../../DEVELOPMENT_HISTORY.md)
 - [Android 호환성](ANDROID_COMPATIBILITY_NOTES.md)
 - [기기 호환성 수정](DEVICE_COMPATIBILITY_FIX_NOTES.md)
 - [MobileSAM ONNX 배치와 진단](docs/ONNX_INTEGRATION.md)
 - [iOS UI/UX 대응표](docs/UI_PARITY.md)
-- 과거 릴리스 기록: [v1.6 build 12](V1_6_BUILD_12_NOTES.md), [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)
+- 과거 릴리스 기록: [v1.6 build 13](V1_6_BUILD_13_NOTES.md), [v1.6 build 12](V1_6_BUILD_12_NOTES.md), [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)

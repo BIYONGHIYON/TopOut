@@ -1,5 +1,7 @@
 # TopOut iOS v1.6 (build 13)
 
+> 과거 릴리스 기록입니다. 현재 릴리스는 [v1.6 build 14](V1_6_BUILD_14_NOTES.md)이며 현재 동작은 [iOS README](README.md)를 기준으로 합니다.
+
 ## Multi-person pose targeting
 
 - 매트선 인근의 밝기 변화를 8열 저해상도 격자로 나눠 실제 움직임 위치를 보존합니다.

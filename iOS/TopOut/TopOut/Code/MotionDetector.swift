@@ -416,7 +416,7 @@ final class MotionDetector {
 
         switch state {
         case .tracking:
-            // CV 이후 첫 pose에서 이미 가장 낮은 점이 매트선보다 화면 높이의 6% 위라면 즉시 start로 잡습니다.
+            // CV 이후 첫 pose에서 이미 가장 낮은 점이 선택 영상 높이의 6% 시작선 위라면 즉시 start로 잡습니다.
             // 아니면 시작 경계의 아래→위 crossing 순간을 start로 잡습니다.
             let firstValidPose = lastLowestAboveMat == nil
             let crossedUp = lowestAboveStartBoundary && (lastLowestAboveMat != true)
@@ -435,7 +435,7 @@ final class MotionDetector {
             updateFinishReferenceMoment(snapshot: snapshot, pts: pts)
             lastLowestAboveMat = lowestAboveStartBoundary
 
-            // 종료선은 실제 매트 경계보다 화면 높이의 2% 위에 둡니다.
+            // 종료선은 실제 매트 경계보다 선택 영상 높이의 4% 위에 둡니다.
             // 가장 낮은 pose 점이 이 종료선 아래로 내려온 순간 등반 구간을 닫습니다.
             guard isBelowFinishBoundary(lowestPoint) else { return }
 
@@ -882,9 +882,10 @@ final class MotionDetector {
     }
 
     private func isAboveStartBoundary(_ point: CGPoint) -> Bool {
+        // Both values are normalized inside activeCropRect, the selected output video's crop.
         let startBoundary = Swift.max(
             0.0,
-            lineY(at: point.x) - Cfg.motionPoseStartAboveMatOffsetRatio
+            lineY(at: point.x) - Cfg.motionPoseStartAboveMatVideoHeightRatio
         )
         return point.y <= startBoundary
     }
@@ -892,7 +893,7 @@ final class MotionDetector {
     private func isBelowFinishBoundary(_ point: CGPoint) -> Bool {
         let finishBoundary = Swift.max(
             0.0,
-            lineY(at: point.x) - Cfg.motionPoseFinishAboveMatOffsetRatio
+            lineY(at: point.x) - Cfg.motionPoseFinishAboveMatVideoHeightRatio
         )
         return point.y > finishBoundary
     }

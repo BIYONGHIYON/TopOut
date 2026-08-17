@@ -1,0 +1,16 @@
+# TopOut iOS v1.6 (build 14)
+
+## Climb boundary tuning
+
+- 시작선은 사용자가 보정한 x별 매트 경계보다 선택 영상 높이의 `6%` 위에 둡니다.
+- 종료선은 같은 매트 경계보다 선택 영상 높이의 `4%` 위에 두고, 가장 낮은 신뢰 관절이 그 아래로 돌아오면 구간을 닫습니다.
+- 9:16, 4:5, 3:4, 1:1과 가로 촬영 모두 UI 화면 전체가 아니라 AVFoundation 분석과 저장이 공유하는 선택 영상 crop 높이를 기준으로 계산합니다.
+
+## Release identity
+
+- Marketing Version: `1.6`
+- Current Project Version: `14`
+
+## Validation scope
+
+- Swift 타입 검사까지만 확인하며 앱 빌드와 실기기 동작 검증은 별도로 진행합니다.

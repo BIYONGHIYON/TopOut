@@ -10,13 +10,13 @@
 
 | 항목 | iOS | Android |
 |---|---|---|
-| 현재 릴리스 | 1.6 build 13 | 1.6 versionCode 13 |
+| 현재 릴리스 | 1.6 build 14 | 1.6 versionCode 14 |
 | 카메라 | AVFoundation | CameraX 1.6.1 · Camera2 |
 | Pose | Apple Vision Human Body Pose | MoveNet SinglePose Thunder FP16 · LiteRT 1.4.1 |
 | 매트·탑홀드 | MobileSAM Core ML | MobileSAM ONNX Runtime 1.27.0 |
 | 영상 | AVAssetWriter · AVPlayer · PhotoKit | CameraX Recorder · Media3 · MediaStore |
 | 분석 주기 | 상태별 2fps·4fps | 상태별 2fps·4fps |
-| 시작·종료 기준 | 매트선 위 6% · 2% | 매트선 위 6% · 2% |
+| 시작·종료 기준 | 선택 영상 높이 기준 매트선 위 6% · 4% | 선택 영상 높이 기준 매트선 위 6% · 4% |
 
 ## 전체 발전 흐름
 
@@ -30,6 +30,7 @@ iOS 카메라·MobileSAM 프로토타입
 → iOS·Android 정식 출시
 → 카메라·저장·저사양 기기·편집 UX 안정화
 → 다중 인물 환경과 플랫폼 판정 기준 통일
+→ 선택 영상 비율을 기준으로 시작·종료 여백 재조정
 ```
 
 ## 1. Git 이전 iOS 프로토타입
@@ -246,6 +247,13 @@ API 성공과 사용자가 실제로 확인할 수 있는 결과 사이의 차�
 - 추적 이후에는 직전 관절 경계와 중심의 연속성으로 같은 사람을 유지
 - 주변 인물의 관절이 주 등반자의 시작·종료·완등 판단에 섞이는 문제 완화
 
+### build 14 · 선택 영상 높이 기준의 시작·종료선
+
+- iOS와 Android 시작선을 x별 매트선보다 선택 영상 높이의 6% 위로 유지
+- 두 플랫폼 종료선을 같은 기준의 4% 위로 조정
+- 9:16·4:5·3:4·1:1과 세로·가로 촬영에서 UI 화면 전체가 아니라 실제 분석·저장 crop 높이를 공통 기준으로 명시
+- 버전 1.6을 유지하고 iOS Current Project Version과 Android versionCode를 14로 증가
+
 ## 9. 현재 공통 분석 상태
 
 ```text
@@ -317,6 +325,6 @@ POST-FINISH TRACKING
 - [루트 README](README.md)
 - [iOS 현재 구현](iOS/TopOut/README.md)
 - [Android 현재 구현](Android/TopOut/README.md)
-- [iOS v1.6 build 13](iOS/TopOut/V1_6_BUILD_13_NOTES.md)
-- [Android v1.6 build 13](Android/TopOut/V1_6_BUILD_13_NOTES.md)
+- [iOS v1.6 build 14](iOS/TopOut/V1_6_BUILD_14_NOTES.md)
+- [Android v1.6 build 14](Android/TopOut/V1_6_BUILD_14_NOTES.md)
 - [제품 포트폴리오](portfolio/index.html)
