@@ -319,6 +319,9 @@ object TopOutConfig {
     const val PoseStartAboveMatVideoHeightRatio = 0.06f
     /** Finish after the joint drops below a boundary 4% above the line in selected-video space. */
     const val PoseFinishAboveMatVideoHeightRatio = 0.04f
+    /** Side-edge poses need enough knee/ankle evidence before they may open a new climb. */
+    const val PoseStartSideEdgeMarginRatio = 0.05f
+    const val PoseStartMinimumLowerBodyPointsAtEdge = 2
 
     /** Initial motion search and active climbing remain at 2 fps. */
     const val MotionFrameWidth = 160

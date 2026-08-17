@@ -12,5 +12,6 @@
 - Reliable pose requires confidence >= 0.25 and at least three of the four shoulder, hip, elbow, and knee groups. Each group passes when either its left or right joint is reliable.
 - Start: lowest reliable joint is at least 6% of selected-video height above the x-interpolated mat line.
 - Finish: lowest reliable joint moves below the boundary 4% of selected-video height above the x-interpolated mat line.
+- Start-only edge guard: a pose touching the left or right 5% of selected-video space needs at least two reliable knee/ankle points. Tracking and finish behavior are unchanged.
 - During a climb, pose recovery can continue for up to 6 seconds.
 - After a normal finish, the first pose miss switches to motion recovery; the second consecutive miss resets to initial motion search. Visible post-climb tracking has no time limit; only two consecutive pose misses reset to initial motion search.

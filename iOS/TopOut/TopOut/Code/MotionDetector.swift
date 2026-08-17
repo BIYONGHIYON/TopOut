@@ -70,12 +70,14 @@ final class MotionDetector {
         let reliablePoints: [CGPoint]
         let bounds: CGRect
         let center: CGPoint
+        let lowerBodyPointCount: Int
     }
 
     private struct PoseSnapshot {
         let observationCount: Int
         let selectedObservationIndex: Int?
         let reliablePoints: [CGPoint]
+        let startEligible: Bool
 
         var hasPose: Bool { selectedObservationIndex != nil && !reliablePoints.isEmpty }
     }
@@ -416,6 +418,10 @@ final class MotionDetector {
 
         switch state {
         case .tracking:
+            // A side-edge torso fragment must not become a new climb just because its remaining
+            // joints all sit above the start line. Central poses and edge poses with sufficient
+            // knee/ankle evidence keep the existing start behavior.
+            guard snapshot.startEligible else { return }
             // CV 이후 첫 pose에서 이미 가장 낮은 점이 선택 영상 높이의 6% 시작선 위라면 즉시 start로 잡습니다.
             // 아니면 시작 경계의 아래→위 crossing 순간을 start로 잡습니다.
             let firstValidPose = lastLowestAboveMat == nil
@@ -627,10 +633,12 @@ final class MotionDetector {
         // 격자 또는 직전 선택 대상과 가장 잘 이어지는 한 사람만 상태 판단에 사용합니다.
         for (index, observation) in observations.enumerated() {
             var points: [CGPoint] = []
+            var lowerBodyPointCount = 0
             points.reserveCapacity(reliablePoseJoints.count)
             for joint in reliablePoseJoints {
                 if let point = recognizedPoint(joint, in: observation, coordinateSpace: coordinateSpace) {
                     points.append(point)
+                    if isStartLowerBodyJoint(joint) { lowerBodyPointCount += 1 }
                 }
             }
             let reliablePoints = uniquePoints(points)
@@ -640,7 +648,8 @@ final class MotionDetector {
                     observationIndex: index,
                     reliablePoints: reliablePoints,
                     bounds: bounds,
-                    center: CGPoint(x: bounds.midX, y: bounds.midY)
+                    center: CGPoint(x: bounds.midX, y: bounds.midY),
+                    lowerBodyPointCount: lowerBodyPointCount
                 )
             )
         }
@@ -649,7 +658,8 @@ final class MotionDetector {
             return PoseSnapshot(
                 observationCount: observations.count,
                 selectedObservationIndex: nil,
-                reliablePoints: []
+                reliablePoints: [],
+                startEligible: false
             )
         }
         lastSelectedPoseCenter = selected.center
@@ -659,8 +669,20 @@ final class MotionDetector {
         return PoseSnapshot(
             observationCount: observations.count,
             selectedObservationIndex: selected.observationIndex,
-            reliablePoints: selected.reliablePoints
+            reliablePoints: selected.reliablePoints,
+            startEligible: isStartEligibleCandidate(selected)
         )
+    }
+
+    private func isStartEligibleCandidate(_ candidate: PoseCandidate) -> Bool {
+        let margin = clamp(Cfg.motionPoseStartSideEdgeMarginRatio, min: 0, max: 0.25)
+        let touchesSideEdge = candidate.bounds.minX <= margin || candidate.bounds.maxX >= 1 - margin
+        return !touchesSideEdge ||
+            candidate.lowerBodyPointCount >= Cfg.motionPoseStartMinimumLowerBodyPointsAtEdge
+    }
+
+    private func isStartLowerBodyJoint(_ joint: VNHumanBodyPoseObservation.JointName) -> Bool {
+        joint == .leftKnee || joint == .rightKnee || joint == .leftAnkle || joint == .rightAnkle
     }
 
     private func selectPoseCandidate(_ candidates: [PoseCandidate]) -> PoseCandidate? {
@@ -831,7 +853,8 @@ final class MotionDetector {
         PoseSnapshot(
             observationCount: 0,
             selectedObservationIndex: nil,
-            reliablePoints: []
+            reliablePoints: [],
+            startEligible: false
         )
     }
 

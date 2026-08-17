@@ -57,7 +57,10 @@ class PoseClimbAnalyzer(
         val sourceWidth: Int,
         val sourceHeight: Int
     )
-    private data class ReliablePose(val points: List<Offset>)
+    private data class ReliablePose(
+        val points: List<Offset>,
+        val startEligible: Boolean
+    )
     private data class FrameCaptureRequest(
         val maxLongSide: Int,
         val ready: CompletableDeferred<Unit>,
@@ -335,6 +338,7 @@ class PoseClimbAnalyzer(
         var hipCount = 0
         var elbowCount = 0
         var kneeCount = 0
+        var lowerBodyPointCount = 0
         for (type in motionLandmarkTypes) {
             val keypoint = pose.keypoints[type] ?: continue
             if (keypoint.confidence < TopOutConfig.PoseConfidence) continue
@@ -347,7 +351,11 @@ class PoseClimbAnalyzer(
                 PoseLandmark.LEFT_SHOULDER, PoseLandmark.RIGHT_SHOULDER -> shoulderCount++
                 PoseLandmark.LEFT_HIP, PoseLandmark.RIGHT_HIP -> hipCount++
                 PoseLandmark.LEFT_ELBOW, PoseLandmark.RIGHT_ELBOW -> elbowCount++
-                PoseLandmark.LEFT_KNEE, PoseLandmark.RIGHT_KNEE -> kneeCount++
+                PoseLandmark.LEFT_KNEE, PoseLandmark.RIGHT_KNEE -> {
+                    kneeCount++
+                    lowerBodyPointCount++
+                }
+                PoseLandmark.LEFT_ANKLE, PoseLandmark.RIGHT_ANKLE -> lowerBodyPointCount++
             }
         }
         if (!PoseHumanGate.isValid(
@@ -357,7 +365,16 @@ class PoseClimbAnalyzer(
                 kneeCount = kneeCount
             )
         ) return null
-        return ReliablePose(points)
+        return ReliablePose(
+            points = points,
+            startEligible = PoseStartRule.isStartEligible(
+                minX = points.minOf { it.x },
+                maxX = points.maxOf { it.x },
+                lowerBodyPointCount = lowerBodyPointCount,
+                sideEdgeMargin = TopOutConfig.PoseStartSideEdgeMarginRatio,
+                minimumLowerBodyPointsAtEdge = TopOutConfig.PoseStartMinimumLowerBodyPointsAtEdge
+            )
+        )
     }
 
     /** A reliable human pose always returns the detector to joint-derived tracking. */
@@ -381,9 +398,11 @@ class PoseClimbAnalyzer(
         val lowestAtOrAboveFinishBoundary = isAtOrAboveFinishBoundary(lowest)
 
         if (!isClimbing) {
+            if (!reliable.startEligible) return
             val shouldStart = PoseStartRule.shouldStart(
                 lowestAboveMat = lowestAboveStartBoundary,
-                previousLowestAboveMat = lastLowestAboveMat
+                previousLowestAboveMat = lastLowestAboveMat,
+                startEligible = reliable.startEligible
             )
             lastLowestAboveMat = lowestAboveStartBoundary
             if (!shouldStart) return
