@@ -301,6 +301,10 @@ final class HoldVC: UIViewController {
     var recState: RecordingState = .idle
     var clipTimes = ClipTimes()
     var recordingCountdownWorkItems: [DispatchWorkItem] = []
+    /// Invalidates delayed countdown callbacks from an older recording request.
+    var recordingRequestGeneration = 0
+    /// Invalidates asynchronous Ready completions when capture leaves the foreground flow.
+    var readyFlowRequestID = 0
     var recordingElapsedTimer: Timer?
     var recordingElapsedStartDate: Date?
     var recordingStatusMessage: String?

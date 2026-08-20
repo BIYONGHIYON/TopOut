@@ -5,8 +5,10 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
-import android.os.Build
 import android.media.MediaRecorder
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Range
 import android.util.Rational
 import android.util.Size
@@ -65,6 +67,7 @@ class CameraEngine(private val context: Context) {
     )
 
     private val mainExecutor = ContextCompat.getMainExecutor(context)
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var provider: ProcessCameraProvider? = null
     private var camera: Camera? = null
@@ -73,6 +76,12 @@ class CameraEngine(private val context: Context) {
     private var analysisUseCase: ImageAnalysis? = null
     private var videoCapture: VideoCapture<Recorder>? = null
     private var activeRecording: Recording? = null
+    private var recordingStartGeneration = 0L
+    private var recordingStartPending = false
+    private var recordingStartTimeout: Runnable? = null
+    private var activeRecordingGeneration: Long? = null
+    private var startedRecordingGeneration: Long? = null
+    private var discardedRecordingGeneration: Long? = null
     private var activeOutputFile: File? = null
     private var requestedStopNotice: RecordingStopNotice? = null
     private var requestedZoom = TopOutConfig.MinZoom
@@ -157,6 +166,7 @@ class CameraEngine(private val context: Context) {
     private val unsupportedExact60Sessions = mutableSetOf<ExactFpsSessionKey>()
 
     var onRecordingStarted: (() -> Unit)? = null
+    var onRecordingStartCancelled: (() -> Unit)? = null
     var onRecordingProgress: ((Double) -> Unit)? = null
     var onRecordingFinalized: ((Result<FinalizedRecording>) -> Unit)? = null
     var onRecordingAnalysisUnavailable: (() -> Unit)? = null
@@ -438,6 +448,7 @@ class CameraEngine(private val context: Context) {
         analyzer: ImageAnalysis.Analyzer,
         requiresAnalysis: Boolean
     ): CameraCapabilities {
+        cancelRecordingStartForSessionChange()
         cancelLensSwitch()
         val cameraProvider = provider ?: awaitCameraProvider().also { provider = it }
         cameraProvider.unbindAll()
@@ -643,6 +654,7 @@ class CameraEngine(private val context: Context) {
         // Invalidate delayed rebinds and remove their PreviewView observer before unbinding emits
         // another stream-state event. This also releases the transition overlay on rotation/exit.
         cancelLensSwitch()
+        cancelRecordingStartForSessionChange()
         activeRecording?.stop()
         activeRecording = null
         provider?.unbindAll()
@@ -712,8 +724,7 @@ class CameraEngine(private val context: Context) {
         if (future == null) {
             onApplied?.invoke()
         } else if (onApplied != null) {
-            // Start the recorder only after CameraControl confirms the current preview zoom, so
-            // the first encoded frame uses the same zoom already shown to the user.
+            // Continue camera-bind readiness only after CameraControl confirms the preview zoom.
             future.addListener({ onApplied() }, mainExecutor)
         }
     }
@@ -1401,52 +1412,163 @@ class CameraEngine(private val context: Context) {
     }
 
     fun startRecording(includeAudio: Boolean = true) {
-        if (activeRecording != null) return
+        if (activeRecording != null) {
+            // A canceled pre-Start recorder remains owned by CameraX until its Finalize event.
+            // Reject a retry explicitly so the new countdown cannot wait forever on this handle.
+            if (discardedRecordingGeneration == activeRecordingGeneration) {
+                onRecordingStartCancelled?.invoke()
+            }
+            return
+        }
+        if (recordingStartPending) return
         val capture = videoCapture ?: run {
             onRecordingFinalized?.invoke(
                 Result.failure(IllegalStateException("카메라 녹화 세션이 준비되지 않았습니다."))
             )
             return
         }
-        // The same bound session has remained visible since preview. Re-submit only the current
-        // zoom and start encoding after CameraControl acknowledges it; no use case is rebound here.
-        applyRequestedZoomToBoundCamera {
-            beginRecording(capture, includeAudio)
+        val startGeneration = ++recordingStartGeneration
+        recordingStartPending = true
+        fun beginOnce() {
+            if (!recordingStartPending || startGeneration != recordingStartGeneration) return
+            recordingStartTimeout?.let(mainHandler::removeCallbacks)
+            recordingStartTimeout = null
+            recordingStartPending = false
+            // A lifecycle/configuration rebind replaces VideoCapture while the zoom future may
+            // still complete. Never let that stale callback start a recorder on the old session.
+            if (videoCapture !== capture || activeRecording != null) {
+                onRecordingFinalized?.invoke(
+                    Result.failure(IllegalStateException("녹화 시작 전에 카메라 세션이 변경되었습니다."))
+                )
+                return
+            }
+            beginRecording(capture, includeAudio, startGeneration)
+        }
+
+        // Some OEM CameraControl futures neither succeed nor fail after a session disturbance.
+        // Start once with the already-bound session after the same 1.5-second limit used by bind.
+        val timeout = Runnable { beginOnce() }
+        recordingStartTimeout = timeout
+        mainHandler.postDelayed(timeout, ZOOM_APPLY_TIMEOUT_MS)
+
+        // The same bound session has remained visible since preview. Prefer its confirmed zoom;
+        // a failed future is not confirmation and therefore falls through to the timed fallback.
+        runCatching {
+            lastSubmittedZoom = Float.NaN
+            submitZoomImmediately()
+        }.onSuccess { future ->
+            if (future == null) {
+                beginOnce()
+            } else {
+                future.addListener(
+                    {
+                        if (runCatching { future.get() }.isSuccess) beginOnce()
+                    },
+                    mainExecutor
+                )
+            }
         }
     }
 
-    private fun beginRecording(capture: VideoCapture<Recorder>, includeAudio: Boolean) {
+    /** Invalidates an asynchronous zoom-confirmed start without disturbing the bound session. */
+    private fun cancelPendingRecordingStart() {
+        recordingStartTimeout?.let(mainHandler::removeCallbacks)
+        recordingStartTimeout = null
+        recordingStartGeneration++
+        recordingStartPending = false
+    }
+
+    /** Cancels either a pending zoom gate or a recorder created before its Start event arrived. */
+    fun cancelRecordingStart() {
+        cancelPendingRecordingStart()
+        val generation = activeRecordingGeneration ?: return
+        val recording = activeRecording ?: return
+        discardedRecordingGeneration = generation
+        recording.stop()
+    }
+
+    /**
+     * A surface/lifecycle rebind can invalidate a start without passing through the ViewModel's
+     * stop action. Cancel only the pre-Start portion here and notify the UI; an established
+     * recording keeps its normal CameraX Finalize path when the session is unbound.
+     */
+    private fun cancelRecordingStartForSessionChange() {
+        val hadPendingZoomGate = recordingStartPending
+        cancelPendingRecordingStart()
+        val generation = activeRecordingGeneration
+        val hasPreparedRecorder = generation != null &&
+            startedRecordingGeneration != generation &&
+            activeRecording != null
+        if (hasPreparedRecorder) {
+            discardedRecordingGeneration = generation
+            activeRecording?.stop()
+        }
+        if (hadPendingZoomGate || hasPreparedRecorder) onRecordingStartCancelled?.invoke()
+    }
+
+    private fun acceptsRecordingEvents(startGeneration: Long): Boolean =
+        activeRecordingGeneration == startGeneration &&
+            discardedRecordingGeneration != startGeneration &&
+            recordingStartGeneration == startGeneration
+
+    private fun beginRecording(
+        capture: VideoCapture<Recorder>,
+        includeAudio: Boolean,
+        startGeneration: Long
+    ) {
+        if (activeRecording != null || videoCapture !== capture) return
         requestedStopNotice = null
         val output = File(context.cacheDir, "topout_raw_${System.currentTimeMillis()}.mp4")
         activeOutputFile = output
-        val basePending = capture.output.prepareRecording(context, FileOutputOptions.Builder(output).build())
-        val pending = if (
-            includeAudio &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        ) {
-            runCatching { basePending.withAudioEnabled() }.getOrElse { basePending }
-        } else {
-            basePending
-        }
+        activeRecordingGeneration = startGeneration
         activeRecording = runCatching {
+            val basePending = capture.output.prepareRecording(
+                context,
+                FileOutputOptions.Builder(output).build()
+            )
+            val pending = if (
+                includeAudio &&
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.RECORD_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED
+            ) {
+                runCatching { basePending.withAudioEnabled() }.getOrElse { basePending }
+            } else {
+                basePending
+            }
             pending.start(mainExecutor) { event ->
                 when (event) {
-                    is VideoRecordEvent.Start -> onRecordingStarted?.invoke()
-                    is VideoRecordEvent.Status -> onRecordingProgress?.invoke(
-                        event.recordingStats.recordedDurationNanos / 1_000_000_000.0
-                    )
-                    is VideoRecordEvent.Finalize -> handleFinalize(event)
+                    is VideoRecordEvent.Start -> {
+                        if (acceptsRecordingEvents(startGeneration)) {
+                            startedRecordingGeneration = startGeneration
+                            onRecordingStarted?.invoke()
+                        } else if (activeRecordingGeneration == startGeneration) {
+                            activeRecording?.stop()
+                        }
+                    }
+                    is VideoRecordEvent.Status -> {
+                        if (acceptsRecordingEvents(startGeneration)) {
+                            onRecordingProgress?.invoke(
+                                event.recordingStats.recordedDurationNanos / 1_000_000_000.0
+                            )
+                        }
+                    }
+                    is VideoRecordEvent.Finalize -> handleFinalize(event, startGeneration, output)
                 }
             }
         }.getOrElse { error ->
             output.delete()
             activeOutputFile = null
+            activeRecordingGeneration = null
+            startedRecordingGeneration = null
             onRecordingFinalized?.invoke(Result.failure(error))
             null
         }
     }
 
     fun stopRecording(notice: RecordingStopNotice? = null) {
+        cancelPendingRecordingStart()
         if (notice != null && requestedStopNotice == null) requestedStopNotice = notice
         // No more automatic-detection frames are needed once the user taps stop. Detaching the
         // analyzer releases CPU pressure while Recorder flushes the encoder and closes the MP4.
@@ -1454,12 +1576,27 @@ class CameraEngine(private val context: Context) {
         activeRecording?.stop()
     }
 
-    private fun handleFinalize(event: VideoRecordEvent.Finalize) {
-        val file = activeOutputFile
-        activeRecording = null
-        activeOutputFile = null
-        val requestedNotice = requestedStopNotice
-        requestedStopNotice = null
+    private fun handleFinalize(
+        event: VideoRecordEvent.Finalize,
+        startGeneration: Long,
+        output: File
+    ) {
+        val ownsActiveRecording = activeRecordingGeneration == startGeneration
+        if (ownsActiveRecording) {
+            activeRecording = null
+            activeRecordingGeneration = null
+            if (startedRecordingGeneration == startGeneration) startedRecordingGeneration = null
+            if (activeOutputFile === output) activeOutputFile = null
+        }
+        if (discardedRecordingGeneration == startGeneration) {
+            discardedRecordingGeneration = null
+            output.delete()
+            if (ownsActiveRecording) requestedStopNotice = null
+            return
+        }
+        val file = output
+        val requestedNotice = if (ownsActiveRecording) requestedStopNotice else null
+        if (ownsActiveRecording) requestedStopNotice = null
 
         if (event.hasError()) {
             val recoverable = event.error in setOf(
@@ -1473,7 +1610,7 @@ class CameraEngine(private val context: Context) {
                 VideoRecordEvent.Finalize.ERROR_SOURCE_INACTIVE -> RecordingStopNotice.CaptureInterruption
                 else -> RecordingStopNotice.SessionError
             }
-            val partialFile = file?.takeIf {
+            val partialFile = file.takeIf {
                 recoverable &&
                     it.exists() &&
                     it.length() > 0L &&
@@ -1490,7 +1627,7 @@ class CameraEngine(private val context: Context) {
                     )
                 )
             } else {
-                file?.delete()
+                file.delete()
                 onRecordingFinalized?.invoke(
                     Result.failure(event.cause ?: IllegalStateException("녹화를 완료하지 못했습니다. 오류 코드: ${event.error}"))
                 )
@@ -1498,7 +1635,7 @@ class CameraEngine(private val context: Context) {
             return
         }
 
-        if (file == null || !file.exists() || file.length() == 0L) {
+        if (!file.exists() || file.length() == 0L) {
             onRecordingFinalized?.invoke(Result.failure(IllegalStateException("녹화 파일이 생성되지 않았습니다.")))
             return
         }

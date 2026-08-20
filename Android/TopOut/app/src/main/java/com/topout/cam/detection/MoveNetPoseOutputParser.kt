@@ -2,9 +2,7 @@ package com.topout.cam.detection
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
+import com.topout.cam.model.TopOutConfig
 
 internal data class MoveNetCropRegion(
     val xMin: Float,
@@ -15,13 +13,6 @@ internal data class MoveNetCropRegion(
 
 /** Converts MoveNet's [1, 1, 17, 3] (y, x, score) output back to source-image space. */
 internal object MoveNetPoseOutputParser {
-    private val torsoLandmarks = intArrayOf(
-        PoseLandmark.LEFT_SHOULDER,
-        PoseLandmark.RIGHT_SHOULDER,
-        PoseLandmark.LEFT_HIP,
-        PoseLandmark.RIGHT_HIP
-    )
-
     fun initialCropRegion(imageWidth: Int, imageHeight: Int): MoveNetCropRegion {
         require(imageWidth > 0 && imageHeight > 0)
         return if (imageWidth > imageHeight) {
@@ -54,28 +45,40 @@ internal object MoveNetPoseOutputParser {
 
         val keypoints = LinkedHashMap<Int, PoseKeypoint>(PoseLandmark.COUNT)
         var scoreSum = 0f
+        var reliablePointCount = 0
+        var reliableMinX = 1f
+        var reliableMinY = 1f
+        var reliableMaxX = 0f
+        var reliableMaxY = 0f
         for (index in 0 until PoseLandmark.COUNT) {
             val offset = index * 3
             val modelY = values[offset]
             val modelX = values[offset + 1]
             val score = values[offset + 2].coerceIn(0f, 1f)
+            val position = Offset(
+                x = (cropRegion.xMin + modelX * cropRegion.width).coerceIn(0f, 1f),
+                y = (cropRegion.yMin + modelY * cropRegion.height).coerceIn(0f, 1f)
+            )
             keypoints[index] = PoseKeypoint(
-                position = Offset(
-                    x = (cropRegion.xMin + modelX * cropRegion.width).coerceIn(0f, 1f),
-                    y = (cropRegion.yMin + modelY * cropRegion.height).coerceIn(0f, 1f)
-                ),
+                position = position,
                 confidence = score
             )
             scoreSum += score
+            if (score >= minimumBoxScore) {
+                reliablePointCount++
+                reliableMinX = minOf(reliableMinX, position.x)
+                reliableMinY = minOf(reliableMinY, position.y)
+                reliableMaxX = maxOf(reliableMaxX, position.x)
+                reliableMaxY = maxOf(reliableMaxY, position.y)
+            }
         }
 
-        val reliable = keypoints.values.filter { it.confidence >= minimumBoxScore }
-        if (reliable.isEmpty()) return null
+        if (reliablePointCount == 0) return null
         val margin = 0.025f
-        val left = (reliable.minOf { it.position.x } - margin).coerceIn(0f, 1f)
-        val top = (reliable.minOf { it.position.y } - margin).coerceIn(0f, 1f)
-        val right = (reliable.maxOf { it.position.x } + margin).coerceIn(left, 1f)
-        val bottom = (reliable.maxOf { it.position.y } + margin).coerceIn(top, 1f)
+        val left = (reliableMinX - margin).coerceIn(0f, 1f)
+        val top = (reliableMinY - margin).coerceIn(0f, 1f)
+        val right = (reliableMaxX + margin).coerceIn(left, 1f)
+        val bottom = (reliableMaxY + margin).coerceIn(top, 1f)
         return PoseResult(
             boundingBox = Rect(left, top, right, bottom),
             confidence = scoreSum / PoseLandmark.COUNT,
@@ -83,7 +86,7 @@ internal object MoveNetPoseOutputParser {
         )
     }
 
-    /** Implements the smart-crop policy from TensorFlow's official MoveNet video tutorial. */
+    /** Builds the next 1.5x joint-bounds crop once enough torso evidence is visible. */
     fun nextCropRegion(
         pose: PoseResult,
         imageWidth: Int,
@@ -95,46 +98,29 @@ internal object MoveNetPoseOutputParser {
             return initialCropRegion(imageWidth, imageHeight)
         }
 
-        val leftHip = pose.keypoints.getValue(PoseLandmark.LEFT_HIP).position
-        val rightHip = pose.keypoints.getValue(PoseLandmark.RIGHT_HIP).position
-        val centerX = (leftHip.x + rightHip.x) * 0.5f * imageWidth
-        val centerY = (leftHip.y + rightHip.y) * 0.5f * imageHeight
-
-        var maxTorsoX = 0f
-        var maxTorsoY = 0f
-        torsoLandmarks.forEach { index ->
-            val point = pose.keypoints.getValue(index).position
-            maxTorsoX = max(maxTorsoX, abs(centerX - point.x * imageWidth))
-            maxTorsoY = max(maxTorsoY, abs(centerY - point.y * imageHeight))
+        var reliablePointCount = 0
+        var reliableMinX = 1f
+        var reliableMinY = 1f
+        var reliableMaxX = 0f
+        var reliableMaxY = 0f
+        for (keypoint in pose.keypoints.values) {
+            if (keypoint.confidence < minimumKeypointScore) continue
+            reliablePointCount++
+            reliableMinX = minOf(reliableMinX, keypoint.position.x)
+            reliableMinY = minOf(reliableMinY, keypoint.position.y)
+            reliableMaxX = maxOf(reliableMaxX, keypoint.position.x)
+            reliableMaxY = maxOf(reliableMaxY, keypoint.position.y)
         }
-
-        var maxBodyX = 0f
-        var maxBodyY = 0f
-        pose.keypoints.values.forEach { keypoint ->
-            if (keypoint.confidence < minimumKeypointScore) return@forEach
-            maxBodyX = max(maxBodyX, abs(centerX - keypoint.position.x * imageWidth))
-            maxBodyY = max(maxBodyY, abs(centerY - keypoint.position.y * imageHeight))
-        }
-
-        var cropHalf = max(
-            max(maxTorsoX * 1.9f, maxTorsoY * 1.9f),
-            max(maxBodyX * 1.2f, maxBodyY * 1.2f)
-        )
-        cropHalf = min(
-            cropHalf,
-            max(max(centerX, imageWidth - centerX), max(centerY, imageHeight - centerY))
-        )
-        val cropLength = cropHalf * 2f
-        if (!cropLength.isFinite() || cropLength <= 1f || cropLength > max(imageWidth, imageHeight)) {
-            return initialCropRegion(imageWidth, imageHeight)
-        }
-
-        return MoveNetCropRegion(
-            xMin = (centerX - cropHalf) / imageWidth,
-            yMin = (centerY - cropHalf) / imageHeight,
-            width = cropLength / imageWidth,
-            height = cropLength / imageHeight
-        )
+        if (reliablePointCount == 0) return initialCropRegion(imageWidth, imageHeight)
+        return MoveNetCropPlanner.squareAroundBounds(
+            left = reliableMinX * imageWidth,
+            top = reliableMinY * imageHeight,
+            right = reliableMaxX * imageWidth,
+            bottom = reliableMaxY * imageHeight,
+            imageWidth = imageWidth,
+            imageHeight = imageHeight,
+            expansionScale = TopOutConfig.MoveNetTrackingCropExpansionScale
+        ) ?: initialCropRegion(imageWidth, imageHeight)
     }
 
     private fun torsoVisible(pose: PoseResult, minimumScore: Float): Boolean {

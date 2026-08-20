@@ -584,6 +584,22 @@ extension HoldVC {
         }
     }
 
+    func refreshReadyButtonAfterSessionRecovery() {
+        // startCamera() is queued on sessionQ first. Checking on the same queue distinguishes an
+        // already-running session from a fresh restart whose six-frame readiness gate must run.
+        sessionQ.async { [weak self] in
+            guard let self else { return }
+            let isRunning = self.session.isRunning
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      self.mode == .camera,
+                      self.recState == .idle,
+                      !self.isBusy else { return }
+                self.readyBtn.isEnabled = isRunning && self.isCameraStreamReady
+            }
+        }
+    }
+
     func updateCameraOrientationIfPossible() {
         let orientation = lockedVideoOrientation ?? currentVideoOrientation()
         setVideoOrientation(orientation, on: previewLayer?.connection)
@@ -683,11 +699,14 @@ extension HoldVC {
         isBusy = true
         setLoading(true)
         readyBtn.isEnabled = false
+        readyFlowRequestID &+= 1
+        let requestID = readyFlowRequestID
 
         // 준비완료 화면과 동일한 비율/줌의 비디오 프레임을 그대로 사용합니다.
         // PhotoOutput은 비디오 프리뷰와 FOV가 달라질 수 있어 선택/마스크 좌표 오차를 만들 수 있습니다.
         applySelectedCaptureFormatIfPossible { [weak self] in
             guard let self else { return }
+            guard self.isReadyFlowValid(requestID) else { return }
             self.lockCurrentCameraOrientation()
 
             // 탑홀드 마스킹이 꺼져 있고 자동 구간 탐지도 꺼져 있으면
@@ -714,6 +733,7 @@ extension HoldVC {
                 camera: self.activeCameraDevice
             ) { [weak self] image in
                 guard let self else { return }
+                guard self.isReadyFlowValid(requestID) else { return }
                 guard let image else {
                     self.unlockCameraOrientation()
                     self.isBusy = false
@@ -729,6 +749,23 @@ extension HoldVC {
             }
         }
     }
+
+    func cancelPendingReadyFlow() {
+        readyFlowRequestID &+= 1
+        guard mode == .camera, recState == .idle, isBusy else { return }
+        isBusy = false
+        setLoading(false)
+        unlockCameraOrientation()
+    }
+
+    private func isReadyFlowValid(_ requestID: Int) -> Bool {
+        requestID == readyFlowRequestID &&
+            UIApplication.shared.applicationState == .active &&
+            view.window != nil &&
+            mode == .camera &&
+            recState == .idle &&
+            isBusy
+    }
 }
 
 
@@ -738,7 +775,7 @@ final class VideoFrameSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private let stateQ = DispatchQueue(label: "topout.video.frame.sink.state")
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
     private var isRecording = false
-    private var isMotionDetectionEnabled = true
+    private var isMotionDetectionEnabled = false
     private var videoFramesSinceReset = 0
     private var didNotifyStreamReady = false
     private var streamReadinessHandler: (() -> Void)?
@@ -783,7 +820,11 @@ final class VideoFrameSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
     func setRecording(_ recording: Bool) {
         stateQ.async { [weak self] in
-            self?.isRecording = recording
+            guard let self else { return }
+            self.isRecording = recording
+            if !recording {
+                self.isMotionDetectionEnabled = false
+            }
         }
     }
 
@@ -862,6 +903,14 @@ final class VideoFrameSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
         let mediaType = CMFormatDescriptionGetMediaType(formatDescription)
 
+        if mediaType == kCMMediaType_Audio {
+            let shouldRecord = stateQ.sync { isRecording }
+            guard shouldRecord else { return }
+            recorder.appendAudio(sampleBuffer)
+            return
+        }
+        guard mediaType == kCMMediaType_Video else { return }
+
         let state = stateQ.sync { () -> (
             recording: Bool,
             motionDetection: Bool,
@@ -871,38 +920,36 @@ final class VideoFrameSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             var capture: FrameCaptureRequest?
             var readyHandler: (() -> Void)?
 
-            if mediaType == kCMMediaType_Video {
-                videoFramesSinceReset += 1
-                if !didNotifyStreamReady, videoFramesSinceReset >= 6 {
-                    didNotifyStreamReady = true
-                    readyHandler = streamReadinessHandler
+            videoFramesSinceReset += 1
+            if !didNotifyStreamReady, videoFramesSinceReset >= 6 {
+                didNotifyStreamReady = true
+                readyHandler = streamReadinessHandler
+            }
+
+            if var request = pendingFrameCapture {
+                request.observedFrames += 1
+                let shouldCapture: Bool
+                switch request.policy {
+                case .nextFrame:
+                    shouldCapture = true
+                case let .stableCamera(camera):
+                    let elapsed = ProcessInfo.processInfo.systemUptime - request.requestedAt
+                    let cameraIsSettled = camera.map {
+                        !$0.isAdjustingExposure && !$0.isAdjustingFocus && !$0.isAdjustingWhiteBalance
+                    } ?? true
+                    request.consecutiveStableFrames = cameraIsSettled
+                        ? request.consecutiveStableFrames + 1
+                        : 0
+                    let hasFreshFrames = request.observedFrames >= 4 && elapsed >= 0.20
+                    let hasStableCamera = request.consecutiveStableFrames >= 2
+                    shouldCapture = (hasFreshFrames && hasStableCamera) || elapsed >= 0.90
                 }
 
-                if var request = pendingFrameCapture {
-                    request.observedFrames += 1
-                    let shouldCapture: Bool
-                    switch request.policy {
-                    case .nextFrame:
-                        shouldCapture = true
-                    case let .stableCamera(camera):
-                        let elapsed = ProcessInfo.processInfo.systemUptime - request.requestedAt
-                        let cameraIsSettled = camera.map {
-                            !$0.isAdjustingExposure && !$0.isAdjustingFocus && !$0.isAdjustingWhiteBalance
-                        } ?? true
-                        request.consecutiveStableFrames = cameraIsSettled
-                            ? request.consecutiveStableFrames + 1
-                            : 0
-                        let hasFreshFrames = request.observedFrames >= 4 && elapsed >= 0.20
-                        let hasStableCamera = request.consecutiveStableFrames >= 2
-                        shouldCapture = (hasFreshFrames && hasStableCamera) || elapsed >= 0.90
-                    }
-
-                    if shouldCapture {
-                        capture = request
-                        pendingFrameCapture = nil
-                    } else {
-                        pendingFrameCapture = request
-                    }
+                if shouldCapture {
+                    capture = request
+                    pendingFrameCapture = nil
+                } else {
+                    pendingFrameCapture = request
                 }
             }
             return (isRecording, isMotionDetectionEnabled, capture, readyHandler)
@@ -912,12 +959,6 @@ final class VideoFrameSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
         if let readyHandler = state.streamReadyHandler {
             DispatchQueue.main.async(execute: readyHandler)
-        }
-
-        if mediaType == kCMMediaType_Audio {
-            guard shouldRecord else { return }
-            recorder.appendAudio(sampleBuffer)
-            return
         }
 
         if let request = state.capture,

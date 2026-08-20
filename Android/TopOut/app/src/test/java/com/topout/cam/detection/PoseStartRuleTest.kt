@@ -46,13 +46,17 @@ class PoseStartRuleTest {
     }
 
     @Test
-    fun sideEdgePoseWithInsufficientLowerBodyEvidenceCannotStart() {
+    fun missingTorsoWithInsufficientLowerBodyEvidenceCannotStart() {
         val eligible = PoseStartRule.isStartEligible(
-            minX = 0.02f,
-            maxX = 0.24f,
+            shoulderPointCount = 0,
+            hipPointCount = 0,
+            torsoMinX = 1f,
+            torsoMaxX = 0f,
             lowerBodyPointCount = 1,
-            sideEdgeMargin = 0.05f,
-            minimumLowerBodyPointsAtEdge = 2
+            anklePointCount = 0,
+            sideEdgeMargin = 0.10f,
+            minimumLowerBodyPointsWhenGuarded = 3,
+            minimumAnklePointsWhenGuarded = 1
         )
 
         assertFalse(
@@ -65,23 +69,120 @@ class PoseStartRuleTest {
     }
 
     @Test
-    fun centeredOrLowerBodyCompletePoseRemainsEligible() {
-        assertTrue(
+    fun centeredShouldersWithoutHipNeedLowerBodyEvidence() {
+        assertFalse(
             PoseStartRule.isStartEligible(
-                minX = 0.20f,
-                maxX = 0.45f,
-                lowerBodyPointCount = 0,
-                sideEdgeMargin = 0.05f,
-                minimumLowerBodyPointsAtEdge = 2
+                shoulderPointCount = 2,
+                hipPointCount = 0,
+                torsoMinX = 0.30f,
+                torsoMaxX = 0.60f,
+                lowerBodyPointCount = 1,
+                anklePointCount = 0,
+                sideEdgeMargin = 0.10f,
+                minimumLowerBodyPointsWhenGuarded = 3,
+                minimumAnklePointsWhenGuarded = 1
             )
         )
+    }
+
+    @Test
+    fun centeredHipsWithoutShoulderNeedLowerBodyEvidence() {
+        assertFalse(
+            PoseStartRule.isStartEligible(
+                shoulderPointCount = 0,
+                hipPointCount = 2,
+                torsoMinX = 0.30f,
+                torsoMaxX = 0.60f,
+                lowerBodyPointCount = 1,
+                anklePointCount = 0,
+                sideEdgeMargin = 0.10f,
+                minimumLowerBodyPointsWhenGuarded = 3,
+                minimumAnklePointsWhenGuarded = 1
+            )
+        )
+    }
+
+    @Test
+    fun torsoJointAtSideEdgeNeedsLowerBodyEvidence() {
+        assertFalse(
+            PoseStartRule.isStartEligible(
+                shoulderPointCount = 2,
+                hipPointCount = 1,
+                torsoMinX = 0.08f,
+                torsoMaxX = 0.35f,
+                lowerBodyPointCount = 1,
+                anklePointCount = 0,
+                sideEdgeMargin = 0.10f,
+                minimumLowerBodyPointsWhenGuarded = 3,
+                minimumAnklePointsWhenGuarded = 1
+            )
+        )
+    }
+
+    @Test
+    fun centeredTorsoIgnoresLimbsAtSideEdge() {
         assertTrue(
             PoseStartRule.isStartEligible(
-                minX = 0.01f,
-                maxX = 0.30f,
+                shoulderPointCount = 1,
+                hipPointCount = 1,
+                torsoMinX = 0.25f,
+                torsoMaxX = 0.65f,
+                lowerBodyPointCount = 1,
+                anklePointCount = 0,
+                sideEdgeMargin = 0.10f,
+                minimumLowerBodyPointsWhenGuarded = 3,
+                minimumAnklePointsWhenGuarded = 1
+            )
+        )
+    }
+
+    @Test
+    fun guardedTorsoWithThreeLowerBodyPointsButNoAnkleCannotStart() {
+        assertFalse(
+            PoseStartRule.isStartEligible(
+                shoulderPointCount = 1,
+                hipPointCount = 1,
+                torsoMinX = 0.05f,
+                torsoMaxX = 0.28f,
+                lowerBodyPointCount = 3,
+                anklePointCount = 0,
+                sideEdgeMargin = 0.10f,
+                minimumLowerBodyPointsWhenGuarded = 3,
+                minimumAnklePointsWhenGuarded = 1
+            )
+        )
+    }
+
+    @Test
+    fun guardedTorsoWithAnkleButOnlyTwoLowerBodyPointsCannotStart() {
+        assertFalse(
+            PoseStartRule.isStartEligible(
+                shoulderPointCount = 1,
+                hipPointCount = 1,
+                torsoMinX = 0.05f,
+                torsoMaxX = 0.28f,
                 lowerBodyPointCount = 2,
-                sideEdgeMargin = 0.05f,
-                minimumLowerBodyPointsAtEdge = 2
+                anklePointCount = 1,
+                sideEdgeMargin = 0.10f,
+                minimumLowerBodyPointsWhenGuarded = 3,
+                minimumAnklePointsWhenGuarded = 1
+            )
+        )
+    }
+
+    @Test
+    fun guardedTorsoWithThreeLowerBodyPointsIncludingAnkleRemainsEligible() {
+        assertTrue(
+            PoseStartRule.isStartEligible(
+                shoulderPointCount = 1,
+                hipPointCount = 1,
+                torsoMinX = 0.05f,
+                torsoMaxX = 0.28f,
+                lowerBodyPointCount = 3,
+                anklePointCount = 1,
+                sideEdgeMargin = 0.10f,
+                minimumLowerBodyPointsWhenGuarded = 3,
+                minimumAnklePointsWhenGuarded = 1
             )
         )
     }

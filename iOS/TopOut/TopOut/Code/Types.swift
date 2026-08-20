@@ -225,7 +225,5 @@ struct ReviewClipRange {
 
 struct ClipTimes {
     var startPTS: CMTime?
-    var endPTS: CMTime?
     var completedRanges: [ClipRange] = []
-
 }

@@ -93,6 +93,11 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             }
             startStorageMonitoring()
         }
+        cameraEngine.onRecordingStartCancelled = {
+            // Camera surface/lifecycle recreation can invalidate the zoom gate without a user tap.
+            // Reuse the STARTING cancellation path so the UI never remains stuck in its countdown.
+            if (_uiState.value.recordingState == RecordingState.STARTING) stopRecording()
+        }
         cameraEngine.onRecordingProgress = { seconds ->
             _uiState.update { it.copy(recordingElapsedSeconds = seconds) }
         }
@@ -364,7 +369,6 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             _uiState.update { state ->
                 state.copy(
                     stage = CameraStage.SELECT,
-                    frozenFrame = null,
                     matLine = emptyList(),
                     holdMask = null,
                     isBusy = false,
@@ -472,7 +476,6 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { state ->
             state.copy(
                 stage = CameraStage.SELECT,
-                frozenFrame = null,
                 matLine = matLine,
                 holdMask = null,
                 isBusy = false,
@@ -594,7 +597,6 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { state ->
             state.copy(
                 stage = CameraStage.PREVIEW,
-                frozenFrame = null,
                 holdMask = null,
                 matLine = emptyList(),
                 isBusy = false,
@@ -653,7 +655,6 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             it.copy(
                 stage = CameraStage.RECORDING,
                 recordingState = RecordingState.STARTING,
-                frozenFrame = null,
                 recordingElapsedSeconds = 0.0,
                 recordingCountdown = TopOutConfig.RecordingCountdownSeconds.toInt(),
                 detectedRanges = emptyList(),
@@ -674,13 +675,17 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 delay(1_000)
             }
-            cameraEngine.startRecording(includeAudio = true)
+            // Cancellation and lifecycle callbacks run on the same main dispatcher, but keep an
+            // explicit state gate so a stale countdown can never reopen a canceled recording.
+            if (_uiState.value.recordingState == RecordingState.STARTING) {
+                cameraEngine.startRecording(includeAudio = true)
+            }
         }
     }
 
     private fun startRecordingWithoutSelection() {
         _uiState.update {
-            it.copy(frozenFrame = null, holdMask = null, matLine = emptyList())
+            it.copy(holdMask = null, matLine = emptyList())
         }
         startRecording()
     }
@@ -692,6 +697,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         storageJob?.cancel()
 
         if (recordingState == RecordingState.STARTING) {
+            cameraEngine.cancelRecordingStart()
             poseAnalyzer.stop()
             cameraEngine.setPreviewRenderingEnabled(true)
             _uiState.update { state ->

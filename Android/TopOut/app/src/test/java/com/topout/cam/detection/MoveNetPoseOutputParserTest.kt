@@ -35,7 +35,7 @@ class MoveNetPoseOutputParserTest {
     }
 
     @Test
-    fun nextCropRegionFocusesOnVisibleTorso() {
+    fun nextCropRegionExpandsReliableJointBoundsByOneAndAHalf() {
         val values = FloatArray(PoseLandmark.COUNT * 3)
         for (index in 0 until PoseLandmark.COUNT) {
             values[index * 3] = 0.5f
@@ -46,21 +46,24 @@ class MoveNetPoseOutputParserTest {
             values[index * 3] = y
             values[index * 3 + 1] = x
         }
-        set(PoseLandmark.LEFT_SHOULDER, 0.32f, 0.40f)
-        set(PoseLandmark.RIGHT_SHOULDER, 0.32f, 0.60f)
+        set(PoseLandmark.LEFT_SHOULDER, 0.35f, 0.40f)
+        set(PoseLandmark.RIGHT_SHOULDER, 0.35f, 0.60f)
         set(PoseLandmark.LEFT_HIP, 0.55f, 0.43f)
         set(PoseLandmark.RIGHT_HIP, 0.55f, 0.57f)
-        set(PoseLandmark.LEFT_WRIST, 0.18f, 0.30f)
-        set(PoseLandmark.RIGHT_WRIST, 0.22f, 0.70f)
-        set(PoseLandmark.LEFT_ANKLE, 0.86f, 0.42f)
-        set(PoseLandmark.RIGHT_ANKLE, 0.84f, 0.60f)
+        set(PoseLandmark.LEFT_WRIST, 0.30f, 0.30f)
+        set(PoseLandmark.RIGHT_WRIST, 0.32f, 0.70f)
+        set(PoseLandmark.LEFT_ANKLE, 0.75f, 0.42f)
+        set(PoseLandmark.RIGHT_ANKLE, 0.73f, 0.60f)
         val pose = MoveNetPoseOutputParser.parse(
             values,
             MoveNetCropRegion(0f, 0f, 1f, 1f)
         )!!
-        val crop = MoveNetPoseOutputParser.nextCropRegion(pose, 1080, 1920)
-        assertTrue(crop.width > 0f)
-        assertTrue(crop.height > 0f)
-        assertTrue(crop.width < 1920f / 1080f)
+        val crop = MoveNetPoseOutputParser.nextCropRegion(pose, 1000, 1000)
+        assertEquals(0.675f, crop.width, 0.0001f)
+        assertEquals(0.675f, crop.height, 0.0001f)
+        assertTrue(crop.xMin <= 0.30f)
+        assertTrue(crop.yMin <= 0.30f)
+        assertTrue(crop.xMin + crop.width >= 0.70f)
+        assertTrue(crop.yMin + crop.height >= 0.75f)
     }
 }

@@ -86,7 +86,8 @@ enum Cfg {
     static let motionPoseStartAboveMatVideoHeightRatio: CGFloat = 0.06
     // 종료 판정: 선택 영상 높이의 4%만큼 실제 매트선 위에 설정한 종료선을 아래로 통과하면 종료
     static let motionPoseFinishAboveMatVideoHeightRatio: CGFloat = 0.04
-    // 좌우 5% 가장자리에서는 무릎·발목 관절이 2개 이상 잡혀야 새 등반 시작 후보로 사용
-    static let motionPoseStartSideEdgeMarginRatio: CGFloat = 0.05
-    static let motionPoseStartMinimumLowerBodyPointsAtEdge = 2
+    // 어깨나 골반 그룹이 없거나 몸통 관절이 좌우 10%에 있으면 발목 1개를 포함한 하체 관절 3개를 요구
+    static let motionPoseStartTorsoSideEdgeMarginRatio: CGFloat = 0.10
+    static let motionPoseStartMinimumLowerBodyPointsWhenGuarded = 3
+    static let motionPoseStartMinimumAnklePointsWhenGuarded = 1
 }

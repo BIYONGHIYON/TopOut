@@ -3,15 +3,25 @@ package com.topout.cam.detection
 /** Pure start rule shared by the analyzer and unit tests. */
 internal object PoseStartRule {
     fun isStartEligible(
-        minX: Float,
-        maxX: Float,
+        shoulderPointCount: Int,
+        hipPointCount: Int,
+        torsoMinX: Float,
+        torsoMaxX: Float,
         lowerBodyPointCount: Int,
+        anklePointCount: Int,
         sideEdgeMargin: Float,
-        minimumLowerBodyPointsAtEdge: Int
+        minimumLowerBodyPointsWhenGuarded: Int,
+        minimumAnklePointsWhenGuarded: Int
     ): Boolean {
         val margin = sideEdgeMargin.coerceIn(0f, 0.25f)
-        val touchesSideEdge = minX <= margin || maxX >= 1f - margin
-        return !touchesSideEdge || lowerBodyPointCount >= minimumLowerBodyPointsAtEdge
+        val hasShoulderAndHip = shoulderPointCount > 0 && hipPointCount > 0
+        val needsLowerBodyGuard = !hasShoulderAndHip ||
+            torsoMinX <= margin ||
+            torsoMaxX >= 1f - margin
+        val hasRequiredLowerBody =
+            lowerBodyPointCount >= minimumLowerBodyPointsWhenGuarded &&
+                anklePointCount >= minimumAnklePointsWhenGuarded
+        return !needsLowerBodyGuard || hasRequiredLowerBody
     }
 
     /** The first reliable pose above the mat starts immediately; later starts require below-to-above. */

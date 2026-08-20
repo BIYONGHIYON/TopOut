@@ -10,7 +10,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import com.topout.cam.model.ClipRange
 import com.topout.cam.model.TopOutConfig
-import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
@@ -37,10 +36,10 @@ enum class MotionFinishReference {
  *
  * Initial MOTION search and active climbing run at 2 fps. Once a reliable pose is acquired but
  * the climb has not started, analysis runs at 4 fps; pose-loss recovery also runs at 4 fps. MOTION
- * compares the current analysis frame with the immediately previous frame, builds a quarter-frame
- * square ROI around changed pixels, and runs MoveNet inside that ROI. POSE follows the reliable
- * person's joints. A single unreliable pose switches back to MOTION; a reliable pose switches back
- * to POSE.
+ * compares the current analysis frame with the immediately previous frame, builds a square ROI at
+ * 1.5x the selected motion bounds, and runs MoveNet inside it. POSE follows a square ROI at 1.5x
+ * the reliable joint bounds. A single unreliable pose switches back to MOTION; a reliable pose
+ * switches back to POSE.
  */
 class PoseClimbAnalyzer(
     context: Context,
@@ -60,6 +59,12 @@ class PoseClimbAnalyzer(
     private data class ReliablePose(
         val points: List<Offset>,
         val startEligible: Boolean
+    )
+    private data class MotionSearchBounds(
+        val width: Int,
+        val height: Int,
+        val topByColumn: IntArray,
+        val bottomExclusiveByColumn: IntArray
     )
     private data class FrameCaptureRequest(
         val maxLongSide: Int,
@@ -81,6 +86,7 @@ class PoseClimbAnalyzer(
 
     @Volatile private var active = false
     @Volatile private var trackingMode = TrackingMode.NONE
+    private var stateGeneration = 0L
     private var isClimbing = false
     private var hasInferenceCrop = false
     private var hasSeenReliablePose = false
@@ -94,6 +100,7 @@ class PoseClimbAnalyzer(
     private var recordingStartPending = false
     private var lastAnalyzedTimestampNanos: Long? = null
     private var previousMotionFrame: SmallFrame? = null
+    private var cachedMotionSearchBounds: MotionSearchBounds? = null
 
     private var lastPoseSeenSeconds: Double? = null
     private var lastLowestAboveMat: Boolean? = null
@@ -148,6 +155,7 @@ class PoseClimbAnalyzer(
         finishReference: MotionFinishReference
     ) {
         this.matLine = matLine.sortedBy { it.x }
+        cachedMotionSearchBounds = null
         this.topBox = topBox?.clamped01() ?: Rect.Zero
         this.finishReference = finishReference
         resetStateLocked(keepConfiguration = true)
@@ -197,31 +205,42 @@ class PoseClimbAnalyzer(
             }
         }
 
-        val enabled = active && matLine.isNotEmpty() &&
-            (finishReference == MotionFinishReference.HIGHEST_POSE_POINT || topBox != Rect.Zero)
-        if (!enabled) {
-            image.close()
-            return
-        }
-
         val timestamp = image.imageInfo.timestamp
-        synchronized(this) {
+        val frameStateGeneration = synchronized(this) {
+            val enabled = active && matLine.isNotEmpty() &&
+                (finishReference == MotionFinishReference.HIGHEST_POSE_POINT || topBox != Rect.Zero)
+            if (!enabled) return@synchronized null
             if (analysisOriginTimestampNanos == null) analysisOriginTimestampNanos = timestamp
             if (recordingStartPending) {
                 recordingOriginTimestampNanos = timestamp
                 recordingStartPending = false
             }
+            stateGeneration
+        } ?: run {
+            image.close()
+            return
         }
 
-        val previousTimestamp = lastAnalyzedTimestampNanos
-        if (previousTimestamp != null) {
-            val elapsed = (timestamp - previousTimestamp) / 1_000_000_000.0
-            if (elapsed >= 0.0 && elapsed < currentAnalysisIntervalSeconds()) {
-                image.close()
-                return
+        val shouldAnalyze = synchronized(this) {
+            if (!active || stateGeneration != frameStateGeneration) {
+                false
+            } else {
+                val previousTimestamp = lastAnalyzedTimestampNanos
+                val elapsed = previousTimestamp?.let {
+                    (timestamp - it) / 1_000_000_000.0
+                }
+                if (elapsed != null && elapsed >= 0.0 && elapsed < currentAnalysisIntervalSeconds()) {
+                    false
+                } else {
+                    lastAnalyzedTimestampNanos = timestamp
+                    true
+                }
             }
         }
-        lastAnalyzedTimestampNanos = timestamp
+        if (!shouldAnalyze) {
+            image.close()
+            return
+        }
 
         val geometry = geometryForFrame()
         val currentFrame = makeSmallFrame(image, geometry)
@@ -238,14 +257,22 @@ class PoseClimbAnalyzer(
                 geometry = geometry,
                 currentFrame = currentFrame,
                 previousFrame = previousFrame,
-                seconds = seconds
+                seconds = seconds,
+                expectedStateGeneration = frameStateGeneration
             )
         } catch (_: Exception) {
-            handlePoseMiss(seconds, currentFrame, previousFrame)
+            handlePoseMiss(
+                seconds = seconds,
+                currentFrame = currentFrame,
+                previousFrame = previousFrame,
+                expectedStateGeneration = frameStateGeneration
+            )
         } finally {
             synchronized(this) {
-                previousMotionFrame = currentFrame
-                nextLumaScratchIndex = (nextLumaScratchIndex + 1) % lumaScratchFrames.size
+                if (stateGeneration == frameStateGeneration) {
+                    previousMotionFrame = currentFrame
+                    nextLumaScratchIndex = (nextLumaScratchIndex + 1) % lumaScratchFrames.size
+                }
             }
             image.close()
         }
@@ -256,18 +283,33 @@ class PoseClimbAnalyzer(
         geometry: FrameGeometry,
         currentFrame: SmallFrame,
         previousFrame: SmallFrame?,
-        seconds: Double
+        seconds: Double,
+        expectedStateGeneration: Long
     ) {
-        val mode = synchronized(this) { trackingMode }
+        val mode = synchronized(this) {
+            if (!active || stateGeneration != expectedStateGeneration) {
+                TrackingMode.NONE
+            } else {
+                trackingMode
+            }
+        }
         if (mode == TrackingMode.NONE) return
 
+        var preparedMotionCrop: MoveNetCropRegion? = null
         if (mode == TrackingMode.MOTION) {
-            val crop = motionCropForCurrentContext(currentFrame, previousFrame)
-            if (crop != null) {
-                poseDetector.primeTrackingCrop(crop)
-                synchronized(this) { hasInferenceCrop = true }
+            preparedMotionCrop = motionCropForCurrentContext(currentFrame, previousFrame)
+            val canInfer = synchronized(this) {
+                if (!active || stateGeneration != expectedStateGeneration || trackingMode != mode) {
+                    false
+                } else {
+                    if (preparedMotionCrop != null) {
+                        poseDetector.primeTrackingCrop(preparedMotionCrop)
+                        hasInferenceCrop = true
+                    }
+                    hasInferenceCrop
+                }
             }
-            if (!synchronized(this) { hasInferenceCrop }) return
+            if (!canInfer) return
         }
 
         val pose = poseDetector.detectTrackedYuv(
@@ -283,16 +325,33 @@ class PoseClimbAnalyzer(
             updateTrackingRegion = mode == TrackingMode.POSE,
             retainCropOnMissing = true
         )
+        val stateIsCurrent = synchronized(this) {
+            active && stateGeneration == expectedStateGeneration && trackingMode == mode
+        }
+        if (!stateIsCurrent) {
+            // The detector call may have finished after stop/configure reset its crop. Analyzer
+            // callbacks are serialized, so clear that stale result before the next generation.
+            poseDetector.resetTracking()
+            return
+        }
         val reliable = pose?.let(::reliablePose)
         if (pose == null || reliable == null) {
-            handlePoseMiss(seconds, currentFrame, previousFrame)
+            handlePoseMiss(
+                seconds = seconds,
+                currentFrame = currentFrame,
+                previousFrame = previousFrame,
+                expectedStateGeneration = expectedStateGeneration,
+                preparedMotionCrop = preparedMotionCrop,
+                motionCropAlreadyEvaluated = mode == TrackingMode.MOTION
+            )
         } else {
             handleReliablePose(
                 pose = pose,
                 reliable = reliable,
                 seconds = seconds,
                 imageWidth = geometry.sourceWidth,
-                imageHeight = geometry.sourceHeight
+                imageHeight = geometry.sourceHeight,
+                expectedStateGeneration = expectedStateGeneration
             )
         }
     }
@@ -310,17 +369,17 @@ class PoseClimbAnalyzer(
         }
         val restrictToMatSearch = synchronized(this) { !hasSeenReliablePose }
         if (restrictToMatSearch) {
-            val rawSignal = cvSearchRegionDiffScore(current, previous)
-            val adjustedSignal = max(0f, rawSignal - TopOutConfig.MotionBaseDiffMargin)
-            if (adjustedSignal < TopOutConfig.MotionCVRegionActiveThreshold) return null
             val bounds = motionSearchBounds(current.width, current.height)
             return MotionSeedCropFinder.find(
                 width = current.width,
                 height = current.height,
                 currentLuma = current.luma,
                 previousLuma = previous.luma,
-                activeTopByColumn = bounds.first,
-                activeBottomExclusiveByColumn = bounds.second
+                minimumOverallChangedRatio = (
+                    TopOutConfig.MotionBaseDiffMargin + TopOutConfig.MotionCVRegionActiveThreshold
+                ).coerceIn(0f, 1f),
+                activeTopByColumn = bounds.topByColumn,
+                activeBottomExclusiveByColumn = bounds.bottomExclusiveByColumn
             )
         }
         return MotionSeedCropFinder.find(
@@ -338,7 +397,10 @@ class PoseClimbAnalyzer(
         var hipCount = 0
         var elbowCount = 0
         var kneeCount = 0
+        var torsoMinX = 1f
+        var torsoMaxX = 0f
         var lowerBodyPointCount = 0
+        var anklePointCount = 0
         for (type in motionLandmarkTypes) {
             val keypoint = pose.keypoints[type] ?: continue
             if (keypoint.confidence < TopOutConfig.PoseConfidence) continue
@@ -347,6 +409,14 @@ class PoseClimbAnalyzer(
                 keypoint.position.y.coerceIn(0f, 1f)
             )
             points += point
+            if (type == PoseLandmark.LEFT_SHOULDER ||
+                type == PoseLandmark.RIGHT_SHOULDER ||
+                type == PoseLandmark.LEFT_HIP ||
+                type == PoseLandmark.RIGHT_HIP
+            ) {
+                torsoMinX = minOf(torsoMinX, point.x)
+                torsoMaxX = maxOf(torsoMaxX, point.x)
+            }
             when (type) {
                 PoseLandmark.LEFT_SHOULDER, PoseLandmark.RIGHT_SHOULDER -> shoulderCount++
                 PoseLandmark.LEFT_HIP, PoseLandmark.RIGHT_HIP -> hipCount++
@@ -355,7 +425,10 @@ class PoseClimbAnalyzer(
                     kneeCount++
                     lowerBodyPointCount++
                 }
-                PoseLandmark.LEFT_ANKLE, PoseLandmark.RIGHT_ANKLE -> lowerBodyPointCount++
+                PoseLandmark.LEFT_ANKLE, PoseLandmark.RIGHT_ANKLE -> {
+                    lowerBodyPointCount++
+                    anklePointCount++
+                }
             }
         }
         if (!PoseHumanGate.isValid(
@@ -368,11 +441,15 @@ class PoseClimbAnalyzer(
         return ReliablePose(
             points = points,
             startEligible = PoseStartRule.isStartEligible(
-                minX = points.minOf { it.x },
-                maxX = points.maxOf { it.x },
+                shoulderPointCount = shoulderCount,
+                hipPointCount = hipCount,
+                torsoMinX = torsoMinX,
+                torsoMaxX = torsoMaxX,
                 lowerBodyPointCount = lowerBodyPointCount,
-                sideEdgeMargin = TopOutConfig.PoseStartSideEdgeMarginRatio,
-                minimumLowerBodyPointsAtEdge = TopOutConfig.PoseStartMinimumLowerBodyPointsAtEdge
+                anklePointCount = anklePointCount,
+                sideEdgeMargin = TopOutConfig.PoseStartTorsoSideEdgeMarginRatio,
+                minimumLowerBodyPointsWhenGuarded = TopOutConfig.PoseStartMinimumLowerBodyPointsWhenGuarded,
+                minimumAnklePointsWhenGuarded = TopOutConfig.PoseStartMinimumAnklePointsWhenGuarded
             )
         )
     }
@@ -384,12 +461,19 @@ class PoseClimbAnalyzer(
         reliable: ReliablePose,
         seconds: Double,
         imageWidth: Int,
-        imageHeight: Int
+        imageHeight: Int,
+        expectedStateGeneration: Long
     ) {
+        if (!active || trackingMode == TrackingMode.NONE || stateGeneration != expectedStateGeneration) {
+            return
+        }
+        val needsTrackingCropPrime = trackingMode != TrackingMode.POSE
         trackingMode = TrackingMode.POSE
         hasInferenceCrop = true
         hasSeenReliablePose = true
-        poseDetector.primeTracking(pose, imageWidth, imageHeight)
+        // POSE-mode inference already advanced the detector crop. Only the first reliable result
+        // from a motion-seeded search still needs an explicit joint-derived crop for the next frame.
+        if (needsTrackingCropPrime) poseDetector.primeTracking(pose, imageWidth, imageHeight)
         lastPoseSeenSeconds = seconds
         postClimbConsecutivePoseMisses = 0
 
@@ -434,15 +518,26 @@ class PoseClimbAnalyzer(
     private fun handlePoseMiss(
         seconds: Double,
         currentFrame: SmallFrame?,
-        previousFrame: SmallFrame?
+        previousFrame: SmallFrame?,
+        expectedStateGeneration: Long,
+        preparedMotionCrop: MoveNetCropRegion? = null,
+        motionCropAlreadyEvaluated: Boolean = false
     ) {
         synchronized(this) {
-            if (trackingMode == TrackingMode.NONE) return
+            if (!active || trackingMode == TrackingMode.NONE || stateGeneration != expectedStateGeneration) {
+                return
+            }
             trackingMode = TrackingMode.MOTION
 
-            val recoveryCrop = if (currentFrame != null) {
+            // A MOTION-mode inference already computed this frame pair's crop before MoveNet ran.
+            // Reuse it instead of scanning the same luma buffers a second time on every pose miss.
+            val recoveryCrop = if (motionCropAlreadyEvaluated) {
+                preparedMotionCrop
+            } else if (currentFrame != null) {
                 motionCropForCurrentContext(currentFrame, previousFrame)
-            } else null
+            } else {
+                null
+            }
             if (recoveryCrop != null) {
                 poseDetector.primeTrackingCrop(recoveryCrop)
                 hasInferenceCrop = true
@@ -561,7 +656,11 @@ class PoseClimbAnalyzer(
         return sqrt(dx * dx + dy * dy)
     }
 
-    private fun motionSearchBounds(width: Int, height: Int): Pair<IntArray, IntArray> {
+    @Synchronized
+    private fun motionSearchBounds(width: Int, height: Int): MotionSearchBounds {
+        cachedMotionSearchBounds?.let { cached ->
+            if (cached.width == width && cached.height == height) return cached
+        }
         val top = IntArray(width)
         val bottom = IntArray(width)
         val regionHeight = TopOutConfig.MotionCVRegionAboveMatHeightRatio.coerceIn(0.02f, 1f)
@@ -575,38 +674,9 @@ class PoseClimbAnalyzer(
                 .toInt()
                 .coerceIn(top[x] + 1, height)
         }
-        return top to bottom
-    }
-
-    /**
-     * Compares only the region above the edited mat line, up to 40% of the visible frame height.
-     * The reference is the immediately previous throttled analysis frame, so all motion
-     * search and pose-recovery paths share the same comparison rule.
-     */
-    private fun cvSearchRegionDiffScore(frame: SmallFrame, base: SmallFrame): Float {
-        if (frame.width != base.width || frame.height != base.height) return 0f
-        val width = frame.width
-        val height = frame.height
-        val regionHeight = TopOutConfig.MotionCVRegionAboveMatHeightRatio.coerceIn(0.02f, 1f)
-        var changed = 0
-        var total = 0
-        for (x in 0 until width) {
-            val xNorm = (x + 0.5f) / width
-            val boundary = lineY(xNorm)
-            val yStartNorm = max(0f, boundary - regionHeight)
-            val yEndNorm = boundary
-            if (yEndNorm <= yStartNorm) continue
-            val y0 = floor(yStartNorm * height).toInt().coerceIn(0, height - 1)
-            val y1 = ceil(yEndNorm * height).toInt().coerceIn(y0 + 1, height)
-            for (y in y0 until y1) {
-                val index = y * width + x
-                val current = frame.luma[index].toInt() and 0xFF
-                val previous = base.luma[index].toInt() and 0xFF
-                if (abs(current - previous) >= TopOutConfig.MotionPixelDifference) changed++
-                total++
-            }
+        return MotionSearchBounds(width, height, top, bottom).also {
+            cachedMotionSearchBounds = it
         }
-        return if (total > 0) changed.toFloat() / total else 0f
     }
 
     /** Converts a YUV_420_888 frame to an oriented RGB bitmap using the shared ViewPort crop. */
@@ -807,6 +877,7 @@ class PoseClimbAnalyzer(
 
     @Synchronized
     private fun resetStateLocked(keepConfiguration: Boolean) {
+        stateGeneration++
         active = false
         trackingMode = TrackingMode.NONE
         isClimbing = false
@@ -826,6 +897,7 @@ class PoseClimbAnalyzer(
         poseDetector.resetTracking()
         if (!keepConfiguration) {
             matLine = emptyList()
+            cachedMotionSearchBounds = null
             topBox = Rect.Zero
             finishReference = MotionFinishReference.CLOSEST_TOP_HOLD
         }
@@ -848,6 +920,7 @@ class PoseClimbAnalyzer(
         }
         synchronized(this) {
             previousMotionFrame = null
+            cachedMotionSearchBounds = null
             rgbScratchPixels = IntArray(0)
             lumaScratchFrames = arrayOfNulls(2)
             nextLumaScratchIndex = 0

@@ -26,6 +26,7 @@ final class ReviewVC: UIViewController {
     private var includeTopHoldOverlay: Bool
     private var selectedDetectedRangeIndex: Int?
     private var sliderTimeBubbleHideWorkItem: DispatchWorkItem?
+    private var sliderTimeBubbleHideGeneration = 0
     private var verifiedSavedAssets: [VerifiedSavedSelection: String] = [:]
 
     private var player: AVPlayer?
@@ -846,14 +847,16 @@ final class ReviewVC: UIViewController {
 
     private func scheduleHideSliderTimeBubble(after delay: TimeInterval) {
         sliderTimeBubbleHideWorkItem?.cancel()
-        var workItem: DispatchWorkItem!
-        workItem = DispatchWorkItem { [weak self] in
-            guard let self else { return }
+        sliderTimeBubbleHideGeneration &+= 1
+        let generation = sliderTimeBubbleHideGeneration
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, self.sliderTimeBubbleHideGeneration == generation else { return }
             UIView.animate(withDuration: 0.18, animations: {
                 self.rangeLabel.alpha = 0
             }, completion: { _ in
-                guard !workItem.isCancelled else { return }
+                guard self.sliderTimeBubbleHideGeneration == generation else { return }
                 self.rangeLabel.isHidden = true
+                self.sliderTimeBubbleHideWorkItem = nil
             })
         }
         sliderTimeBubbleHideWorkItem = workItem
@@ -1301,6 +1304,7 @@ final class ReviewVC: UIViewController {
     }
 
     deinit {
+        sliderTimeBubbleHideWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
         playerItemStatusObservation?.invalidate()
         playerTimeControlStatusObservation?.invalidate()

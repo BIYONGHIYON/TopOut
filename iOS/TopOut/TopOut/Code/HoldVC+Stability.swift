@@ -40,6 +40,7 @@ extension HoldVC {
     }
 
     @objc private func onAppDidEnterBackground() {
+        cancelPendingReadyFlow()
         stopCamera()
         releaseMobileSAMResources()
 
@@ -77,6 +78,10 @@ extension HoldVC {
         Task { @MainActor [weak self] in
             guard let self else { return }
 
+            if self.recState == .idle, self.mode == .camera {
+                self.cancelPendingReadyFlow()
+            }
+
             if reason == .audioDeviceInUseByAnotherClient {
                 // 통화 중 마이크만 사용할 수 없는 경우에는 녹화를 종료하지 않고
                 // 오디오 입력/출력만 제거한 뒤 영상 녹화를 계속합니다.
@@ -101,13 +106,26 @@ extension HoldVC {
                !self.isAutomaticStopInProgress {
                 self.prepareAudioSessionForCameraUse()
                 self.startCamera()
+                self.refreshReadyButtonAfterSessionRecovery()
             }
         }
     }
 
     @objc private func onCaptureSessionRuntimeError(_ notification: Notification) {
         Task { @MainActor [weak self] in
-            guard let self, self.recState == .buffering else { return }
+            guard let self else { return }
+            if self.recState == .idle, self.mode == .camera {
+                self.cancelPendingReadyFlow()
+                self.stopCamera { [weak self] in
+                    guard let self,
+                          UIApplication.shared.applicationState == .active,
+                          self.recState == .idle,
+                          self.mode == .camera else { return }
+                    self.startCamera()
+                }
+                return
+            }
+            guard self.recState == .buffering else { return }
             self.requestAutomaticRecordingStop(notice: .sessionError)
         }
     }

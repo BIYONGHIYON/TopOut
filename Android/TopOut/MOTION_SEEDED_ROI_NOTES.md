@@ -6,9 +6,9 @@
 - Compare each 160px luma frame with the immediately previous analysis frame.
 - Measure only the region above the edited mat line, capped at 40% of the visible frame height.
 - When the motion threshold is crossed, compare the current frame with the immediately previous analysis frame.
-- Place a pixel-square ROI covering about 25% of the visible screen area around the strongest changed cells.
+- Place a pixel-square ROI whose side is 1.5x the longer dimension of the selected changed-cell bounds.
 - Use the same immediate-frame comparison for initial search and pose-loss recovery; there is no older-frame fallback.
-- If neither difference can produce a crop, remain in WAITING. There is no 512px full-frame RGB pose fallback.
+- If the immediate-frame comparison cannot produce a crop, remain in WAITING. There is no 512px full-frame RGB pose fallback.
 
 ## First pose and tracking
 
@@ -20,7 +20,7 @@
 ## Climbing and finish
 
 - While climbing, update the closest-top-hold or highest-pose finish candidate on each reliable pose.
-- Missing pose is tolerated for up to six seconds only while CLIMBING. On the first miss, joint-based crop tracking switches to a 4 fps motion-seeded quarter-frame ROI.
+- Missing pose is tolerated for up to six seconds only while CLIMBING. On the first miss, joint-based crop tracking switches to a 4 fps motion-seeded ROI expanded to 1.5x its selected bounds.
 - During that six-second window, each current 160px luma frame is compared with the immediately previous pose-analysis frame; a usable motion crop replaces the previous ROI before MoveNet runs.
 - When a reliable pose returns, joint-based crop tracking resumes from that pose. If no usable motion crop exists, the most recent crop is retained until a later frame provides motion or the timeout expires.
 - A reliable pose whose lowest trusted joint moves below the mat ends the climb.

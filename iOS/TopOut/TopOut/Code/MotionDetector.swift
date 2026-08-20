@@ -70,7 +70,7 @@ final class MotionDetector {
         let reliablePoints: [CGPoint]
         let bounds: CGRect
         let center: CGPoint
-        let lowerBodyPointCount: Int
+        let startEligible: Bool
     }
 
     private struct PoseSnapshot {
@@ -90,6 +90,8 @@ final class MotionDetector {
     private let pendingFrameLock = NSLock()
     private var latestPendingSampleBuffer: CMSampleBuffer?
     private var isPendingFrameTaskScheduled = false
+    private var acceptsFrameUpdates = false
+    private var frameUpdateGeneration: UInt64 = 0
 
     private let poseRequest = VNDetectHumanBodyPoseRequest()
     private let poseCIContext = CIContext(options: [.useSoftwareRenderer: false])
@@ -139,6 +141,7 @@ final class MotionDetector {
         finishReference: MotionFinishReference,
         activeCropRect: CGRect
     ) {
+        let generation = invalidateFrameUpdatesAndDiscardPending()
         q.async { [weak self] in
             guard let self else { return }
             self.matLine = matLine.sorted { $0.x < $1.x }
@@ -146,28 +149,31 @@ final class MotionDetector {
             self.finishReference = finishReference
             self.activeCropRect = self.clamped(activeCropRect)
             self.resetStateLocked(keepConfig: true)
+            self.setFrameUpdatesEnabled(false, for: generation)
             self.debug("🎯 motion configured pose climb: matPoints=\(matLine.count), finishReference=\(finishReference.rawValue), topBox=\(self.topBox), crop=\(self.activeCropRect), cvRegionAboveMat=\(Cfg.motionCVRegionAboveMatHeightRatio), analysisFPS=\(Cfg.motionAnalysisFPS)")
         }
     }
 
     /// 화면의 녹화 카운트다운이 시작될 때 이전 탐지 상태만 초기화합니다.
     func resetForRecording() {
-        discardPendingFrame()
+        let generation = invalidateFrameUpdatesAndDiscardPending()
         q.async { [weak self] in
             guard let self else { return }
             self.resetStateLocked(keepConfig: true)
+            self.setFrameUpdatesEnabled(false, for: generation)
             self.debug("👀 motion detector armed for recording")
         }
     }
 
     /// 실제 파일 녹화가 시작되는 순간 환경 보정 없이 모션 탐지를 시작합니다.
     func markRecordingStarted() {
-        discardPendingFrame()
+        let generation = invalidateFrameUpdatesAndDiscardPending()
         q.async { [weak self] in
             guard let self else { return }
             self.resetStateLocked(keepConfig: true)
             self.isActive = true
             self.state = .waiting
+            self.setFrameUpdatesEnabled(true, for: generation)
             self.debug("👀 motion detector started without baseline calibration")
         }
     }
@@ -180,16 +186,24 @@ final class MotionDetector {
     }
 
     func stop() {
+        let generation = invalidateFrameUpdatesAndDiscardPending()
         q.async { [weak self] in
             guard let self else { return }
             self.isActive = false
             self.resetStateLocked(keepConfig: true)
+            self.setFrameUpdatesEnabled(false, for: generation)
             self.debug("🛑 motion detector stopped")
         }
     }
 
     func update(_ sampleBuffer: CMSampleBuffer) {
         pendingFrameLock.lock()
+
+        guard acceptsFrameUpdates else {
+            pendingFrameLock.unlock()
+            return
+        }
+
         latestPendingSampleBuffer = sampleBuffer
 
         guard !isPendingFrameTaskScheduled else {
@@ -205,9 +219,29 @@ final class MotionDetector {
         }
     }
 
-    private func discardPendingFrame() {
+    /// Closes admission immediately and gives the queued state mutation an ordering token.
+    /// An older queued `markRecordingStarted` must never reopen the gate after a newer stop/reset.
+    @discardableResult
+    private func invalidateFrameUpdatesAndDiscardPending() -> UInt64 {
         pendingFrameLock.lock()
+        frameUpdateGeneration &+= 1
+        acceptsFrameUpdates = false
         latestPendingSampleBuffer = nil
+        let generation = frameUpdateGeneration
+        pendingFrameLock.unlock()
+        return generation
+    }
+
+    private func setFrameUpdatesEnabled(_ enabled: Bool, for generation: UInt64) {
+        pendingFrameLock.lock()
+        guard generation == frameUpdateGeneration else {
+            pendingFrameLock.unlock()
+            return
+        }
+        acceptsFrameUpdates = enabled
+        if !enabled {
+            latestPendingSampleBuffer = nil
+        }
         pendingFrameLock.unlock()
     }
 
@@ -418,9 +452,9 @@ final class MotionDetector {
 
         switch state {
         case .tracking:
-            // A side-edge torso fragment must not become a new climb just because its remaining
-            // joints all sit above the start line. Central poses and edge poses with sufficient
-            // knee/ankle evidence keep the existing start behavior.
+            // A missing or side-edge torso must not become a new climb just because its remaining
+            // joints all sit above the start line. A central torso keeps the existing start
+            // behavior even when only a limb touches the side edge.
             guard snapshot.startEligible else { return }
             // CV 이후 첫 pose에서 이미 가장 낮은 점이 선택 영상 높이의 6% 시작선 위라면 즉시 start로 잡습니다.
             // 아니면 시작 경계의 아래→위 crossing 순간을 start로 잡습니다.
@@ -628,28 +662,58 @@ final class MotionDetector {
     ) -> PoseSnapshot {
         var candidates: [PoseCandidate] = []
         candidates.reserveCapacity(observations.count)
+        let sideMargin = clamp(Cfg.motionPoseStartTorsoSideEdgeMarginRatio, min: 0, max: 0.25)
 
         // Vision 추론은 한 번만 수행합니다. 각 observation의 관절은 섞지 않고, 초기 움직임
         // 격자 또는 직전 선택 대상과 가장 잘 이어지는 한 사람만 상태 판단에 사용합니다.
         for (index, observation) in observations.enumerated() {
             var points: [CGPoint] = []
+            var shoulderPointCount = 0
+            var hipPointCount = 0
+            var torsoTouchesSideEdge = false
             var lowerBodyPointCount = 0
+            var anklePointCount = 0
             points.reserveCapacity(reliablePoseJoints.count)
             for joint in reliablePoseJoints {
                 if let point = recognizedPoint(joint, in: observation, coordinateSpace: coordinateSpace) {
-                    points.append(point)
-                    if isStartLowerBodyJoint(joint) { lowerBodyPointCount += 1 }
+                    if !points.contains(where: {
+                        abs($0.x - point.x) < 0.0001 && abs($0.y - point.y) < 0.0001
+                    }) {
+                        points.append(point)
+                    }
+                    switch joint {
+                    case .leftShoulder, .rightShoulder:
+                        shoulderPointCount += 1
+                        torsoTouchesSideEdge = torsoTouchesSideEdge ||
+                            point.x <= sideMargin || point.x >= 1 - sideMargin
+                    case .leftHip, .rightHip:
+                        hipPointCount += 1
+                        torsoTouchesSideEdge = torsoTouchesSideEdge ||
+                            point.x <= sideMargin || point.x >= 1 - sideMargin
+                    case .leftKnee, .rightKnee:
+                        lowerBodyPointCount += 1
+                    case .leftAnkle, .rightAnkle:
+                        lowerBodyPointCount += 1
+                        anklePointCount += 1
+                    default:
+                        break
+                    }
                 }
             }
-            let reliablePoints = uniquePoints(points)
-            guard let bounds = pointBounds(reliablePoints) else { continue }
+            guard let bounds = pointBounds(points) else { continue }
+            let hasShoulderAndHip = shoulderPointCount > 0 && hipPointCount > 0
+            let needsLowerBodyGuard = !hasShoulderAndHip || torsoTouchesSideEdge
+            let hasRequiredLowerBody =
+                lowerBodyPointCount >= Cfg.motionPoseStartMinimumLowerBodyPointsWhenGuarded &&
+                anklePointCount >= Cfg.motionPoseStartMinimumAnklePointsWhenGuarded
+            let startEligible = !needsLowerBodyGuard || hasRequiredLowerBody
             candidates.append(
                 PoseCandidate(
                     observationIndex: index,
-                    reliablePoints: reliablePoints,
+                    reliablePoints: points,
                     bounds: bounds,
                     center: CGPoint(x: bounds.midX, y: bounds.midY),
-                    lowerBodyPointCount: lowerBodyPointCount
+                    startEligible: startEligible
                 )
             )
         }
@@ -670,19 +734,8 @@ final class MotionDetector {
             observationCount: observations.count,
             selectedObservationIndex: selected.observationIndex,
             reliablePoints: selected.reliablePoints,
-            startEligible: isStartEligibleCandidate(selected)
+            startEligible: selected.startEligible
         )
-    }
-
-    private func isStartEligibleCandidate(_ candidate: PoseCandidate) -> Bool {
-        let margin = clamp(Cfg.motionPoseStartSideEdgeMarginRatio, min: 0, max: 0.25)
-        let touchesSideEdge = candidate.bounds.minX <= margin || candidate.bounds.maxX >= 1 - margin
-        return !touchesSideEdge ||
-            candidate.lowerBodyPointCount >= Cfg.motionPoseStartMinimumLowerBodyPointsAtEdge
-    }
-
-    private func isStartLowerBodyJoint(_ joint: VNHumanBodyPoseObservation.JointName) -> Bool {
-        joint == .leftKnee || joint == .rightKnee || joint == .leftAnkle || joint == .rightAnkle
     }
 
     private func selectPoseCandidate(_ candidates: [PoseCandidate]) -> PoseCandidate? {
@@ -1003,18 +1056,6 @@ final class MotionDetector {
     }
 
 
-    private func uniquePoints(_ points: [CGPoint]) -> [CGPoint] {
-        var result: [CGPoint] = []
-        result.reserveCapacity(points.count)
-        for point in points {
-            let exists = result.contains {
-                abs($0.x - point.x) < 0.0001 && abs($0.y - point.y) < 0.0001
-            }
-            if !exists { result.append(point) }
-        }
-        return result
-    }
-
     // MARK: CV Search Region
 
     /// 매트 경계선 바로 위쪽에서 화면 높이의 40%만큼을 전 너비로 비교합니다.
@@ -1098,11 +1139,13 @@ final class MotionDetector {
             Cfg.motionSeedMinimumCellChangedRatio,
             strongest.score * Cfg.motionSeedRelativeCellThreshold
         )
-        let selected = Array(
-            sorted
-                .filter { $0.score >= cutoff }
-                .prefix(Swift.max(1, Cfg.motionSeedMaximumSelectedCells))
-        )
+        let maximumSelectedCells = Swift.max(1, Cfg.motionSeedMaximumSelectedCells)
+        var selected: [MotionCellScore] = []
+        selected.reserveCapacity(Swift.min(maximumSelectedCells, sorted.count))
+        for cell in sorted {
+            guard cell.score >= cutoff, selected.count < maximumSelectedCells else { break }
+            selected.append(cell)
+        }
         guard !selected.isEmpty else { return nil }
 
         var totalWeight: CGFloat = 0
@@ -1177,13 +1220,19 @@ final class MotionDetector {
         let dstW = Swift.max(Cfg.motionFrameWidth, 32)
         let dstH = Swift.max(Int(round(CGFloat(dstW) * CGFloat(cropH) / CGFloat(cropW))), 32)
         var out = [UInt8](repeating: 0, count: dstW * dstH)
+        var sourceXByColumn = [Int](repeating: cropX, count: dstW)
+        for x in 0..<dstW {
+            sourceXByColumn[x] = Swift.min(
+                srcW - 1,
+                cropX + Int((CGFloat(x) + 0.5) * CGFloat(cropW) / CGFloat(dstW))
+            )
+        }
 
         for y in 0..<dstH {
             let sy = Swift.min(srcH - 1, cropY + Int((CGFloat(y) + 0.5) * CGFloat(cropH) / CGFloat(dstH)))
             let srcRow = ptr + sy * row
             for x in 0..<dstW {
-                let sx = Swift.min(srcW - 1, cropX + Int((CGFloat(x) + 0.5) * CGFloat(cropW) / CGFloat(dstW)))
-                out[y * dstW + x] = srcRow[sx]
+                out[y * dstW + x] = srcRow[sourceXByColumn[x]]
             }
         }
         return SmallFrame(width: dstW, height: dstH, luma: out)

@@ -243,7 +243,6 @@ data class TopOutUiState(
     val recordingState: RecordingState = RecordingState.IDLE,
     val settings: AppSettings = AppSettings(),
     val capabilities: CameraCapabilities = CameraCapabilities(),
-    val frozenFrame: Bitmap? = null,
     val matLine: List<Offset> = emptyList(),
     val holdMask: HoldMask? = null,
     val zoomFactor: Float = TopOutConfig.MinZoom,
@@ -319,9 +318,10 @@ object TopOutConfig {
     const val PoseStartAboveMatVideoHeightRatio = 0.06f
     /** Finish after the joint drops below a boundary 4% above the line in selected-video space. */
     const val PoseFinishAboveMatVideoHeightRatio = 0.04f
-    /** Side-edge poses need enough knee/ankle evidence before they may open a new climb. */
-    const val PoseStartSideEdgeMarginRatio = 0.05f
-    const val PoseStartMinimumLowerBodyPointsAtEdge = 2
+    /** Guarded starts need three lower-body joints including at least one ankle. */
+    const val PoseStartTorsoSideEdgeMarginRatio = 0.10f
+    const val PoseStartMinimumLowerBodyPointsWhenGuarded = 3
+    const val PoseStartMinimumAnklePointsWhenGuarded = 1
 
     /** Initial motion search and active climbing remain at 2 fps. */
     const val MotionFrameWidth = 160
@@ -338,7 +338,8 @@ object TopOutConfig {
     const val MoveNetPoseInputSize = 256
     const val MoveNetCropKeypointConfidence = 0.15f
     const val MotionSeedGridColumns = 8
-    const val MotionSeedCropAreaRatio = 0.25f
+    const val MotionSeedCropExpansionScale = 1.5f
+    const val MoveNetTrackingCropExpansionScale = 1.5f
     const val MotionSeedMaximumSelectedCells = 8
     const val MotionSeedRelativeCellThreshold = 0.45f
     const val MotionSeedMinimumCellChangedRatio = 0.02f

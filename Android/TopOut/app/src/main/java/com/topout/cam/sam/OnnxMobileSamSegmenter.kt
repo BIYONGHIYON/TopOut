@@ -16,6 +16,8 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.util.ArrayDeque
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
@@ -25,8 +27,12 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -44,6 +50,11 @@ class OnnxMobileSamSegmenter(
     private val appContext = context.applicationContext
     private val environment = OrtEnvironment.getEnvironment()
     private val sessionMutex = Mutex()
+    // ViewModel cancellation must not cancel teardown while a non-cancellable ORT call still owns
+    // the mutex. This independent scope serializes session close without blocking the main thread.
+    private val teardownScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val closeRequested = AtomicBoolean(false)
+    private val embeddingCacheGeneration = AtomicLong(0L)
 
     @Volatile private var encoderSession: OrtSession? = null
     @Volatile private var decoderSession: OrtSession? = null
@@ -102,6 +113,9 @@ class OnnxMobileSamSegmenter(
 
     /** Releases the frozen-frame embedding once selection is complete. Model sessions stay warm. */
     fun releaseCachedEmbedding() {
+        // A timed-out native encoder may still finish after this call. Its generation check keeps
+        // that obsolete embedding from being published again during the recording stage.
+        embeddingCacheGeneration.incrementAndGet()
         cachedEmbedding = null
     }
 
@@ -140,8 +154,20 @@ class OnnxMobileSamSegmenter(
     }
 
     override fun close() {
-        if (closed) return
+        if (!closeRequested.compareAndSet(false, true)) return
+        // Reject newly queued work immediately. The current native call, if any, is allowed to
+        // leave the mutex before its sessions are closed underneath it.
         closed = true
+        embeddingCacheGeneration.incrementAndGet()
+        cachedEmbedding = null
+        teardownScope.launch {
+            sessionMutex.withLock { closeSessionsLocked() }
+        }.invokeOnCompletion {
+            teardownScope.cancel()
+        }
+    }
+
+    private fun closeSessionsLocked() {
         cachedEmbedding = null
         cachedZeroMaskInput = null
         runCatching { encoderSession?.close() }
@@ -241,6 +267,7 @@ class OnnxMobileSamSegmenter(
     }
 
     private fun obtainEmbedding(bitmap: Bitmap, encoder: OrtSession): CachedEmbedding {
+        val cacheGeneration = embeddingCacheGeneration.get()
         val cacheKey = BitmapCacheKey(
             identity = System.identityHashCode(bitmap),
             width = bitmap.width,
@@ -266,7 +293,11 @@ class OnnxMobileSamSegmenter(
                     buffer = outputTensor.copyDirectFloatData(),
                     shape = outputTensor.info.shape.copyOf(),
                     transform = preprocessing.transform
-                ).also { cachedEmbedding = it }
+                ).also { embedding ->
+                    if (!closed && embeddingCacheGeneration.get() == cacheGeneration) {
+                        cachedEmbedding = embedding
+                    }
+                }
             }
         }
     }

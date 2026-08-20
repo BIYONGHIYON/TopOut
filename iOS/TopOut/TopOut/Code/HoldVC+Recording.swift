@@ -15,6 +15,16 @@ extension HoldVC {
     // MARK: Recording
 
     func startRecording() {
+        // A duplicate callback must not stop a recording that has already entered buffering.
+        guard recState == .idle else { return }
+        guard UIApplication.shared.applicationState == .active,
+              view.window != nil else {
+            cancelPendingReadyFlow()
+            videoFrameSink.setRecording(false)
+            motionDetector.stop()
+            return
+        }
+
         clipTimes = ClipTimes()
         cancelRecordingCountdown()
         stopRecordingElapsedTimer()
@@ -25,7 +35,6 @@ extension HoldVC {
         recState = .buffering
         recordingStatusMessage = nil
 
-        videoFrameSink.setMotionDetectionEnabled(isAutoClipDetectionEnabled)
         showCameraUI()
         manualStopBtn.isEnabled = false
 
@@ -35,16 +44,19 @@ extension HoldVC {
             motionDetector.stop()
         }
 
-        videoFrameSink.setRecording(true)
         startRecorderAfterCountdown()
     }
 
     func startRecorderAfterCountdown() {
+        recordingRequestGeneration &+= 1
+        let requestGeneration = recordingRequestGeneration
         let seconds = max(0, Int(ceil(Cfg.recordingCountdownSeconds)))
 
         for i in 0...seconds {
             let item = DispatchWorkItem { [weak self] in
-                guard let self, case .buffering = self.recState else { return }
+                guard let self,
+                      requestGeneration == self.recordingRequestGeneration,
+                      case .buffering = self.recState else { return }
 
                 let remain = seconds - i
                 if remain > 0 {
@@ -58,6 +70,11 @@ extension HoldVC {
                 }
 
                 self.recorder.start()
+                // Keep capture callbacks out of the recorder and detector during the countdown.
+                // recorder.start() is enqueued first, so its serial queue is ready before the first
+                // sample admitted by VideoFrameSink reaches append().
+                self.videoFrameSink.setMotionDetectionEnabled(self.isAutoClipDetectionEnabled)
+                self.videoFrameSink.setRecording(true)
                 if self.isAutoClipDetectionEnabled {
                     self.motionDetector.markRecordingStarted()
                 }
@@ -77,6 +94,7 @@ extension HoldVC {
     }
 
     func cancelRecordingCountdown() {
+        recordingRequestGeneration &+= 1
         recordingCountdownWorkItems.forEach { $0.cancel() }
         recordingCountdownWorkItems.removeAll()
     }
@@ -355,6 +373,10 @@ extension HoldVC {
         startCamera()
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            guard UIApplication.shared.applicationState == .active,
+                  self.view.window != nil,
+                  self.recState == .idle,
+                  self.mode == .camera else { return }
             self.layoutUI()
             self.updateCameraOrientationIfPossible()
             self.startRecording()
@@ -380,12 +402,7 @@ extension HoldVC {
     }
 
     private func detectedClipRanges(for session: ContinuousRecorder.RecordingSession) -> [ReviewClipRange] {
-        var ranges = clipTimes.completedRanges
-        if let startPTS = clipTimes.startPTS, let endPTS = clipTimes.endPTS, endPTS > startPTS {
-            ranges.append(ClipRange(startPTS: startPTS, endPTS: endPTS))
-        }
-
-        let rawRanges: [ReviewClipRange] = ranges.compactMap { range in
+        let rawRanges: [ReviewClipRange] = clipTimes.completedRanges.compactMap { range in
             let rawStart = clampedSeconds(
                 CMTimeGetSeconds(range.startPTS - session.startPTS),
                 min: 0,

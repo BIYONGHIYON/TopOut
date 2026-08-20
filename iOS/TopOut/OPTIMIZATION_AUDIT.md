@@ -58,11 +58,29 @@ The original optimization pass kept behavior unchanged. Later platform-alignment
 - If an automatic background/interruption stop finishes without a usable video after the app has already become active, the idle camera is restarted explicitly; recovery no longer depends on receiving a second activation notification.
 - `HoldVC` deinitialization explicitly cancels the mat-analysis watchdog, countdown work items, and both recording timers in addition to removing notification observers and ending the background task.
 - The selected-range zoom control suppresses duplicate endpoint value callbacks and publishes its current multiplier through `accessibilityValue`.
-- Closest-top-hold pose scoring now scans in place instead of allocating a temporary distance array on every analyzed pose frame. Vision still aggregates every detected person's reliable non-face joints exactly as before.
+- Closest-top-hold pose scoring now scans in place instead of allocating a temporary distance array on every analyzed pose frame. Vision이 선택한 한 사람의 신뢰 가능한 비얼굴 관절만 사용합니다.
 
 ### Rechecked and deliberately unchanged
 
-- Motion analysis remains 2fps for CV/stable tracking and 4fps for pre-start or recovery tracking. The latest-frame-only queue, 384px pose input, and multi-person aggregation behavior were not changed.
+- Motion analysis remains 2fps for CV/stable tracking and 4fps for pre-start or recovery tracking. The latest-frame-only queue, 384px pose input, and one-person selection behavior were not changed in that audit pass.
 - Power-saving recording keeps the capture/writer and optional motion analysis active but disables `AVCaptureVideoPreviewLayer` rendering. Stopping those remaining components would stop the product's recording or automatic-range behavior.
 - Review playback uses AVPlayer's periodic time observer only while its media clock advances; the callback also exits unless playback is active or pending. Observer, KVO, notification, and player cleanup remain in `deinit`.
 - Real-device verification is still required for peak resident memory, thermal behavior, camera frame-drop cadence, and first-frame continuity, especially at 4K/60fps on low-RAM devices. Simulator build success does not measure those hardware paths.
+
+## v1.6 build 14 follow-up audit
+
+### Applied
+
+- `VideoFrameSink` and Motion forwarding are activated only when the three-second countdown reaches the real recording start, then both flags are closed together after stop. Countdown frames and post-stop preview frames therefore do not wake an inactive recorder or detector. Request generations invalidate stale countdown and Motion-gate callbacks, while the active path preserves its existing one-latest-frame queue and 2fps/4fps timestamp gates.
+- Audio capture callbacks now read only the recording flag from `VideoFrameSink`; they no longer copy video-only frame-capture requests, camera-settling state, or stream-readiness closures on every audio sample.
+- Motion-cell filtering now builds the selected top-eight list without a temporary full filtered array. Pose candidate construction derives the 10% torso-edge start guard in the same joint scan and avoids a second reliable-point array. Luma downsampling precomputes source x-columns once per 160px frame instead of repeating that coordinate calculation for every output row.
+- `stop()` drops any pending full-resolution sample buffer immediately, reducing overlap between the last Vision frame and review/export resources.
+- Ready-format and stable-frame callbacks carry a request generation. Backgrounding, capture interruption, or a runtime error invalidates that generation, so an obsolete callback cannot start recording after the capture lifecycle has moved on.
+- Removed the dead `ClipTimes.endPTS` state. Finish events append directly to `completedRanges`, and manual/automatic stop already salvages an open range from `MotionDetector` before finalization.
+- Replaced the review time-bubble work item's self-reference with a generation check and cancel it explicitly during teardown.
+
+### Deliberately unchanged / remaining runtime risk
+
+- The five-second mat-analysis watchdog releases the UI flow but cannot cancel a Core ML native prediction already executing on the serial `workQ`. If that native call never returns, later work queued behind it (including a top-hold request or model release) can remain blocked. Safely replacing or abandoning that execution context requires a larger inference-worker isolation design and real-device stress verification; this pass does not pretend the UI timeout cancels Core ML.
+- Camera-first startup, deferred MobileSAM loading, CPU + Neural Engine compute selection, 384px Vision input, 2fps/4fps state cadence, one-person selection, and existing start/finish semantics remain unchanged.
+- No archive or real-device profiling was run. Peak RAM, thermal state, and battery impact still require Instruments and physical-device checks.

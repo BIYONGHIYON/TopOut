@@ -7,12 +7,12 @@ import org.junit.Test
 
 class MotionSeedCropFinderTest {
     @Test
-    fun findsQuarterFrameSquareAroundStrongestMotionCluster() {
+    fun expandsStrongestMotionBoundsByOneAndAHalf() {
         val width = 80
         val height = 160
         val previous = ByteArray(width * height) { 40 }
         val current = previous.copyOf()
-        fill(current, width, left = 55, top = 25, right = 78, bottom = 65, value = 220)
+        fill(current, width, left = 50, top = 30, right = 60, bottom = 40, value = 220)
 
         val crop = assertPresent(
             MotionSeedCropFinder.find(width, height, current, previous)
@@ -22,22 +22,22 @@ class MotionSeedCropFinderTest {
         val cropTop = crop.yMin * height
         val cropRight = cropLeft + crop.width * width
         val cropBottom = cropTop + crop.height * height
-        assertTrue(cropLeft <= 55f)
-        assertTrue(cropTop <= 25f)
-        assertTrue(cropRight >= 78f)
-        assertTrue(cropBottom >= 65f)
+        assertTrue(cropLeft <= 50f)
+        assertTrue(cropTop <= 30f)
+        assertTrue(cropRight >= 60f)
+        assertTrue(cropBottom >= 40f)
         assertTrue(abs(crop.width * width - crop.height * height) < 0.01f)
-        assertTrue(abs(crop.width * crop.height - 0.25f) < 0.03f)
+        assertTrue(abs(crop.width * width - 15f) < 0.01f)
     }
 
     @Test
     fun containsNearbyHighMotionCellsInOneCrop() {
-        val width = 120
+        val width = 80
         val height = 160
         val previous = ByteArray(width * height) { 80 }
         val current = previous.copyOf()
-        fill(current, width, 30, 60, 48, 82, 200)
-        fill(current, width, 62, 72, 82, 98, 210)
+        fill(current, width, 20, 40, 30, 50, 200)
+        fill(current, width, 40, 60, 50, 70, 210)
 
         val crop = assertPresent(
             MotionSeedCropFinder.find(width, height, current, previous)
@@ -46,10 +46,10 @@ class MotionSeedCropFinderTest {
         val top = crop.yMin * height
         val right = left + crop.width * width
         val bottom = top + crop.height * height
-        assertTrue(left <= 30f)
-        assertTrue(top <= 60f)
-        assertTrue(right >= 82f)
-        assertTrue(bottom >= 98f)
+        assertTrue(left <= 20f)
+        assertTrue(top <= 40f)
+        assertTrue(right >= 50f)
+        assertTrue(bottom >= 70f)
     }
 
     @Test

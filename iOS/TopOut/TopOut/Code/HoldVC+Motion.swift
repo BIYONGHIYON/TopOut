@@ -21,7 +21,6 @@ extension HoldVC {
         switch event {
         case .start(let pts):
             clipTimes.startPTS = pts
-            clipTimes.endPTS = nil
             setRecordingStatusText(
                 isTopHoldMaskingEnabled
                     ? "등반 구간 감지 중 · 탑홀드 추적 중"
@@ -30,17 +29,14 @@ extension HoldVC {
 
         case .retry:
             clipTimes.startPTS = nil
-            clipTimes.endPTS = nil
             setRecordingStatusText(defaultActiveRecordingStatusText())
 
         case .finish(let pts):
-            clipTimes.endPTS = pts
             if let startPTS = clipTimes.startPTS, CMTimeCompare(pts, startPTS) > 0 {
                 // Store only the original detection boundaries. Padding is added after cleanup.
                 appendDetectedClipRange(ClipRange(startPTS: startPTS, endPTS: pts))
             }
             clipTimes.startPTS = nil
-            clipTimes.endPTS = nil
             setRecordingStatusText("구간 저장됨 · 다음 등반 대기")
         }
     }
