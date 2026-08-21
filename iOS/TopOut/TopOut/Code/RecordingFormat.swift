@@ -67,10 +67,10 @@ enum RecordingAspectRatio: Int, CaseIterable {
 
     var subtitle: String {
         switch self {
-        case .story916: return "스토리·릴스"
-        case .feed45: return "인스타 피드"
-        case .portrait34: return "세로 게시물"
-        case .square11: return "정사각 게시물"
+        case .story916: return L("settings.story_reels")
+        case .feed45: return L("settings.instagram_feed")
+        case .portrait34: return L("settings.portrait_post")
+        case .square11: return L("settings.square_post")
         }
     }
 

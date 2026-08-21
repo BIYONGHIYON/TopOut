@@ -50,6 +50,8 @@ import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.round
 import kotlin.math.roundToInt
+import com.topout.cam.localization.TopOutStrings
+import com.topout.cam.localization.tr
 
 private enum class TrimDragTarget { LOWER, UPPER, PLAYHEAD }
 private enum class TimelineGestureMode { PENDING, DRAGGING }
@@ -215,7 +217,7 @@ fun PrecisionTrimSlider(
         val wholeSeconds = (totalTenths / 10) % 60
         val tenths = totalTenths % 10
         return if (minutes > 0) "%d:%02d.%d".format(minutes, wholeSeconds, tenths)
-        else "%d.%d초".format(wholeSeconds, tenths)
+        else tr("time.seconds_short", "$wholeSeconds.$tenths")
     }
 
     fun niceStep(raw: Double): Double {
@@ -475,7 +477,10 @@ fun PrecisionTrimSlider(
                 val bubbleHalfPx = bubbleWidthPx / 2
                 val bubbleX = xFor(bubbleValue).roundToInt()
                 Text(
-                    text = "%.1f초".format(bubbleValue),
+                    text = tr(
+                        "time.seconds_short",
+                        String.format(TopOutStrings.currentLocale(), "%.1f", bubbleValue)
+                    ),
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .offset {
@@ -513,14 +518,14 @@ fun PrecisionTrimSlider(
                 verticalAlignment = Alignment.Top
             ) {
                 Text(
-                    text = "선택된 구간 확대",
+                    text = tr("review.selected_zoom"),
                     color = Color.White.copy(alpha = if (enabled) 0.82f else 0.40f),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f)
                 )
                 Text(
-                    text = "%.1f×".format(zoomFactor),
+                    text = "${TopOutStrings.decimal(zoomFactor)}×",
                     color = Color.White.copy(alpha = if (enabled) 0.68f else 0.34f),
                     fontFamily = FontFamily.Monospace,
                     fontSize = 9.sp,

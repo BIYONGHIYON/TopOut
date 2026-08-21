@@ -10,7 +10,7 @@
 
 | 항목 | iOS | Android |
 |---|---|---|
-| 현재 릴리스 | 1.6 build 14 | 1.6 versionCode 14 |
+| 현재 릴리스 | 2.0 build 16 | 2.0 versionCode 16 |
 | 카메라 | AVFoundation | CameraX 1.6.1 · Camera2 |
 | Pose | Apple Vision Human Body Pose | MoveNet SinglePose Thunder FP16 · LiteRT 1.4.1 |
 | 매트·탑홀드 | MobileSAM Core ML | MobileSAM ONNX Runtime 1.27.0 |
@@ -253,11 +253,37 @@ API 성공과 사용자가 실제로 확인할 수 있는 결과 사이의 차�
 - iOS와 Android 시작선을 x별 매트선보다 선택 영상 높이의 6% 위로 유지
 - 두 플랫폼 종료선을 같은 기준의 4% 위로 조정
 - 9:16·4:5·3:4·1:1과 세로·가로 촬영에서 UI 화면 전체가 아니라 실제 분석·저장 crop 높이를 공통 기준으로 명시
-- 어깨와 골반이 각각 1개 이상 확인되지 않거나 몸통 관절 중 하나라도 좌우 10%에 있는 Pose에만 발목 1개를 포함한 무릎·발목 3개 조건을 적용하고, 어깨-골반 축이 중앙 80%에 있으면 팔다리의 가장자리 접촉은 무시해 시작 오탐과 정상 시작 누락을 함께 완화
+- 좌우 5% 가장자리에서 무릎·발목이 2개 미만인 하체 잘림 Pose를 새 시작 후보에서만 제외해, 등반 종료 뒤 화면 밖으로 이동하는 사람의 상체가 새 시도로 잡히는 오탐을 완화
+- 버전 1.6을 유지하고 iOS Current Project Version과 Android versionCode를 14로 증가
+
+### v1.7 build 15 · 부분 Pose 시작 판정과 촬영 안정성 보강
+
+- 어깨와 골반을 각각 1개 이상 확인해 어깨-골반 축의 유효성을 검사하고, 몸통 관절 좌우 10% 조건을 시작 후보에 적용
+- 보수적 시작 후보는 발목 1개를 포함한 무릎·발목 3개 이상을 요구하되 활성 등반의 추적·종료 조건은 유지
+- Android 최초·추적 Pose ROI를 관절 및 움직임 영역의 1.5배로 구성하고 Motion·MoveNet 반복 계산을 정리
 - Android는 Motion 변화율·셀 점수·관절 경계를 단일 순회로 정리하고 분석 세대를 검증해, 중지 전 추론이 다음 촬영의 luma·ROI·구간 이벤트를 덮지 않도록 보강
 - Android는 줌 적용 확인에 1.5초 제한과 녹화 시작 세대를 적용하고, iOS는 실제 녹화 시작 전까지 recorder·Motion 입력을 닫아 카운트다운·앱 전환 뒤 지연 콜백과 불필요한 프레임 작업을 차단
 - 두 플랫폼 모두 비동기 카메라 준비 요청을 수명주기와 함께 무효화하고, 사용하지 않는 UI·구간 상태와 지연 작업 참조를 정리
-- 버전 1.6을 유지하고 iOS Current Project Version과 Android versionCode를 14로 증가
+- 버전을 1.7로 올리고 iOS Current Project Version과 Android versionCode를 15로 증가
+
+### v1.7 build 15 · 9개 언어 UI와 앱별 언어 선택
+
+- 해외 사용자를 위해 영어, 한국어, 일본어, 중국어 간체·번체, 프랑스어, 독일어, 스페인어, 포르투갈어 순으로 언어 지원 범위를 확정
+- 기본값은 OS 선호 언어를 따르는 `자동`으로 유지하고, 사용자가 설정에서 앱 언어를 명시적으로 고를 수 있도록 설계
+- 기능 문구, 상태·오류, 경고, 접근성 설명과 Android 앱 내 개인정보처리방침을 루트 JSON 카탈로그의 동일한 의미 키로 통합
+- Android는 AppCompat 앱별 locale과 `localeConfig`, iOS는 선호 언어 해석과 루트 화면 재구성을 사용해 현재 실행 중인 UI에 적용
+- iOS 시스템 권한 안내는 9개 언어의 `InfoPlist.strings`로 분리하고, 언어 선택은 각 플랫폼의 앱 내부 설정에만 저장
+
+### v2.0 · 첫 다국어 정식 버전
+
+- 9개 언어 현지화와 앱 내 자동·수동 언어 선택을 v2.0의 정식 제품 기준으로 승격
+- iOS는 Marketing Version `2.0`, Current Project Version `16`으로 설정
+- Android는 Version name을 `2.0`으로 변경하고, Google Play의 단조 증가 조건을 지키기 위해 versionCode를 `15` 다음 값인 `16`으로 설정
+- 설정 언어는 저장 전 미리보기와 저장 후 앱 전체 적용을 분리하고, 긴 버튼 번역은 두 줄 정렬·축소·스위치 폭 보존으로 외부 이탈과 말줄임표를 제거했으며 Android 촬영 Tip은 한 줄 자동 축소로 정리
+- Android 촬영 Tip의 한 줄 고정 제약을 공통 두 줄 배너로 정리해 프랑스어·독일어 등 긴 안내 문구의 잘림을 제거
+- 사용자 확인을 반영해 Android 촬영 Tip은 iOS와 같은 한 줄 자동 축소로 되돌리고, 양 플랫폼 상단 상태 문구는 최대 두 줄로 분리해 긴 번역의 가독성을 유지
+- iOS 가로모드 결과 컨트롤의 좌우 범위를 노치 안전 영역으로 제한해 버튼과 슬라이더가 화면 가장자리에 가려지지 않도록 보강
+- 권한·데이터 수집·영상 저장·온디바이스 분석 범위는 기존과 동일하게 유지
 
 ## 9. 현재 공통 분석 상태
 
@@ -330,6 +356,6 @@ POST-FINISH TRACKING
 - [루트 README](README.md)
 - [iOS 현재 구현](iOS/TopOut/README.md)
 - [Android 현재 구현](Android/TopOut/README.md)
-- [iOS v1.6 build 14](iOS/TopOut/V1_6_BUILD_14_NOTES.md)
-- [Android v1.6 build 14](Android/TopOut/V1_6_BUILD_14_NOTES.md)
+- [iOS v2.0 build 16](iOS/TopOut/V2_0_BUILD_16_NOTES.md)
+- [Android v2.0 versionCode 16](Android/TopOut/V2_0_BUILD_16_NOTES.md)
 - [제품 포트폴리오](portfolio/index.html)

@@ -1,23 +1,6 @@
 import Foundation
 
 enum OpenSourceNotices {
-    static let mobileSAMSummary = #"""
-MobileSAM
-
-TopOut은 MobileSAM 공식 저장소의 모델 구성요소를 기반으로 변환된 Core ML 모델을 포함합니다.
-
-원본 프로젝트:
-https://github.com/ChaoningZhang/MobileSAM
-
-라이선스:
-Apache License 2.0
-
-변경 사항:
-공식 MobileSAM 저장소에서 받은 모델 구성요소를 TopOut의 온디바이스 이미지 분할 기능에 사용하기 위해 Core ML 형식으로 변환하고 앱에 통합했습니다.
-
-TopOut은 MobileSAM 프로젝트 또는 원 저작자와 제휴·후원·승인 관계를 주장하지 않습니다.
-"""#
-
     static let apacheLicense2 = #"""
 
                                  Apache License

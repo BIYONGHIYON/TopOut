@@ -48,7 +48,7 @@
 </div>
 <dl aria-label="프로젝트 요약" class="hero-meta">
 <div><dt>Product</dt><dd>Climbing Video Automation</dd></div>
-<div><dt>Release</dt><dd>v1.6 · iOS build 14 · Android build 14</dd></div>
+<div><dt>Release</dt><dd>v2.0 · iOS build 16 · Android versionCode 16</dd></div>
 <div><dt>Status</dt><dd>iOS · Android Release</dd></div>
 </dl>
 </div>
@@ -116,7 +116,7 @@
 <div><span>Scope</span><strong>제품 전략 · UX 설계 · iOS/Android 개발 · QA · 배포 운영</strong></div>
 <div><span>iOS</span><strong>Swift · UIKit · AVFoundation · Vision · Core ML</strong></div>
 <div><span>Android</span><strong>Kotlin · Jetpack Compose · CameraX · LiteRT · ONNX Runtime</strong></div>
-<div><span>Release</span><strong>v1.6 · iOS build 14 · Android build 14 · Privacy &amp; License Compliance</strong></div>
+<div><span>Release</span><strong>v2.0 · iOS build 16 · Android versionCode 16 · Privacy &amp; License Compliance</strong></div>
 </div>
 </div>
 </section>
@@ -386,9 +386,9 @@
 </div>
 <div class="privacy-list">
 <div class="privacy-item reveal"><span>01</span><div><strong>On-device Processing &amp; Data Minimization</strong><p>영상 프레임, 신체 관절 좌표와 중간 분석 결과를 외부 서버로 전송하지 않고 기기 내에서 처리합니다.</p></div></div>
-<div class="privacy-item reveal"><span>02</span><div><strong>Recording Resilience</strong><p>백그라운드 전환, 카메라 중단, 저장공간 부족과 같은 예외에서 현재 파일을 먼저 정상 종료하도록 설계했습니다. build 10에서는 시스템 뒤로가기·플레이어 생명주기·오디오 인터럽션·안전 영역 대응을 보강했습니다. build 11에서는 두 플랫폼 모두 AI 모델 준비를 카메라 진입 이후로 분리했고, build 12에서는 분석 대기를 5초로 제한해 메모리 제약 기기에서도 수동 보정으로 복구할 수 있도록 했습니다. build 13에서는 시작 판정 정렬과 iOS 다중 인물 추적을 보강했습니다. build 14에서는 선택 영상 높이를 기준으로 시작·종료선을 6%·4%로 맞추고, 카운트다운 취소나 앱 전환 뒤 도착한 오래된 카메라·분석 콜백이 다음 상태를 바꾸지 못하도록 요청 수명을 함께 정리했습니다.</p></div></div>
+<div class="privacy-item reveal"><span>02</span><div><strong>Recording Resilience</strong><p>백그라운드 전환, 카메라 중단, 저장공간 부족과 같은 예외에서 현재 파일을 먼저 정상 종료하도록 설계했습니다. build 10에서는 시스템 뒤로가기·플레이어 생명주기·오디오 인터럽션·안전 영역 대응을 보강했습니다. build 11에서는 두 플랫폼 모두 AI 모델 준비를 카메라 진입 이후로 분리했고, build 12에서는 분석 대기를 5초로 제한해 메모리 제약 기기에서도 수동 보정으로 복구할 수 있도록 했습니다. build 13에서는 시작 판정 정렬과 iOS 다중 인물 추적을 보강했습니다. build 14에서는 선택 영상 높이를 기준으로 시작·종료선을 6%·4%로 맞췄습니다. v1.7 build 15에서는 화면 이탈로 몸통·하체가 잘린 Pose의 시작 조건을 강화하고, 취소나 앱 전환 뒤 도착한 오래된 카메라·분석 콜백이 다음 상태를 바꾸지 못하도록 요청 수명을 정리했습니다.</p></div></div>
 <div class="privacy-item reveal"><span>03</span><div><strong>Verified Gallery Delivery</strong><p>iOS PhotoKit과 Android MediaStore에 저장된 실제 항목을 재조회하고 다시 재생합니다. 저장 구간은 첫 영상 프레임부터 디코딩 가능하도록 내보내 export 성공과 사용자가 확인하는 최종 영상 사이의 불확실성을 줄였습니다.</p></div></div>
-<div class="privacy-item reveal"><span>04</span><div><strong>Production Release Operations</strong><p>iOS Archive, Android AAB, 서명 키, 배포 테스트, Privacy Manifest, 개인정보 처리방침과 오픈소스 고지를 직접 관리했습니다.</p></div></div>
+<div class="privacy-item reveal"><span>04</span><div><strong>Localization &amp; Release Operations</strong><p>해외 클라이머가 별도 설정 없이 시작할 수 있도록 OS 언어 자동 선택을 기본값으로 두고, 영어·한국어·일본어·중국어 간체·번체·프랑스어·독일어·스페인어·포르투갈어의 기능 문구·오류·권한 안내를 현지화했습니다. 언어 선택 즉시 설정 화면을 미리보기하고, 긴 버튼 번역은 두 줄 정렬과 자동 축소로, Android 촬영 Tip은 한 줄 자동 축소로, 상단 상태 문구는 최대 두 줄로 읽을 수 있게 유지했습니다. iOS 가로모드 결과 화면은 노치 안전 영역까지 반영했습니다. 저장한 언어 선택은 기기 내부에만 남습니다. iOS Archive, Android AAB, 서명 키, 배포 테스트, Privacy Manifest, 개인정보 처리방침과 오픈소스 고지도 함께 관리했습니다.</p></div></div>
 </div>
 </div>
 </section>

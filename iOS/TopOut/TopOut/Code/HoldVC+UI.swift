@@ -66,7 +66,7 @@ extension HoldVC {
         let isLandscape = isLandscapeLayout
         let activeFrame = selectedRecordingAspectRatio.displayRect(in: bounds, isLandscape: isLandscape)
 
-        let topMessageHeight: CGFloat = isLandscape ? 30 : 34
+        let topMessageHeight: CGFloat = isLandscape ? 38 : 44
         let topMessageOffsetBelowBaseline: CGFloat = 7
         let topMessageGap: CGFloat = 6 - topMessageOffsetBelowBaseline
         let topMessageY = alignedTopMessageY(
@@ -367,11 +367,11 @@ extension HoldVC {
     }
 
     func recordingCountdownStatusText() -> String {
-        "녹화 준비 중"
+        L("camera.preparing")
     }
 
     func defaultActiveRecordingStatusText() -> String {
-        isAutoClipDetectionEnabled ? "모션 탐지 중 · 등반 시작 대기" : "녹화 중"
+        isAutoClipDetectionEnabled ? L("camera.waiting_motion") : L("camera.recording")
     }
 
     // MARK: Screen State
@@ -432,11 +432,11 @@ extension HoldVC {
             updateReadyButtonTitle()
             if requiresTopHoldSelection {
                 camHint.text = isAutoClipDetectionEnabled
-                    ? "벽과 매트 경계선 · 탑 홀드가 모두 보이게 맞춘 뒤 준비 완료"
-                    : "탑홀드가 잘 보이게 맞춘 뒤 준비 완료"
+                    ? L("camera.preview_both")
+                    : L("camera.preview_hold")
                 camHint.isHidden = !isHelpEnabled
             } else if isAutoClipDetectionEnabled {
-                camHint.text = "벽과 매트 경계선이 보이게 맞춘 뒤 준비 완료"
+                camHint.text = L("camera.preview_mat")
                 camHint.isHidden = !isHelpEnabled
             } else {
                 camHint.text = ""
@@ -463,13 +463,15 @@ extension HoldVC {
     func updateLivePreviewToggleButton() {
         var config = livePreviewToggleButton.configuration ?? .filled()
         config.cornerStyle = .capsule
-        config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12)
+        config.titleAlignment = .center
+        config.titleLineBreakMode = .byWordWrapping
+        config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10)
         config.baseForegroundColor = .white
         if isDeveloperModeEnabled {
-            config.title = "실시간 영상 끄기"
+            config.title = L("camera.hide_live_preview")
             config.baseBackgroundColor = UIColor.black.withAlphaComponent(0.72)
         } else {
-            config.title = "실시간 영상 표시"
+            config.title = L("camera.show_live_preview")
             config.baseBackgroundColor = UIColor.white.withAlphaComponent(0.18)
         }
         config.image = nil
@@ -501,7 +503,7 @@ extension HoldVC {
         config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16)
         manualStopBtn.configuration = config
         manualStopBtn.titleLabel?.font = .monospacedDigitSystemFont(ofSize: 16, weight: .semibold)
-        manualStopBtn.accessibilityLabel = "영상 녹화 종료, \(elapsedText)"
+        manualStopBtn.accessibilityLabel = "\(L("camera.stop_recording")), \(elapsedText)"
         manualStopButtonElapsedText = elapsedText
     }
 
@@ -589,7 +591,9 @@ extension HoldVC {
 
     func updateReadyButtonTitle() {
         var config = readyBtn.configuration ?? .filled()
-        config.title = (isAutoClipDetectionEnabled || requiresTopHoldSelection) ? "준비 완료" : "녹화 시작"
+        config.title = (isAutoClipDetectionEnabled || requiresTopHoldSelection)
+            ? L("camera.ready")
+            : L("camera.start_recording")
         readyBtn.configuration = config
         readyBtn.accessibilityLabel = config.title
     }
@@ -659,8 +663,8 @@ extension HoldVC {
             recordBtn.isEnabled = false
             setLoading(true)
 
-            selectHint.text = "매트 경계를 분석하고 있어요"
-            selectTipLabel.text = "Tip. 분석이 끝나면 경계선을 직접 보정할 수 있어요"
+            selectHint.text = L("camera.analyzing_mat")
+            selectTipLabel.text = L("camera.tip_analysis")
 
             isBusy = true
             var didFinishBoundaryAnalysis = false
@@ -681,15 +685,15 @@ extension HoldVC {
                 self.setLoading(false)
 
                 if self.requiresTopHoldSelection {
-                    self.selectHint.text = "탑홀드를 탭하세요 · 벽과 매트 경계를 보정하세요"
+                    self.selectHint.text = L("camera.selection_both")
                     self.selectTipLabel.text = ""
                     self.selectTipLabel.isHidden = true
                     // Do not cache the Ready-time embedding for hold selection. Each hold tap
                     // captures a fresh live frame while keeping the Ready-time camera FOV fixed.
                     self.emb = nil
                 } else {
-                    self.selectHint.text = "벽과 매트 경계를 보정한 뒤 녹화 시작을 눌러주세요"
-                    self.selectTipLabel.text = "Tip. 파란 점은 위아래로 움직일 수 있어요"
+                    self.selectHint.text = L("camera.selection_mat")
+                    self.selectTipLabel.text = L("camera.tip_adjust_line")
                     self.selectTipLabel.isHidden = !self.isHelpEnabled
                     self.recordBtn.isEnabled = detectedLine.count >= 2
                 }
@@ -708,7 +712,7 @@ extension HoldVC {
             matLinePoints = []
             matLineView.clear()
             matLineView.isHidden = true
-            selectHint.text = "탑홀드를 탭하세요"
+            selectHint.text = L("camera.selection_hold")
             selectTipLabel.text = ""
             selectTipLabel.isHidden = true
             recordBtn.isEnabled = false
@@ -738,7 +742,7 @@ extension HoldVC {
     }
 
     func showCameraDeniedMessage() {
-        showCameraError("카메라 권한이 필요합니다. 설정에서 카메라 접근을 허용해주세요.")
+        showCameraError(L("permission.camera_settings_error"))
     }
 
     func showCameraError(_ message: String) {
@@ -788,7 +792,11 @@ extension HoldVC {
 
     func zoomDisplayText() -> String {
         let displayFactor = displayZoomFactor(forRawZoomFactor: currentCameraZoomFactor)
-        return String(format: "%.1fx", Double(displayFactor))
+        return String(
+            format: "%.1fx",
+            locale: AppLanguageManager.locale,
+            Double(displayFactor)
+        )
     }
 
     private func displayZoomFactor(forRawZoomFactor rawFactor: CGFloat) -> CGFloat {

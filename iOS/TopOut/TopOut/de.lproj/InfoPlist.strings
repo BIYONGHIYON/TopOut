@@ -1,0 +1,4 @@
+"NSCameraUsageDescription" = "Kamerazugriff ist erforderlich, um Klettervideos aufzunehmen.";
+"NSMicrophoneUsageDescription" = "Mikrofonzugriff ist erforderlich, um Ton mit deinen Videos aufzunehmen.";
+"NSPhotoLibraryAddUsageDescription" = "Zugriff auf Fotos ist erforderlich, um bearbeitete Klettervideos zu speichern.";
+"NSPhotoLibraryUsageDescription" = "Zugriff auf Fotos ist erforderlich, um das soeben von TopOut gespeicherte Video zu prüfen und abzuspielen.";

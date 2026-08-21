@@ -22,6 +22,7 @@ import androidx.media3.transformer.Transformer
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
+import com.topout.cam.localization.tr
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -40,7 +41,7 @@ class VideoExporter(private val context: Context) {
         onProgress: (Int) -> Unit = {},
         onSavingToGallery: () -> Unit = {}
     ): Uri {
-        require(endSeconds > startSeconds) { "끝점은 시작점보다 뒤여야 합니다." }
+        require(endSeconds > startSeconds) { tr("error.invalid_clip_range") }
         val temp = File(context.cacheDir, "topout_export_${System.currentTimeMillis()}.mp4")
         temp.delete()
 
@@ -143,11 +144,11 @@ class VideoExporter(private val context: Context) {
         val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         } else MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-        val uri = resolver.insert(collection, values) ?: error("사진 앱 저장 위치를 만들지 못했습니다.")
+        val uri = resolver.insert(collection, values) ?: error(tr("error.photo_destination"))
         try {
             resolver.openOutputStream(uri, "w")?.use { output ->
                 FileInputStream(source).use { input -> input.copyTo(output) }
-            } ?: error("저장 파일을 열지 못했습니다.")
+            } ?: error(tr("error.open_saved_file"))
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 resolver.update(uri, ContentValues().apply {
                     put(MediaStore.Video.Media.IS_PENDING, 0)
@@ -173,25 +174,25 @@ class VideoExporter(private val context: Context) {
             MediaStore.Video.Media.MIME_TYPE
         )
         resolver.query(uri, projection, null, null, null)?.use { cursor ->
-            if (!cursor.moveToFirst()) error("갤러리에서 저장된 영상을 다시 찾지 못했습니다.")
-        } ?: error("갤러리에서 저장된 영상을 확인할 수 없습니다.")
+            if (!cursor.moveToFirst()) error(tr("error.find_saved_video"))
+        } ?: error(tr("error.verify_saved_video"))
 
         resolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
             if (!descriptor.fileDescriptor.valid()) {
-                throw IOException("갤러리에 저장된 영상 파일을 열 수 없습니다.")
+                throw IOException(tr("error.open_saved_file"))
             }
-        } ?: error("갤러리에 저장된 영상 파일을 열 수 없습니다.")
+        } ?: error(tr("error.open_saved_file"))
 
         resolver.openInputStream(uri)?.use { input ->
-            if (input.read() < 0) error("갤러리에 저장된 영상 데이터를 읽을 수 없습니다.")
-        } ?: error("갤러리에 저장된 영상 데이터를 읽을 수 없습니다.")
+            if (input.read() < 0) error(tr("error.read_saved_video"))
+        } ?: error(tr("error.read_saved_video"))
 
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(context, uri)
             val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 ?.toLongOrNull() ?: 0L
-            if (duration <= 0L) error("갤러리에 저장된 영상의 재생 정보를 확인하지 못했습니다.")
+            if (duration <= 0L) error(tr("error.saved_video_metadata"))
         } finally {
             retriever.release()
         }

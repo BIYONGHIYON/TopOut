@@ -23,8 +23,8 @@ extension HoldVC {
             clipTimes.startPTS = pts
             setRecordingStatusText(
                 isTopHoldMaskingEnabled
-                    ? "등반 구간 감지 중 · 탑홀드 추적 중"
-                    : "등반 구간 감지 중 · 최고점 추적 중"
+                    ? L("camera.tracking_hold")
+                    : L("camera.tracking_peak")
             )
 
         case .retry:
@@ -37,7 +37,7 @@ extension HoldVC {
                 appendDetectedClipRange(ClipRange(startPTS: startPTS, endPTS: pts))
             }
             clipTimes.startPTS = nil
-            setRecordingStatusText("구간 저장됨 · 다음 등반 대기")
+            setRecordingStatusText(L("camera.clip_saved"))
         }
     }
 

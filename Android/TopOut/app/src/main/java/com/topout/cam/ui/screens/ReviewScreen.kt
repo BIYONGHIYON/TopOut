@@ -76,6 +76,7 @@ import com.topout.cam.model.GalleryClipSelection
 import com.topout.cam.model.RecordedVideo
 import com.topout.cam.model.SavedGalleryVideo
 import com.topout.cam.model.TopOutConfig
+import com.topout.cam.localization.tr
 import com.topout.cam.ui.components.PrecisionTrimSlider
 import com.topout.cam.ui.components.TopOutCapsuleButton
 import com.topout.cam.ui.components.TopStatusBanner
@@ -84,9 +85,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
 private enum class TrimEditEdge { START, END }
-private const val RETAKE_WARNING_MESSAGE =
-    "기존의 매트경계 위치를 유지하여 다시 촬영합니다.\n저장하지 않은 영상이 삭제됩니다."
-private const val CLOSE_WARNING_MESSAGE = "저장하지 않은 영상이 삭제됩니다."
+private val retakeWarningMessage: String get() = tr("review.retake_warning")
+private val closeWarningMessage: String get() = tr("review.close_warning")
 
 private data class DiscardConfirmation(
     val message: String,
@@ -155,7 +155,7 @@ fun ReviewScreen(
         // Activity destruction cannot cancel the ViewModel coroutine and leave a partial result.
         if (!saving) {
             requestDiscardConfirmation(
-                CLOSE_WARNING_MESSAGE,
+                closeWarningMessage,
                 compactText = false,
                 confirmedAction = onClose
             )
@@ -168,7 +168,7 @@ fun ReviewScreen(
                 player.pause()
                 isPlaying = false
                 if (settings.helpEnabled) {
-                    playbackErrorMessage = "영상을 재생할 수 없습니다. 다시 촬영해주세요"
+                    playbackErrorMessage = tr("error.play_video")
                 }
             }
         }
@@ -284,9 +284,9 @@ fun ReviewScreen(
             savingStatusSelection?.matches(currentSelection) == true
         }
         val reviewStatusText = playbackErrorMessage ?: currentSavingStatus ?: if (video.detectedRanges.isEmpty()) {
-            "저장할 구간을 직접 선택해주세요"
+            tr("review.manual_prompt")
         } else {
-            "자동 감지된 시작~완등 구간을 확인해주세요"
+            tr("review.auto_prompt")
         }
         if (settings.helpEnabled || currentSavingStatus != null) {
             TopStatusBanner(
@@ -325,7 +325,7 @@ fun ReviewScreen(
                         Spacer(Modifier.size(6.dp))
                     }
                     Text(
-                        text = "감지 구간 ${selectedRangeIndex + 1}/${video.detectedRanges.size}",
+                        text = tr("review.detected_range", selectedRangeIndex + 1, video.detectedRanges.size),
                         modifier = Modifier.background(Color.Black.copy(alpha = 0.42f), RoundedCornerShape(13.dp)).padding(horizontal = 14.dp, vertical = 5.dp),
                         color = Color.White,
                         fontFamily = FontFamily.Monospace,
@@ -411,14 +411,14 @@ fun ReviewScreen(
             }
             val requestRetake = {
                 requestDiscardConfirmation(
-                    RETAKE_WARNING_MESSAGE,
+                    retakeWarningMessage,
                     compactText = true,
                     confirmedAction = onRetake
                 )
             }
             val requestClose = {
                 requestDiscardConfirmation(
-                    CLOSE_WARNING_MESSAGE,
+                    closeWarningMessage,
                     compactText = false,
                     confirmedAction = onClose
                 )
@@ -432,7 +432,7 @@ fun ReviewScreen(
                 ) {
                     PlaybackButton(isPlaying, !saving, togglePlayback, Modifier.size(width = 48.dp, height = 40.dp))
                     TopOutCapsuleButton(
-                        text = "탑홀드 마스크",
+                        text = tr("review.top_hold_mask"),
                         onClick = { includeOverlay = !includeOverlay },
                         icon = if (includeOverlay) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
                         enabled = !saving && video.overlayBitmap != null,
@@ -442,11 +442,11 @@ fun ReviewScreen(
                     )
                     TopOutCapsuleButton(
                         text = if (saving) {
-                            "저장 중..."
+                            tr("review.saving")
                         } else if (savedMatchesCurrentSelection) {
-                            "저장된 영상 확인"
+                            tr("review.view_saved")
                         } else {
-                            "선택 구간 저장"
+                            tr("review.save_clip")
                         },
                         onClick = {
                             if (savedMatchesCurrentSelection) {
@@ -462,8 +462,8 @@ fun ReviewScreen(
                         compact = true,
                         modifier = Modifier.weight(1f)
                     )
-                    TopOutCapsuleButton("다시 촬영", requestRetake, enabled = !saving, compact = true, modifier = Modifier.weight(0.78f))
-                    TopOutCapsuleButton("닫기", requestClose, enabled = !saving, compact = true, modifier = Modifier.weight(0.62f))
+                    TopOutCapsuleButton(tr("camera.retake"), requestRetake, enabled = !saving, compact = true, modifier = Modifier.weight(0.78f))
+                    TopOutCapsuleButton(tr("common.close"), requestClose, enabled = !saving, compact = true, modifier = Modifier.weight(0.62f))
                 }
             } else {
                 Row(
@@ -473,7 +473,7 @@ fun ReviewScreen(
                 ) {
                     PlaybackButton(isPlaying, !saving, togglePlayback, Modifier.size(width = 58.dp, height = 42.dp))
                     TopOutCapsuleButton(
-                        text = "탑홀드 마스크",
+                        text = tr("review.top_hold_mask"),
                         onClick = { includeOverlay = !includeOverlay },
                         icon = if (includeOverlay) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
                         enabled = !saving && video.overlayBitmap != null,
@@ -483,11 +483,11 @@ fun ReviewScreen(
                     )
                     TopOutCapsuleButton(
                         text = if (saving) {
-                            "저장 중..."
+                            tr("review.saving")
                         } else if (savedMatchesCurrentSelection) {
-                            "저장된 영상 확인"
+                            tr("review.view_saved")
                         } else {
-                            "선택 구간 저장"
+                            tr("review.save_clip")
                         },
                         onClick = {
                             if (savedMatchesCurrentSelection) {
@@ -505,8 +505,8 @@ fun ReviewScreen(
                     )
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TopOutCapsuleButton("다시 촬영", requestRetake, enabled = !saving, compact = true, modifier = Modifier.weight(1f))
-                    TopOutCapsuleButton("닫기", requestClose, enabled = !saving, compact = true, modifier = Modifier.weight(1f))
+                    TopOutCapsuleButton(tr("camera.retake"), requestRetake, enabled = !saving, compact = true, modifier = Modifier.weight(1f))
+                    TopOutCapsuleButton(tr("common.close"), requestClose, enabled = !saving, compact = true, modifier = Modifier.weight(1f))
                 }
             }
         }
@@ -545,7 +545,7 @@ fun ReviewScreen(
                         containerColor = TopOutColors.GrayButton,
                         contentColor = Color.White
                     )
-                ) { Text("취소") }
+                ) { Text(tr("common.cancel")) }
             },
             confirmButton = {
                 Button(
@@ -554,7 +554,7 @@ fun ReviewScreen(
                         confirmation.confirmedAction()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = TopOutColors.Red)
-                ) { Text("확인") }
+                ) { Text(tr("common.ok")) }
             }
         )
     }
@@ -577,7 +577,7 @@ private fun PlaybackButton(
     ) {
         Icon(
             if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-            "재생 또는 일시정지",
+            tr("review.play_pause"),
             tint = Color.White
         )
     }
@@ -609,7 +609,7 @@ private fun SavedGalleryVideoDialog(
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                playbackError = "갤러리에 저장된 영상을 재생할 수 없습니다."
+                playbackError = tr("error.gallery_play")
             }
         }
         player.addListener(listener)
@@ -717,7 +717,7 @@ private fun SavedGalleryVideoDialog(
                 )
 
                 TopStatusBanner(
-                    text = playbackError ?: "갤러리에서 불러온 영상",
+                    text = playbackError ?: tr("review.saved_gallery_video"),
                     isLandscape = isLandscape,
                     modifier = Modifier.align(Alignment.TopCenter)
                 )
@@ -735,7 +735,7 @@ private fun SavedGalleryVideoDialog(
                 contentAlignment = Alignment.Center
             ) {
                 TopOutCapsuleButton(
-                    text = "편집 화면으로 돌아가기",
+                    text = tr("review.back_to_editor"),
                     onClick = onDismiss,
                     primary = true,
                     compact = true,
@@ -787,7 +787,7 @@ private fun PersistentNoticeDialog(title: String, message: String, onConfirm: ()
         title = { Text(title, fontWeight = FontWeight.Bold) },
         text = { Text(message) },
         confirmButton = {
-            Button(onClick = onConfirm) { Text("확인") }
+            Button(onClick = onConfirm) { Text(tr("common.ok")) }
         }
     )
 }

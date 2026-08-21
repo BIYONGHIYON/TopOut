@@ -124,32 +124,47 @@ struct RecordingStopNotice {
     let title: String
     let message: String
 
-    static let background = RecordingStopNotice(
-        title: "녹화가 자동 종료되었습니다",
-        message: "앱이 백그라운드로 이동해 녹화를 안전하게 종료했습니다. 녹화된 영상은 결과 화면에서 확인할 수 있습니다."
-    )
+    static var background: RecordingStopNotice {
+        RecordingStopNotice(title: L("notice.background_title"), message: L("notice.background_message"))
+    }
 
-    static let captureInterruption = RecordingStopNotice(
-        title: "녹화가 중단되었습니다",
-        message: "다른 앱의 카메라·마이크 사용으로 촬영 장치가 중단되어 녹화를 안전하게 종료했습니다."
-    )
+    static var captureInterruption: RecordingStopNotice {
+        RecordingStopNotice(title: L("notice.interruption_title"), message: L("notice.interruption_message"))
+    }
 
-    static let sessionError = RecordingStopNotice(
-        title: "카메라 오류로 녹화가 종료되었습니다",
-        message: "카메라 세션 오류가 발생해 현재까지 촬영된 영상을 안전하게 마무리했습니다."
-    )
+    static var sessionError: RecordingStopNotice {
+        RecordingStopNotice(title: L("notice.camera_error_title"), message: L("notice.camera_error_message"))
+    }
 
     static func lowStorage(availableBytes: Int64?) -> RecordingStopNotice {
         let availableText: String
         if let availableBytes {
-            availableText = " 현재 사용 가능한 저장공간은 약 \(ByteCountFormatter.string(fromByteCount: availableBytes, countStyle: .file))입니다."
+            let gigabytes = Double(availableBytes) / 1_073_741_824.0
+            let formattedBytes: String
+            if gigabytes >= 1 {
+                formattedBytes = String(
+                    format: "%.1f GB",
+                    locale: AppLanguageManager.locale,
+                    gigabytes
+                )
+            } else {
+                formattedBytes = String(
+                    format: "%.0f MB",
+                    locale: AppLanguageManager.locale,
+                    Double(availableBytes) / 1_048_576.0
+                )
+            }
+            availableText = L(
+                "notice.available_storage",
+                formattedBytes
+            )
         } else {
             availableText = ""
         }
 
         return RecordingStopNotice(
-            title: "저장공간이 부족합니다",
-            message: "저장공간이 임박해 녹화를 자동 종료했습니다. 영상을 저장하기 전에 기기의 저장공간을 확보해주세요.\(availableText)"
+            title: L("notice.low_storage_title"),
+            message: L("notice.low_storage_message", availableText)
         )
     }
 }

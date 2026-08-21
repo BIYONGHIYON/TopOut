@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,7 +43,7 @@ fun TopOutCapsuleButton(
     }
     Button(
         onClick = onClick,
-        modifier = modifier.height(if (compact) 42.dp else 54.dp),
+        modifier = modifier.height(if (compact) 44.dp else 56.dp),
         enabled = enabled,
         shape = RoundedCornerShape(999.dp),
         colors = ButtonDefaults.buttonColors(
@@ -52,9 +53,9 @@ fun TopOutCapsuleButton(
             disabledContentColor = Color.White.copy(alpha = 0.55f)
         ),
         contentPadding = if (compact) {
-            androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 7.dp)
+            androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp)
         } else {
-            androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp, vertical = 8.dp)
+            androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 6.dp)
         }
     ) {
         if (icon != null) {
@@ -64,13 +65,14 @@ fun TopOutCapsuleButton(
         Text(
             text = text,
             autoSize = TextAutoSize.StepBased(
-                minFontSize = if (compact) 12.sp else 13.sp,
+                minFontSize = if (compact) 8.sp else 10.sp,
                 maxFontSize = if (compact) 14.sp else 16.sp,
                 stepSize = 0.5.sp
             ),
             fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            softWrap = false,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            softWrap = true,
             overflow = TextOverflow.Clip
         )
     }

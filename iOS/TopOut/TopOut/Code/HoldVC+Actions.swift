@@ -81,7 +81,7 @@ extension HoldVC {
         mode = .processing
         retakeBtn.isEnabled = false
         recordBtn.isEnabled = false
-        selectHint.text = "현재 프레임에서 탑홀드 분석 중..."
+        selectHint.text = L("camera.analyzing_hold")
         setLoading(true)
 
         // Capture a new video frame for every tap so MobileSAM follows any physical camera-angle
@@ -97,7 +97,7 @@ extension HoldVC {
                 self.mode = .select
                 self.retakeBtn.isEnabled = true
                 self.recordBtn.isEnabled = false
-                self.selectHint.text = "현재 카메라 프레임을 캡처하지 못했습니다. 다시 탭해주세요"
+                self.selectHint.text = L("camera.capture_failed_retry")
                 self.setLoading(false)
                 return
             }
@@ -134,7 +134,7 @@ extension HoldVC {
         motionDetector.stop()
         recState = .exporting
         mode = .recording
-        setRecordingStatusText("영상 정리 중...")
+        setRecordingStatusText(L("camera.processing_video"))
         manualStopBtn.isEnabled = false
         setLoading(true)
         beginRecordingStopBackgroundTask()
@@ -147,15 +147,15 @@ extension HoldVC {
             switch result {
             case .success(let session):
                 self.showReview(session: session)
-            case .failure(let error):
+            case .failure:
                 self.recorder.deleteAll()
                 self.recState = .idle
                 self.mode = .camera
                 self.unlockCameraOrientation()
                 self.showCameraUI()
                 self.pendingAutomaticStopNotice = RecordingStopNotice(
-                    title: "녹화 종료 실패",
-                    message: error.localizedDescription
+                    title: L("error.recording_finish"),
+                    message: L("error.recording_finish")
                 )
                 self.deliverPendingAutomaticStopResultIfPossible()
             }

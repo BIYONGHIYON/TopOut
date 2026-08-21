@@ -222,7 +222,7 @@ extension HoldVC {
         stopCamera()
 
         manualStopBtn.isEnabled = false
-        setRecordingStatusText("녹화를 안전하게 종료하는 중...")
+        setRecordingStatusText(L("camera.finishing"))
         setLoading(true)
         beginRecordingStopBackgroundTask()
 
@@ -257,7 +257,7 @@ extension HoldVC {
                     self.pendingAutomaticStopSession = nil
                     self.pendingAutomaticStopNotice = RecordingStopNotice(
                         title: notice.title,
-                        message: "\(notice.message)\n\n실제 영상 프레임이 기록되기 전이어서 저장된 영상은 없습니다."
+                        message: "\(notice.message)\n\n\(L("notice.no_video_frames"))"
                     )
                     self.restoreIdleCameraAfterAutomaticStopIfActive()
                     self.deliverPendingAutomaticStopResultIfPossible()
@@ -273,7 +273,7 @@ extension HoldVC {
                 self.pendingAutomaticStopSession = nil
                 self.pendingAutomaticStopNotice = RecordingStopNotice(
                     title: notice.title,
-                    message: "\(notice.message)\n\n녹화 파일을 마무리하지 못했습니다: \(error.localizedDescription)"
+                    message: "\(notice.message)\n\n\(L("error.recording_finish"))"
                 )
                 self.restoreIdleCameraAfterAutomaticStopIfActive()
                 self.deliverPendingAutomaticStopResultIfPossible()
@@ -292,7 +292,7 @@ extension HoldVC {
         pendingAutomaticStopSession = nil
         pendingAutomaticStopNotice = RecordingStopNotice(
             title: notice.title,
-            message: "\(notice.message)\n\n실제 녹화가 시작되기 전이어서 저장된 영상은 없습니다."
+            message: "\(notice.message)\n\n\(L("notice.recording_not_started"))"
         )
         restoreIdleCameraAfterAutomaticStopIfActive()
         deliverPendingAutomaticStopResultIfPossible()
@@ -339,7 +339,7 @@ extension HoldVC {
             message: notice.message,
             preferredStyle: .alert
         )
-        alert.addAction(UIAlertAction(title: "확인", style: .default))
+        alert.addAction(UIAlertAction(title: L("common.ok"), style: .default))
         presenter.present(alert, animated: true)
     }
 

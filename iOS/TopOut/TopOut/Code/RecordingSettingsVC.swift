@@ -2,6 +2,7 @@ import UIKit
 
 final class RecordingSettingsVC: UIViewController {
     var onApply: ((RecordingResolution, RecordingFrameRate, RecordingAspectRatio, Bool, Bool, Bool, Bool) -> Void)?
+    var onLanguageChanged: (() -> Void)?
 
     private let resolutionSegment = UISegmentedControl(items: RecordingResolution.allCases.map { $0.title })
     private let frameRateSegment = UISegmentedControl(items: RecordingFrameRate.allCases.map { $0.title })
@@ -18,7 +19,7 @@ final class RecordingSettingsVC: UIViewController {
     private let autoClipDetectionSwitch = UISwitch()
     private let autoClipDetectionDescriptionLabel: UILabel = {
         let label = UILabel()
-        label.text = "비활성화 시 배터리가 절약되지만 수동으로 구간 선택"
+        label.text = L("settings.auto_clip_description")
         label.textColor = .secondaryLabel
         label.font = .systemFont(ofSize: 13, weight: .medium)
         label.numberOfLines = 0
@@ -28,7 +29,7 @@ final class RecordingSettingsVC: UIViewController {
     private let topHoldMaskingSwitch = UISwitch()
     private let topHoldMaskingDescriptionLabel: UILabel = {
         let label = UILabel()
-        label.text = "결과 영상에 선택 영역을 마스크로 표시해 저장 가능"
+        label.text = L("settings.top_hold_masking_description")
         label.textColor = .secondaryLabel
         label.font = .systemFont(ofSize: 13, weight: .medium)
         label.numberOfLines = 0
@@ -39,7 +40,7 @@ final class RecordingSettingsVC: UIViewController {
     private let developerModeSwitch = UISwitch()
     private let developerModeDescriptionLabel: UILabel = {
         let label = UILabel()
-        label.text = "비활성화 시 배터리 절약을 위해 녹화 중 검은 화면 출력"
+        label.text = L("settings.live_preview_description")
         label.textColor = .secondaryLabel
         label.font = .systemFont(ofSize: 12.5, weight: .medium)
         label.numberOfLines = 0
@@ -48,7 +49,7 @@ final class RecordingSettingsVC: UIViewController {
 
     private let batteryWarningLabel: UILabel = {
         let label = UILabel()
-        label.text = "4K 60fps는 배터리와 저장공간을 빠르게 소모할 수 있어요."
+        label.text = L("settings.battery_warning")
         label.textColor = .systemOrange
         label.font = .systemFont(ofSize: 13, weight: .semibold)
         label.textAlignment = .center
@@ -67,6 +68,11 @@ final class RecordingSettingsVC: UIViewController {
     private var topHoldMaskingEnabled: Bool
     private var helpEnabled: Bool
     private var developerModeEnabled: Bool
+    private var selectedLanguage = AppLanguageManager.selected
+    private lazy var languageButton: UIButton = makeLanguageButton()
+    private var localizedLabels: [(label: UILabel, key: String)] = []
+    private weak var openSourceButton: UIButton?
+    private weak var appVersionLabel: UILabel?
 
     init(
         resolution: RecordingResolution,
@@ -116,10 +122,10 @@ final class RecordingSettingsVC: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        title = "설정"
+        title = T("common.settings")
 
         navigationItem.leftBarButtonItem = UIBarButtonItem(
-            title: "닫기",
+            title: T("common.close"),
             style: .plain,
             target: self,
             action: #selector(onClose)
@@ -133,7 +139,7 @@ final class RecordingSettingsVC: UIViewController {
         }
 
         navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: "저장",
+            title: T("common.save"),
             style: saveButtonStyle,
             target: self,
             action: #selector(onSave)
@@ -156,46 +162,35 @@ final class RecordingSettingsVC: UIViewController {
         updateBatteryWarning()
         updateAspectDescription()
 
-        let videoTitle = sectionTitle("영상 포맷")
-        let resolutionLabel = itemLabel("해상도")
-        let fpsLabel = itemLabel("프레임")
-        let aspectTitle = sectionTitle("화면 비율")
-        let autoClipTitle = sectionTitle("자동 구간 탐지")
-        let topHoldMaskingTitle = sectionTitle("탑홀드 마스킹")
-        let helpTitle = sectionTitle("도움말")
-        let helpLabel = itemLabel("촬영 안내 문구와 Tip 표시")
-        let developerTitle = sectionTitle("녹화중 실시간 영상 표시")
-        let appInfoTitle = sectionTitle("앱 정보")
+        let videoTitle = localizedSectionTitle("settings.video_format")
+        let resolutionLabel = localizedItemLabel("settings.resolution")
+        let fpsLabel = localizedItemLabel("settings.frame_rate")
+        let aspectTitle = localizedSectionTitle("settings.aspect_ratio")
+        let autoClipTitle = localizedSectionTitle("settings.auto_clip")
+        let topHoldMaskingTitle = localizedSectionTitle("settings.top_hold_masking")
+        let helpTitle = localizedSectionTitle("settings.help")
+        let helpLabel = localizedItemLabel("settings.help_description")
+        let developerTitle = localizedSectionTitle("settings.live_preview")
+        let languageTitle = localizedSectionTitle("language.title")
+        let appInfoTitle = localizedSectionTitle("settings.app_info")
         let openSourceButton = navigationButton(
-            title: "오픈소스 라이선스",
+            title: T("licenses.title"),
             action: #selector(onOpenSourceLicenses)
         )
-        let appVersionLabel = itemLabel("버전 \(appVersionDescription)")
+        self.openSourceButton = openSourceButton
+        let appVersionLabel = itemLabel(T("settings.version", appVersionDescription))
+        self.appVersionLabel = appVersionLabel
 
-        let autoClipRow = UIStackView(arrangedSubviews: [autoClipDetectionDescriptionLabel, autoClipDetectionSwitch])
-        autoClipRow.axis = .horizontal
-        autoClipRow.alignment = .center
-        autoClipRow.spacing = 12
-
-        let topHoldMaskingRow = UIStackView(arrangedSubviews: [topHoldMaskingDescriptionLabel, topHoldMaskingSwitch])
-        topHoldMaskingRow.axis = .horizontal
-        topHoldMaskingRow.alignment = .center
-        topHoldMaskingRow.spacing = 12
-
-        let helpRow = UIStackView(arrangedSubviews: [helpLabel, helpSwitch])
-        helpRow.axis = .horizontal
-        helpRow.alignment = .center
-        helpRow.spacing = 12
-
-        developerModeDescriptionLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        developerModeSwitch.setContentHuggingPriority(.required, for: .horizontal)
-        developerModeSwitch.setContentCompressionResistancePriority(.required, for: .horizontal)
-
-        let developerRow = UIStackView(arrangedSubviews: [developerModeDescriptionLabel, developerModeSwitch])
-        developerRow.axis = .horizontal
-        developerRow.alignment = .center
-        developerRow.spacing = 12
-        developerRow.distribution = .fill
+        let autoClipRow = switchRow(
+            label: autoClipDetectionDescriptionLabel,
+            toggle: autoClipDetectionSwitch
+        )
+        let topHoldMaskingRow = switchRow(
+            label: topHoldMaskingDescriptionLabel,
+            toggle: topHoldMaskingSwitch
+        )
+        let helpRow = switchRow(label: helpLabel, toggle: helpSwitch)
+        let developerRow = switchRow(label: developerModeDescriptionLabel, toggle: developerModeSwitch)
 
         let stack = UIStackView(arrangedSubviews: [
             videoTitle,
@@ -215,6 +210,8 @@ final class RecordingSettingsVC: UIViewController {
             helpRow,
             developerTitle,
             developerRow,
+            languageTitle,
+            languageButton,
             appInfoTitle,
             openSourceButton,
             appVersionLabel
@@ -241,6 +238,7 @@ final class RecordingSettingsVC: UIViewController {
             stack.bottomAnchor.constraint(lessThanOrEqualTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -24),
             stack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -48)
         ])
+        refreshLocalizedContent()
     }
 
     private func sectionTitle(_ text: String) -> UILabel {
@@ -248,6 +246,13 @@ final class RecordingSettingsVC: UIViewController {
         label.text = text
         label.font = .systemFont(ofSize: 18, weight: .bold)
         label.textColor = .label
+        label.numberOfLines = 0
+        return label
+    }
+
+    private func localizedSectionTitle(_ key: String) -> UILabel {
+        let label = sectionTitle(T(key))
+        localizedLabels.append((label, key))
         return label
     }
 
@@ -256,7 +261,55 @@ final class RecordingSettingsVC: UIViewController {
         label.text = text
         label.font = .systemFont(ofSize: 14, weight: .semibold)
         label.textColor = .secondaryLabel
+        label.numberOfLines = 0
         return label
+    }
+
+    private func localizedItemLabel(_ key: String) -> UILabel {
+        let label = itemLabel(T(key))
+        localizedLabels.append((label, key))
+        return label
+    }
+
+    private func switchRow(label: UILabel, toggle: UISwitch) -> UIStackView {
+        label.lineBreakMode = .byWordWrapping
+        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        toggle.setContentHuggingPriority(.required, for: .horizontal)
+        toggle.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let row = UIStackView(arrangedSubviews: [label, toggle])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = 12
+        row.distribution = .fill
+        return row
+    }
+
+    private func T(_ key: String, _ arguments: Any...) -> String {
+        L10n.text(key, arguments, language: selectedLanguage)
+    }
+
+    private func refreshLocalizedContent() {
+        title = T("common.settings")
+        navigationItem.leftBarButtonItem?.title = T("common.close")
+        navigationItem.rightBarButtonItem?.title = T("common.save")
+        localizedLabels.forEach { $0.label.text = T($0.key) }
+        autoClipDetectionDescriptionLabel.text = T("settings.auto_clip_description")
+        topHoldMaskingDescriptionLabel.text = T("settings.top_hold_masking_description")
+        developerModeDescriptionLabel.text = T("settings.live_preview_description")
+        batteryWarningLabel.text = T("settings.battery_warning")
+        appVersionLabel?.text = T("settings.version", appVersionDescription)
+
+        if let openSourceButton,
+           var configuration = openSourceButton.configuration {
+            configuration.title = T("licenses.title")
+            openSourceButton.configuration = configuration
+        }
+
+        updateAspectDescription()
+        updateLanguageButton()
+        view.setNeedsLayout()
     }
 
     private func navigationButton(title: String, action: Selector) -> UIButton {
@@ -264,6 +317,7 @@ final class RecordingSettingsVC: UIViewController {
         var configuration = UIButton.Configuration.gray()
         configuration.title = title
         configuration.titleAlignment = .leading
+        configuration.titleLineBreakMode = .byWordWrapping
         configuration.image = UIImage(systemName: "chevron.right")
         configuration.imagePlacement = .trailing
         configuration.imagePadding = 10
@@ -276,8 +330,51 @@ final class RecordingSettingsVC: UIViewController {
         )
         button.configuration = configuration
         button.contentHorizontalAlignment = .fill
+        button.titleLabel?.numberOfLines = 2
+        button.titleLabel?.lineBreakMode = .byWordWrapping
         button.addTarget(self, action: action, for: .touchUpInside)
         return button
+    }
+
+    private func makeLanguageButton() -> UIButton {
+        let button = UIButton(type: .system)
+        button.contentHorizontalAlignment = .fill
+        button.showsMenuAsPrimaryAction = true
+        updateLanguageButton(button)
+        return button
+    }
+
+    private func updateLanguageButton(_ button: UIButton? = nil) {
+        let target = button ?? languageButton
+        var configuration = UIButton.Configuration.gray()
+        configuration.title = AppLanguageManager.displayName(
+            for: selectedLanguage,
+            localizedUsing: selectedLanguage
+        )
+        configuration.titleAlignment = .leading
+        configuration.titleLineBreakMode = .byWordWrapping
+        configuration.image = UIImage(systemName: "chevron.up.chevron.down")
+        configuration.imagePlacement = .trailing
+        configuration.imagePadding = 10
+        configuration.baseForegroundColor = .label
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 13, leading: 16, bottom: 13, trailing: 14)
+        target.configuration = configuration
+        target.titleLabel?.numberOfLines = 2
+        target.titleLabel?.lineBreakMode = .byWordWrapping
+        target.titleLabel?.adjustsFontSizeToFitWidth = true
+        target.titleLabel?.minimumScaleFactor = 0.75
+        target.menu = UIMenu(children: AppLanguage.allCases.map { language in
+            UIAction(
+                title: AppLanguageManager.displayName(
+                    for: language,
+                    localizedUsing: selectedLanguage
+                ),
+                state: language == selectedLanguage ? .on : .off
+            ) { [weak self] _ in
+                self?.selectedLanguage = language
+                self?.refreshLocalizedContent()
+            }
+        })
     }
 
     private var appVersionDescription: String {
@@ -286,7 +383,10 @@ final class RecordingSettingsVC: UIViewController {
     }
 
     @objc private func onOpenSourceLicenses() {
-        navigationController?.pushViewController(OpenSourceLicensesVC(), animated: true)
+        navigationController?.pushViewController(
+            OpenSourceLicensesVC(language: selectedLanguage),
+            animated: true
+        )
     }
 
     @objc private func onClose() {
@@ -384,7 +484,21 @@ final class RecordingSettingsVC: UIViewController {
             for: selectedResolution,
             isLandscape: previewIsLandscape
         )
-        aspectDescriptionLabel.text = "\(selectedAspectRatio.subtitle) · 저장 크기 \(Int(output.width))×\(Int(output.height))"
+        aspectDescriptionLabel.text = T(
+            "settings.output_size",
+            selectedAspectSubtitle,
+            Int(output.width),
+            Int(output.height)
+        )
+    }
+
+    private var selectedAspectSubtitle: String {
+        switch selectedAspectRatio {
+        case .story916: return T("settings.story_reels")
+        case .feed45: return T("settings.instagram_feed")
+        case .portrait34: return T("settings.portrait_post")
+        case .square11: return T("settings.square_post")
+        }
     }
 
     @objc private func onSave() {
@@ -394,8 +508,12 @@ final class RecordingSettingsVC: UIViewController {
         topHoldMaskingEnabled = topHoldMaskingSwitch.isOn
         helpEnabled = helpSwitch.isOn
         developerModeEnabled = developerModeSwitch.isOn
+        let languageChanged = selectedLanguage != AppLanguageManager.selected
+        AppLanguageManager.select(selectedLanguage)
         onApply?(selectedResolution, selectedFrameRate, selectedAspectRatio, autoClipDetectionEnabled, topHoldMaskingEnabled, helpEnabled, developerModeEnabled)
-        dismiss(animated: true)
+        dismiss(animated: true) { [weak self] in
+            if languageChanged { self?.onLanguageChanged?() }
+        }
     }
 }
 

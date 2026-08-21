@@ -179,7 +179,7 @@ extension HoldVC {
             guard let camera = self.backCamera() else {
                 self.session.commitConfiguration()
                 DispatchQueue.main.async {
-                    self.showCameraError("후면 카메라를 찾을 수 없습니다. 실제 기기에서 실행 중인지 확인해주세요.")
+                    self.showCameraError(L("error.rear_camera"))
                 }
                 return
             }
@@ -204,13 +204,13 @@ extension HoldVC {
                 let input = try AVCaptureDeviceInput(device: camera)
                 guard self.session.canAddInput(input) else {
                     self.session.commitConfiguration()
-                    DispatchQueue.main.async { self.showCameraError("카메라 입력을 세션에 추가할 수 없습니다.") }
+                    DispatchQueue.main.async { self.showCameraError(L("error.camera_configuration")) }
                         return
                 }
                 self.session.addInput(input)
             } catch {
                 self.session.commitConfiguration()
-                DispatchQueue.main.async { self.showCameraError("카메라 입력 생성 실패: \(error.localizedDescription)") }
+                DispatchQueue.main.async { self.showCameraError(L("error.camera_start")) }
                 return
             }
 
@@ -237,7 +237,7 @@ extension HoldVC {
             ]
             guard self.session.canAddOutput(self.videoOutput) else {
                 self.session.commitConfiguration()
-                DispatchQueue.main.async { self.showCameraError("비디오 출력을 세션에 추가할 수 없습니다.") }
+                DispatchQueue.main.async { self.showCameraError(L("error.camera_configuration")) }
                 return
             }
             self.session.addOutput(self.videoOutput)
@@ -692,7 +692,7 @@ extension HoldVC {
     @objc func onReady() {
         guard mode == .camera, recState == .idle, !isBusy else { return }
         guard isCameraReady, isCameraStreamReady else {
-            showCameraError("카메라가 아직 준비되지 않았습니다.")
+            showCameraError(L("error.camera_session_not_ready"))
             return
         }
 
@@ -739,7 +739,7 @@ extension HoldVC {
                     self.isBusy = false
                     self.setLoading(false)
                     self.readyBtn.isEnabled = self.isCameraStreamReady
-                    self.showCameraError("현재 카메라 프레임을 캡처하지 못했습니다.")
+                    self.showCameraError(L("camera.capture_failed"))
                     return
                 }
 

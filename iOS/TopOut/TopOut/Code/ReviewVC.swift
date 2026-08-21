@@ -57,7 +57,7 @@ final class ReviewVC: UIViewController {
 
     private let statusLabel: UILabel = {
         let label = UILabel()
-        label.text = "자동 감지된 시작~완등 구간을 확인해주세요"
+        label.text = L("review.auto_prompt")
         label.textColor = .white
         label.textAlignment = .center
         label.font = .systemFont(ofSize: 14, weight: .semibold)
@@ -67,6 +67,8 @@ final class ReviewVC: UIViewController {
         label.layer.shadowRadius = 3
         label.layer.shadowOffset = CGSize(width: 0, height: 1)
         label.clipsToBounds = false
+        label.numberOfLines = 2
+        label.lineBreakMode = .byWordWrapping
         return label
     }()
 
@@ -76,7 +78,7 @@ final class ReviewVC: UIViewController {
         config.image = UIImage(systemName: "chevron.left")
         config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10)
         let btn = UIButton(configuration: config)
-        btn.accessibilityLabel = "이전 감지 구간"
+        btn.accessibilityLabel = L("review.previous_range")
         btn.isHidden = true
         return btn
     }()
@@ -87,7 +89,7 @@ final class ReviewVC: UIViewController {
         config.image = UIImage(systemName: "chevron.right")
         config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10)
         let btn = UIButton(configuration: config)
-        btn.accessibilityLabel = "다음 감지 구간"
+        btn.accessibilityLabel = L("review.next_range")
         btn.isHidden = true
         return btn
     }()
@@ -129,9 +131,11 @@ final class ReviewVC: UIViewController {
 
     private let selectedRangeZoomLabel: UILabel = {
         let label = UILabel()
-        label.text = "선택된 구간 확대"
+        label.text = L("review.selected_zoom")
         label.textColor = UIColor.white.withAlphaComponent(0.90)
         label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.68
         return label
     }()
 
@@ -157,8 +161,8 @@ final class ReviewVC: UIViewController {
         )
         slider.setThumbImage(compactThumb)
         slider.thumbTintColor = .white
-        slider.accessibilityLabel = "선택된 구간 확대"
-        slider.accessibilityHint = "오른쪽으로 이동하면 선택된 시작과 끝을 화면 안에 유지한 채 확대합니다"
+        slider.accessibilityLabel = L("review.selected_zoom")
+        slider.accessibilityHint = L("review.selected_zoom_hint")
         return slider
     }()
 
@@ -168,14 +172,14 @@ final class ReviewVC: UIViewController {
         config.image = UIImage(systemName: "play.fill")
         config.contentInsets = NSDirectionalEdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 14)
         let btn = UIButton(configuration: config)
-        btn.accessibilityLabel = "재생 또는 일시정지"
+        btn.accessibilityLabel = L("review.play_pause")
         return btn
     }()
 
     private let overlayToggleBtn: UIButton = {
         var config = UIButton.Configuration.gray()
         config.cornerStyle = .capsule
-        var title = AttributedString("탑홀드 마스크")
+        var title = AttributedString(L("review.top_hold_mask"))
         title.font = .systemFont(ofSize: 13, weight: .semibold)
         config.title = nil
         config.attributedTitle = title
@@ -189,29 +193,39 @@ final class ReviewVC: UIViewController {
         btn.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
         btn.titleLabel?.adjustsFontSizeToFitWidth = true
         btn.titleLabel?.minimumScaleFactor = 0.78
-        btn.accessibilityLabel = "탑홀드 마스크 저장 옵션"
+        btn.accessibilityLabel = L("review.top_hold_mask_option")
         return btn
     }()
 
     private let saveBtn: UIButton = {
         var config = UIButton.Configuration.filled()
-        config.title = "선택 구간 저장"
+        config.title = L("review.save_clip")
         config.cornerStyle = .capsule
+        config.titleAlignment = .center
+        config.titleLineBreakMode = .byWordWrapping
         config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
         let btn = UIButton(configuration: config)
         btn.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+        btn.titleLabel?.numberOfLines = 2
+        btn.titleLabel?.textAlignment = .center
+        btn.titleLabel?.lineBreakMode = .byWordWrapping
         btn.titleLabel?.adjustsFontSizeToFitWidth = true
-        btn.titleLabel?.minimumScaleFactor = 0.72
+        btn.titleLabel?.minimumScaleFactor = 0.64
         return btn
     }()
 
     private let retakeBtn: UIButton = {
         var config = UIButton.Configuration.gray()
-        config.title = "다시 촬영"
+        config.title = L("camera.retake")
         config.cornerStyle = .capsule
+        config.titleAlignment = .center
+        config.titleLineBreakMode = .byWordWrapping
         config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
         let btn = UIButton(configuration: config)
         btn.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+        btn.titleLabel?.numberOfLines = 2
+        btn.titleLabel?.textAlignment = .center
+        btn.titleLabel?.lineBreakMode = .byWordWrapping
         btn.titleLabel?.adjustsFontSizeToFitWidth = true
         btn.titleLabel?.minimumScaleFactor = 0.78
         return btn
@@ -219,11 +233,16 @@ final class ReviewVC: UIViewController {
 
     private let closeBtn: UIButton = {
         var config = UIButton.Configuration.gray()
-        config.title = "닫기"
+        config.title = L("common.close")
         config.cornerStyle = .capsule
+        config.titleAlignment = .center
+        config.titleLineBreakMode = .byWordWrapping
         config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
         let btn = UIButton(configuration: config)
         btn.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+        btn.titleLabel?.numberOfLines = 2
+        btn.titleLabel?.textAlignment = .center
+        btn.titleLabel?.lineBreakMode = .byWordWrapping
         btn.titleLabel?.adjustsFontSizeToFitWidth = true
         btn.titleLabel?.minimumScaleFactor = 0.78
         return btn
@@ -416,10 +435,11 @@ final class ReviewVC: UIViewController {
         let w = view.bounds.width
         let h = view.bounds.height
         let isLandscape = w > h
-        let margin: CGFloat = isLandscape ? 24 : 18
+        let margin: CGFloat = isLandscape ? 12 : 18
         let panelWidthLimit: CGFloat = isLandscape ? 980 : 430
-        let panelWidth = min(w - margin * 2, panelWidthLimit)
-        let panelX = (w - panelWidth) * 0.5
+        let availablePanelWidth = max(0, w - safe.left - safe.right - margin * 2)
+        let panelWidth = min(availablePanelWidth, panelWidthLimit)
+        let panelX = safe.left + margin + (availablePanelWidth - panelWidth) * 0.5
         let referenceActiveFrame = recordingAspectRatio.displayRect(in: view.bounds, isLandscape: isLandscape)
         let panelBottom: CGFloat = isLandscape
             ? h - safe.bottom - 4
@@ -432,14 +452,19 @@ final class ReviewVC: UIViewController {
         }
         positionSliderTimeBubbleIfVisible()
 
-        let statusHeight: CGFloat = isLandscape ? 26 : 30
+        let statusHeight: CGFloat = isLandscape ? 36 : 40
         let statusOffsetBelowTopGuideBaseline: CGFloat = 5
         let statusGap: CGFloat = 5 - statusOffsetBelowTopGuideBaseline
         let preferredStatusY = referenceActiveFrame.minY - statusHeight - statusGap
         let statusY = referenceActiveFrame.minY > statusHeight + statusGap
             ? max(CGFloat(4), preferredStatusY)
             : safe.top + 2 + statusOffsetBelowTopGuideBaseline
-        statusLabel.frame = CGRect(x: margin, y: statusY, width: w - margin * 2, height: statusHeight)
+        statusLabel.frame = CGRect(
+            x: safe.left + margin,
+            y: statusY,
+            width: availablePanelWidth,
+            height: statusHeight
+        )
     }
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
@@ -615,24 +640,26 @@ final class ReviewVC: UIViewController {
     }
 
     private func applyReviewButtonInsets(isLandscape: Bool) {
-        let verticalInset: CGFloat = isLandscape ? 7 : 8
-        let horizontalInset: CGFloat = isLandscape ? 12 : 14
+        let verticalInset: CGFloat = isLandscape ? 4 : 5
+        let horizontalInset: CGFloat = isLandscape ? 7 : 9
 
         for button in [playPauseBtn, overlayToggleBtn, saveBtn, retakeBtn, closeBtn] {
             var config = button.configuration
             config?.cornerStyle = .capsule
             if button === overlayToggleBtn {
                 config?.titleAlignment = .center
+                config?.titleLineBreakMode = .byWordWrapping
                 config?.imagePlacement = .leading
                 config?.imagePadding = 3
                 config?.contentInsets = NSDirectionalEdgeInsets(
                     top: verticalInset,
-                    leading: 8,
+                    leading: 6,
                     bottom: verticalInset,
-                    trailing: 8
+                    trailing: 6
                 )
             } else {
                 config?.titleAlignment = .center
+                config?.titleLineBreakMode = .byWordWrapping
                 config?.contentInsets = NSDirectionalEdgeInsets(
                     top: verticalInset,
                     leading: horizontalInset,
@@ -650,10 +677,10 @@ final class ReviewVC: UIViewController {
             button.contentHorizontalAlignment = .center
             button.contentVerticalAlignment = .center
             button.titleLabel?.textAlignment = .center
-            button.titleLabel?.numberOfLines = 1
-            button.titleLabel?.lineBreakMode = .byTruncatingTail
+            button.titleLabel?.numberOfLines = 2
+            button.titleLabel?.lineBreakMode = .byWordWrapping
             button.titleLabel?.adjustsFontSizeToFitWidth = true
-            button.titleLabel?.minimumScaleFactor = button === overlayToggleBtn ? 0.74 : 0.78
+            button.titleLabel?.minimumScaleFactor = button === saveBtn ? 0.64 : 0.68
             button.imageView?.contentMode = .scaleAspectFit
             button.setNeedsLayout()
             button.layoutIfNeeded()
@@ -695,9 +722,9 @@ final class ReviewVC: UIViewController {
     private func updateSaveButtonMode() {
         let matchesSavedSelection = verifiedSavedSelectionMatchesCurrent
         var config = saveBtn.configuration ?? UIButton.Configuration.filled()
-        config.title = matchesSavedSelection ? "저장된 영상 확인" : "선택 구간 저장"
+        config.title = matchesSavedSelection ? L("review.view_saved") : L("review.save_clip")
         saveBtn.configuration = config
-        saveBtn.accessibilityLabel = matchesSavedSelection ? "갤러리에 저장된 영상 확인" : "선택 구간 저장"
+        saveBtn.accessibilityLabel = matchesSavedSelection ? L("review.view_saved") : L("review.save_clip")
         if !matchesSavedSelection {
             updateDetectedRangeNavigationUI()
         }
@@ -708,9 +735,9 @@ final class ReviewVC: UIViewController {
         saveBtn.isEnabled = !saving
         if saving {
             var config = saveBtn.configuration ?? UIButton.Configuration.filled()
-            config.title = "저장 중..."
+            config.title = L("review.saving")
             saveBtn.configuration = config
-            saveBtn.accessibilityLabel = "저장 중..."
+            saveBtn.accessibilityLabel = L("review.saving")
         } else {
             updateSaveButtonMode()
         }
@@ -746,7 +773,11 @@ final class ReviewVC: UIViewController {
 
         selectedRangeZoomSlider.value = Float(appliedZoom)
         selectedRangeZoomSlider.isEnabled = trimSlider.isEnabled && sliderMaximumZoom > 1.01
-        selectedRangeZoomValueLabel.text = String(format: "%.1f×", appliedZoom)
+        selectedRangeZoomValueLabel.text = String(
+            format: "%.1f×",
+            locale: AppLanguageManager.locale,
+            appliedZoom
+        )
         selectedRangeZoomSlider.accessibilityValue = selectedRangeZoomValueLabel.text
         if recenter { positionSliderTimeBubbleIfVisible() }
     }
@@ -759,7 +790,11 @@ final class ReviewVC: UIViewController {
         pausePlayback()
         let appliedZoom = trimSlider.setSelectedRangeZoomFactor(Double(selectedRangeZoomSlider.value))
         selectedRangeZoomSlider.value = Float(appliedZoom)
-        selectedRangeZoomValueLabel.text = String(format: "%.1f×", appliedZoom)
+        selectedRangeZoomValueLabel.text = String(
+            format: "%.1f×",
+            locale: AppLanguageManager.locale,
+            appliedZoom
+        )
         selectedRangeZoomSlider.accessibilityValue = selectedRangeZoomValueLabel.text
         positionSliderTimeBubbleIfVisible()
     }
@@ -894,12 +929,12 @@ final class ReviewVC: UIViewController {
     private func updateDetectedRangeNavigationUI() {
         if helpEnabled {
             statusLabel.text = autoClipDetectionEnabled && !detectedRanges.isEmpty
-                ? "자동 감지된 시작~완등 구간을 확인해주세요"
-                : "저장할 구간을 직접 선택해주세요"
+                ? L("review.auto_prompt")
+                : L("review.manual_prompt")
         }
 
         if let index = selectedDetectedRangeIndex, detectedRanges.indices.contains(index) {
-            detectedRangeLabel.text = "감지 구간 \(index + 1)/\(detectedRanges.count)"
+            detectedRangeLabel.text = L("review.detected_range", index + 1, detectedRanges.count)
         } else {
             detectedRangeLabel.text = nil
         }
@@ -951,11 +986,11 @@ final class ReviewVC: UIViewController {
 
     private func presentVerifiedSavedVideo(localIdentifier: String) {
         pausePlayback()
-        setStatus("갤러리에서 저장된 영상을 불러오는 중...")
+        setStatus(L("review.loading_gallery"))
 
         let result = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
         guard let asset = result.firstObject, asset.mediaType == .video else {
-            setStatus("갤러리에 저장된 영상을 다시 찾지 못했습니다")
+            setStatus(L("error.find_saved_video"))
             return
         }
 
@@ -966,14 +1001,13 @@ final class ReviewVC: UIViewController {
             DispatchQueue.main.async {
                 guard let self else { return }
                 guard let avAsset else {
-                    let error = info?[PHImageErrorKey] as? Error
-                    self.setStatus("저장된 영상 확인 실패: \(error?.localizedDescription ?? "영상을 열 수 없습니다")")
+                    self.setStatus(L("error.verify_saved_video"))
                     return
                 }
 
                 let playerController = AVPlayerViewController()
                 playerController.player = AVPlayer(playerItem: AVPlayerItem(asset: avAsset))
-                self.setStatus("갤러리에서 불러온 영상을 재생합니다")
+                self.setStatus(L("review.gallery_playing"))
                 self.present(playerController, animated: true) {
                     playerController.player?.play()
                 }
@@ -983,7 +1017,7 @@ final class ReviewVC: UIViewController {
 
     @objc private func onTapRetake() {
         confirmDiscardUnsavedClipIfNeeded(
-            message: "기존의 매트경계 위치를 유지하여 다시 촬영합니다.\n저장하지 않은 영상이 삭제됩니다.",
+            message: L("review.retake_warning"),
             compactMessage: true
         ) { [weak self] in
             self?.dismissForRetake()
@@ -992,7 +1026,7 @@ final class ReviewVC: UIViewController {
 
     @objc private func onTapClose() {
         confirmDiscardUnsavedClipIfNeeded(
-            message: "저장하지 않은 영상이 삭제됩니다."
+            message: L("review.close_warning")
         ) { [weak self] in
             self?.dismissForClose()
         }
@@ -1016,8 +1050,8 @@ final class ReviewVC: UIViewController {
             preferredStyle: .alert
         )
 
-        alert.addAction(UIAlertAction(title: "취소", style: .cancel))
-        alert.addAction(UIAlertAction(title: "확인", style: .destructive) { _ in
+        alert.addAction(UIAlertAction(title: L("common.cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L("common.ok"), style: .destructive) { _ in
             confirmedAction()
         })
         present(alert, animated: true) {
@@ -1076,8 +1110,7 @@ final class ReviewVC: UIViewController {
             isPlaying = false
             updatePlayButton()
             if helpEnabled {
-                let detail = item.error?.localizedDescription ?? "녹화 파일을 불러오지 못했습니다"
-                statusLabel.text = "영상을 재생할 수 없습니다: \(detail)"
+                statusLabel.text = L("error.play_video")
                 statusLabel.isHidden = false
             }
         case .unknown:
@@ -1127,7 +1160,7 @@ final class ReviewVC: UIViewController {
             pendingPlaybackStart = false
             updatePlayButton()
             if helpEnabled {
-                statusLabel.text = "재생할 수 있는 영상 길이가 없습니다"
+                statusLabel.text = L("error.no_playable_duration")
                 statusLabel.isHidden = false
             }
             return
@@ -1248,7 +1281,7 @@ final class ReviewVC: UIViewController {
         config.baseBackgroundColor = nil
         config.baseForegroundColor = nil
         playPauseBtn.configuration = config
-        playPauseBtn.accessibilityLabel = showsPause ? "일시정지" : "재생"
+        playPauseBtn.accessibilityLabel = showsPause ? L("review.pause") : L("review.play")
         applyReviewButtonInsets(isLandscape: view.bounds.width > view.bounds.height)
     }
 
@@ -1261,7 +1294,7 @@ final class ReviewVC: UIViewController {
         var config = includeTopHoldOverlay
             ? UIButton.Configuration.filled()
             : UIButton.Configuration.gray()
-        let titleText = topHoldOverlayToggleLocked ? "탑홀드 마스크 고정" : "탑홀드 마스크"
+        let titleText = topHoldOverlayToggleLocked ? L("review.top_hold_mask_locked") : L("review.top_hold_mask")
         var title = AttributedString(titleText)
         title.font = .systemFont(ofSize: topHoldOverlayToggleLocked ? 12 : 13, weight: .semibold)
         config.title = nil
@@ -1275,12 +1308,13 @@ final class ReviewVC: UIViewController {
         config.imagePlacement = .leading
         config.imagePadding = 3
         config.titleAlignment = .center
+        config.titleLineBreakMode = .byWordWrapping
         let isLandscape = view.bounds.width > view.bounds.height
         config.contentInsets = NSDirectionalEdgeInsets(
-            top: isLandscape ? 7 : 8,
-            leading: isLandscape ? 8 : 8,
-            bottom: isLandscape ? 7 : 8,
-            trailing: isLandscape ? 8 : 8
+            top: isLandscape ? 4 : 5,
+            leading: 6,
+            bottom: isLandscape ? 4 : 5,
+            trailing: 6
         )
         if includeTopHoldOverlay {
             config.baseForegroundColor = .white
@@ -1289,14 +1323,23 @@ final class ReviewVC: UIViewController {
         overlayToggleBtn.titleLabel?.font = .systemFont(ofSize: topHoldOverlayToggleLocked ? 12 : 13, weight: .semibold)
         normalizeReviewButtonContentLayout()
         if topHoldOverlayToggleLocked {
-            overlayToggleBtn.accessibilityLabel = "자동 구간 탐지로 탑홀드 마스크 포함 고정"
+            overlayToggleBtn.accessibilityLabel = L("review.top_hold_mask_locked")
         } else {
-            overlayToggleBtn.accessibilityLabel = includeTopHoldOverlay ? "탑홀드 마스크 포함" : "탑홀드 마스크 미포함"
+            overlayToggleBtn.accessibilityLabel = includeTopHoldOverlay
+                ? L("review.top_hold_mask_include")
+                : L("review.top_hold_mask_exclude")
         }
     }
 
     private func formatSecondsBubble(_ seconds: TimeInterval) -> String {
-        String(format: "%.1f초", Swift.max(0, seconds))
+        L(
+            "time.seconds_short",
+            String(
+                format: "%.1f",
+                locale: AppLanguageManager.locale,
+                Swift.max(0, seconds)
+            )
+        )
     }
 
     private func clamped(_ value: TimeInterval, min lower: TimeInterval, max upper: TimeInterval) -> TimeInterval {
@@ -1408,8 +1451,8 @@ private final class TrimRangeSlider: UIControl {
         backgroundColor = .clear
         isMultipleTouchEnabled = false
         isAccessibilityElement = true
-        accessibilityLabel = "영상 구간 타임라인"
-        accessibilityHint = "시작점, 종료점 또는 재생 위치를 한 손가락으로 조정합니다"
+        accessibilityLabel = L("review.timeline")
+        accessibilityHint = L("review.timeline_hint")
     }
 
     required init?(coder: NSCoder) {

@@ -49,7 +49,7 @@ extension HoldVC {
                 self.isBusy = false
                 self.retakeBtn.isEnabled = true
                 self.recordBtn.isEnabled = true
-                self.selectHint.text = "선택 완료 · 다시 탭해서 수정하거나 녹화 시작을 눌러주세요"
+                self.selectHint.text = L("camera.selection_complete")
                 self.setLoading(false)
             }
         } catch {
@@ -61,10 +61,10 @@ extension HoldVC {
                     self.pendingTopBox = fallback.maskBox
                     self.selectOverlayView.image = fallback.overlay
                     self.recordBtn.isEnabled = true
-                    self.selectHint.text = "선택 완료 · 다시 탭해서 수정하거나 녹화 시작을 눌러주세요"
+                    self.selectHint.text = L("camera.selection_complete")
                 } else {
                     self.recordBtn.isEnabled = self.pendingOverlay != nil
-                    self.selectHint.text = "선택 실패 · 다시 탭해보세요"
+                    self.selectHint.text = L("camera.selection_failed")
                 }
 
                 self.pixels = nil

@@ -20,6 +20,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 - 자동으로 찾은 구간을 간편하게 미세 조정
 - 원하는 등반 장면만 사진 앱 또는 갤러리에 저장
 - 촬영 중단과 저장공간 부족 상황에 안전하게 대응
+- 기기 언어 자동 선택과 앱 내 수동 언어 변경 지원
 
 모든 영상 분석은 사용자의 기기 안에서 이루어집니다. 긴 영상을 다시 돌려보며 등반 장면을 찾고 편집하는 시간을 줄이고, 클라이밍에 더 집중할 수 있도록 설계했습니다.
 
@@ -27,7 +28,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 
 | 항목 | iOS | Android |
 |---|---|---|
-| 버전 | 1.6 (build 14) | 1.6 (versionCode 14) |
+| 버전 | 2.0 (build 16) | 2.0 (versionCode 16) |
 | 최소 OS | iOS 16.0 | Android 8.0 · API 26 |
 | 앱 ID | `com.topout.cam` | `com.topout.cam` |
 | UI | Swift · UIKit | Kotlin · Jetpack Compose · Material 3 |
@@ -36,7 +37,13 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 | MobileSAM | Core ML | ONNX Runtime 1.27.0 |
 | 영상 | AVAssetWriter · AVPlayer · PhotoKit | CameraX Recorder · Media3 1.10.1 · MediaStore |
 
+앱 UI는 영어, 한국어, 일본어, 중국어 간체, 중국어 번체, 프랑스어, 독일어, 스페인어, 포르투갈어를 지원합니다. 기본값인 `자동`은 운영체제 언어 우선순위를 따르며, 설정에서 원하는 언어를 고르면 저장 전에도 설정 화면이 즉시 해당 언어로 바뀍니다. 지원하지 않는 기기 언어는 영어로 표시합니다. 긴 번역은 버튼 내에서 두 줄 가운데 정렬과 자동 크기 조정을 사용해 버튼 밖으로 나가거나 말줄임표로 숨지 않게 구성합니다.
+
 모든 영상 프레임, 관절 좌표, 중간 분석 결과는 기기 안에서 처리하며 외부 분석 서버로 전송하지 않습니다.
+
+Android 촬영 화면의 Tip 배너는 가로폭에 맞춰 글자 크기를 자동으로 조정해 프랑스어·독일어처럼 긴 안내도 한 줄로 표시합니다.
+
+양 플랫폼의 촬영·선택·결과 화면 상단 상태 문구는 최대 두 줄로 표시하며, iOS 가로모드 결과 컨트롤은 노치 안전 영역 안에 배치합니다.
 
 ## 제품 흐름
 
@@ -57,8 +64,11 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 
 ```text
 TopOut/
+├── localization/
+│   └── topout_strings.json
 ├── iOS/TopOut/
 │   ├── README.md
+│   ├── V2_0_BUILD_16_NOTES.md
 │   ├── V1_6_BUILD_14_NOTES.md
 │   ├── V1_6_BUILD_13_NOTES.md
 │   ├── V1_6_BUILD_12_NOTES.md
@@ -68,6 +78,7 @@ TopOut/
 │   └── TopOut/
 ├── Android/TopOut/
 │   ├── README.md
+│   ├── V2_0_BUILD_16_NOTES.md
 │   ├── V1_6_BUILD_14_NOTES.md
 │   ├── V1_6_BUILD_13_NOTES.md
 │   ├── V1_6_BUILD_12_NOTES.md
@@ -86,12 +97,12 @@ TopOut/
 - [iOS 현재 문서](iOS/TopOut/README.md)
 - [Android 현재 문서](Android/TopOut/README.md)
 - [개발 이력과 기술 의사결정](DEVELOPMENT_HISTORY.md)
-- [iOS v1.6 build 14 변경 사항](iOS/TopOut/V1_6_BUILD_14_NOTES.md)
-- [Android v1.6 build 14 변경 사항](Android/TopOut/V1_6_BUILD_14_NOTES.md)
+- [iOS v2.0 build 16 변경 사항](iOS/TopOut/V2_0_BUILD_16_NOTES.md)
+- [Android v2.0 versionCode 16 변경 사항](Android/TopOut/V2_0_BUILD_16_NOTES.md)
 - [제품 포트폴리오](portfolio/index.html)
 - [TopOut 공개 저장소](https://github.com/BIYONGHIYON/TopOut-app)
 
-`V1_4_*`, `V1_5_*`, `V1_6_BUILD_12_NOTES.md`, `V1_6_BUILD_13_NOTES.md`는 당시 동작을 보존하는 과거 릴리스 기록입니다. 현재 동작의 기준은 각 플랫폼 README와 v1.6 build 14 노트입니다.
+`V1_4_*`, `V1_5_*`, `V1_6_*`, `V1_7_*`는 당시 동작을 보존하는 과거 릴리스 기록입니다. 현재 동작의 기준은 각 플랫폼 README와 v2.0 릴리스 노트입니다.
 
 로컬의 `TopOut-app/` 폴더는 별도 Git 이력을 가진 공개 저장소 checkout이므로 이 비공개 저장소의 `.gitignore`에서 제외합니다.
 
@@ -124,7 +135,7 @@ Motion만으로 시작·종료 판정
 → 5초 후 기본 경계와 수동 보정으로 복구
 ```
 
-세부 커밋 순서, 폐기된 모델과 UI 실험, v1.2부터 v1.6 build 14까지의 정착 과정은 [개발 이력과 기술 의사결정](DEVELOPMENT_HISTORY.md)에 기록합니다. 과거 문서가 현재 README와 충돌할 때는 실제 코드, 현재 플랫폼 README, 최신 빌드 노트 순으로 판단합니다.
+세부 커밋 순서, 폐기된 모델과 UI 실험, v1.2부터 v2.0까지의 정착 과정은 [개발 이력과 기술 의사결정](DEVELOPMENT_HISTORY.md)에 기록합니다. 과거 문서가 현재 README와 충돌할 때는 실제 코드, 현재 플랫폼 README, 최신 빌드 노트 순으로 판단합니다.
 
 ## 촬영 준비와 프레임 정합성
 
@@ -274,7 +285,7 @@ Android 저장 영상 보기에는 앞/뒤 5초 이동, 드래그 즉시 화면�
 3. MobileSAM Core ML 모델과 `PrivacyInfo.xcprivacy`의 Target Membership을 확인합니다.
 4. 실제 iPhone에서 카메라·마이크·사진 보관함 권한과 Archive를 검증합니다.
 
-프로젝트 설정: iOS 16.0, Swift 5, Marketing Version 1.6, Current Project Version 14.
+프로젝트 설정: iOS 16.0, Swift 5, Marketing Version 2.0, Current Project Version 16.
 
 ### Android
 

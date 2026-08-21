@@ -30,8 +30,8 @@ android {
         applicationId = "com.topout.cam"
         minSdk = 26
         targetSdk = 36
-        versionCode = 14
-        versionName = "1.6"
+        versionCode = 16
+        versionName = "2.0"
 
         vectorDrawables.useSupportLibrary = true
     }
@@ -58,6 +58,7 @@ android {
     }
 
     sourceSets["main"].assets.srcDir(moveNetPoseAssetsDirectory)
+    sourceSets["main"].assets.srcDir(rootProject.layout.projectDirectory.dir("../../localization"))
 
     buildFeatures {
         compose = true
@@ -145,6 +146,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.core:core-splashscreen:1.2.0")
     implementation("androidx.activity:activity-compose:1.11.0")
+    implementation("androidx.appcompat:appcompat:1.8.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.4")

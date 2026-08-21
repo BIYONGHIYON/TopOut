@@ -1,0 +1,4 @@
+"NSCameraUsageDescription" = "Se requiere acceso a la cámara para grabar vídeos de escalada.";
+"NSMicrophoneUsageDescription" = "Se requiere acceso al micrófono para grabar sonido con los vídeos.";
+"NSPhotoLibraryAddUsageDescription" = "Se requiere acceso a Fotos para guardar tus vídeos de escalada editados.";
+"NSPhotoLibraryUsageDescription" = "Se requiere acceso a Fotos para verificar y reproducir el vídeo que TopOut acaba de guardar.";

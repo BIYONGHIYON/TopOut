@@ -15,6 +15,7 @@ import com.topout.cam.detection.MotionEvent
 import com.topout.cam.detection.MotionFinishReference
 import com.topout.cam.detection.PoseClimbAnalyzer
 import com.topout.cam.media.VideoExporter
+import com.topout.cam.localization.tr
 import com.topout.cam.model.AppSettings
 import com.topout.cam.model.CameraStage
 import com.topout.cam.model.ClipRange
@@ -307,7 +308,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     state.copy(
                         stage = recoveryStage,
                         cameraReady = false,
-                        errorMessage = error.localizedMessage ?: "카메라를 시작하지 못했습니다."
+                        errorMessage = tr("error.camera_start")
                     )
                 }
             }
@@ -379,7 +380,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         val requestId = beginSelectionRequest()
-        _uiState.update { it.copy(isBusy = true, statusText = "매트 경계를 분석하고 있어요") }
+        _uiState.update { it.copy(isBusy = true, statusText = tr("camera.analyzing_mat")) }
 
         matBoundaryTimeoutJob = viewModelScope.launch {
             delay(TopOutConfig.MatBoundaryAnalysisTimeoutMillis)
@@ -411,7 +412,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     _uiState.update {
                         it.copy(
                             isBusy = false,
-                            statusText = "현재 카메라 프레임을 캡처하지 못했습니다."
+                            statusText = tr("camera.capture_failed")
                         )
                     }
                 }
@@ -497,7 +498,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             it.copy(
                 holdMask = null,
                 isBusy = true,
-                statusText = "현재 프레임에서 탑홀드 분석 중..."
+                statusText = tr("camera.analyzing_hold")
             )
         }
 
@@ -514,7 +515,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 frame?.recycle()
                 if (finishSelectionRequest(requestId)) {
                     _uiState.update {
-                        it.copy(isBusy = false, statusText = "현재 카메라 프레임을 캡처하지 못했습니다. 다시 탭해주세요")
+                        it.copy(isBusy = false, statusText = tr("camera.capture_failed_retry"))
                     }
                 }
                 return@launch
@@ -529,17 +530,17 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                             else currentState.copy(
                                 holdMask = mask,
                                 isBusy = false,
-                                statusText = "선택 완료 · 다시 탭해서 수정하거나 녹화 시작을 눌러주세요"
+                                statusText = tr("camera.selection_complete")
                             )
                         }
                     }
-                    .onFailure { error ->
+                    .onFailure {
                         if (!finishSelectionRequest(requestId)) return@onFailure
                         _uiState.update {
                             it.copy(
                                 isBusy = false,
-                                statusText = "선택 실패 · 다시 탭해보세요",
-                                errorMessage = error.localizedMessage
+                                statusText = tr("camera.selection_failed"),
+                                errorMessage = tr("camera.selection_failed")
                             )
                         }
                     }
@@ -611,11 +612,11 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         if (state.recordingState != RecordingState.IDLE || state.isBusy) return
         invalidateSelectionRequest()
         if (settings.requiresTopHoldSelection && state.holdMask == null) {
-            setError("먼저 탑홀드를 선택해주세요.")
+            setError(tr("error.select_hold_first"))
             return
         }
         if (settings.autoClipDetectionEnabled && state.matLine.isEmpty()) {
-            setError("매트 경계선을 확인해주세요.")
+            setError(tr("error.check_mat_boundary"))
             return
         }
 
@@ -627,7 +628,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         activeRecordingTargetRotation = state.cameraTargetRotation
         recordingAnalysisAvailable = cameraEngine.isAnalysisAvailable()
         if (settings.autoClipDetectionEnabled && !recordingAnalysisAvailable) {
-            setError("이 기기에서는 현재 촬영 설정으로 자동 구간 탐지를 사용할 수 없습니다. 해상도 또는 프레임을 낮춘 뒤 다시 시도해주세요.")
+            setError(tr("error.analysis_unavailable"))
             return
         }
 
@@ -710,7 +711,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     recordingCountdown = null,
                     livePreviewEnabled = true,
                     statusText = if (returnStage == CameraStage.SELECT) {
-                        "선택 완료 · 다시 탭해서 수정하거나 녹화 시작을 눌러주세요"
+                        tr("camera.selection_complete")
                     } else previewGuidance(state.settings)
                 )
             }
@@ -723,9 +724,9 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 recordingState = RecordingState.FINALIZING,
                 recordingCountdown = null,
                 statusText = if (notice == null) {
-                    "영상 정리 중..."
+                    tr("camera.processing_video")
                 } else {
-                    "녹화를 안전하게 종료하는 중..."
+                    tr("camera.finishing")
                 }
             )
         }
@@ -757,6 +758,28 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
 
     fun showSettings() = _uiState.update { it.copy(settingsVisible = true) }
     fun hideSettings() = _uiState.update { it.copy(settingsVisible = false) }
+
+    /** Settings can change the process locale while this ViewModel survives Activity recreation. */
+    fun refreshLocalizedCopy() {
+        _uiState.update { state ->
+            val localizedStatus = when (state.stage) {
+                CameraStage.PREVIEW -> previewGuidance(state.settings)
+                CameraStage.SELECT -> selectionGuidance(state.settings)
+                CameraStage.RECORDING -> activeRecordingStatusText(state.settings)
+                CameraStage.REVIEW -> if (state.detectedRanges.isEmpty()) {
+                    tr("review.manual_prompt")
+                } else {
+                    tr("review.auto_prompt")
+                }
+            }
+            state.copy(
+                statusText = localizedStatus,
+                errorMessage = null,
+                savingStatus = null,
+                savingStatusSelection = null
+            )
+        }
+    }
 
     fun saveSettings(settings: AppSettings) {
         viewModelScope.launch {
@@ -794,7 +817,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update {
             it.copy(
                 saving = true,
-                savingStatus = if (includeOverlay) "탑홀드 마스크를 입히는 중..." else "선택 구간 자르는 중...",
+                savingStatus = if (includeOverlay) tr("review.processing_mask") else tr("review.trimming"),
                 savingStatusSelection = selection
             )
         }
@@ -811,7 +834,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                         savingToGallery = true
                         _uiState.update {
                             it.copy(
-                                savingStatus = "사진 앱에 저장하고 확인하는 중...",
+                                savingStatus = tr("review.saving_verifying"),
                                 savingStatusSelection = selection
                             )
                         }
@@ -827,18 +850,18 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     )
                     state.copy(
                         saving = false,
-                        savingStatus = "갤러리에 저장된 영상을 확인했습니다",
+                        savingStatus = tr("review.gallery_verified"),
                         savingStatusSelection = selection,
                         savedGalleryVideos = state.savedGalleryVideos
                             .filterNot { it.selection.matches(selection) } + saved
                     )
                 }
-            }.onFailure { error ->
-                val prefix = if (savingToGallery) "사진 앱 저장/확인 실패" else "구간 저장 실패"
+            }.onFailure {
+                val prefix = if (savingToGallery) tr("error.save_verify") else tr("error.save_clip")
                 _uiState.update {
                     it.copy(
                         saving = false,
-                        savingStatus = "$prefix: ${error.localizedMessage ?: "알 수 없는 오류"}",
+                        savingStatus = prefix,
                         savingStatusSelection = selection
                     )
                 }
@@ -913,7 +936,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 // would be drawn over a different camera crop.
                 isLandscape = activeRecordingLandscape,
                 cameraTargetRotation = activeRecordingTargetRotation,
-                statusText = "녹화 준비 중"
+                statusText = tr("camera.preparing")
             )
         }
         // The camera composable is recreated on leaving review; bindCamera starts the retake.
@@ -926,14 +949,14 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         cameraEngine.setPreviewRenderingEnabled(true)
         cameraEngine.unbind()
 
-        result.onFailure { error ->
+        result.onFailure {
             _uiState.update { state ->
                 state.copy(
                     stage = if (state.settings.requiresTopHoldSelection && state.holdMask != null) CameraStage.SELECT else CameraStage.PREVIEW,
                     recordingState = RecordingState.IDLE,
-                    errorMessage = error.localizedMessage ?: "녹화를 완료하지 못했습니다.",
+                    errorMessage = tr("error.recording_finish"),
                     statusText = if (state.holdMask != null) {
-                        "선택 완료 · 다시 탭해서 수정하거나 녹화 시작을 눌러주세요"
+                        tr("camera.selection_complete")
                     } else previewGuidance(state.settings)
                 )
             }
@@ -986,9 +1009,9 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                         automaticStopNotice = finalized.notice
                     ),
                     statusText = if (ranges.isEmpty()) {
-                        "저장할 구간을 직접 선택해주세요"
+                        tr("review.manual_prompt")
                     } else {
-                        "자동 감지된 시작~완등 구간을 확인해주세요"
+                        tr("review.auto_prompt")
                     }
                 )
             }
@@ -1018,7 +1041,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     _uiState.update {
                         it.copy(
                             detectedRanges = completedRanges.snapshot(),
-                            statusText = "구간 저장됨 · 다음 등반 대기"
+                            statusText = tr("camera.clip_saved")
                         )
                     }
                 }

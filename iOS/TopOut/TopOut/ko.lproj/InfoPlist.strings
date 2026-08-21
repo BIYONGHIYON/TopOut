@@ -1,0 +1,4 @@
+"NSCameraUsageDescription" = "영상 녹화를 위한 카메라 접근 권한이 필요합니다.";
+"NSMicrophoneUsageDescription" = "영상 녹화를 위한 마이크 접근 권한이 필요합니다.";
+"NSPhotoLibraryAddUsageDescription" = "편집한 클라이밍 영상을 사진 앱에 저장하기 위해 접근 권한이 필요합니다.";
+"NSPhotoLibraryUsageDescription" = "방금 저장한 영상이 사진 앱에 정상 저장되었는지 확인하고 앱에서 재생하기 위해 사진 보관함 접근 권한이 필요합니다.";

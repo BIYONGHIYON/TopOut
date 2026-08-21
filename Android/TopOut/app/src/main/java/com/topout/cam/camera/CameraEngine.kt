@@ -43,6 +43,7 @@ import com.topout.cam.model.RecordingFrameRate
 import com.topout.cam.model.RecordingResolution
 import com.topout.cam.model.RecordingStopNotice
 import com.topout.cam.model.TopOutConfig
+import com.topout.cam.localization.tr
 import com.google.common.util.concurrent.ListenableFuture
 import java.io.File
 import java.util.concurrent.ExecutorService
@@ -432,7 +433,7 @@ class CameraEngine(private val context: Context) {
             }
         }
 
-        throw IllegalStateException("이 기기에서 선택한 카메라 녹화 구성을 시작할 수 없습니다.")
+        throw IllegalStateException(tr("error.camera_configuration"))
     }
 
     fun isAnalysisAvailable(): Boolean = analysisUseCase != null
@@ -536,7 +537,7 @@ class CameraEngine(private val context: Context) {
                 }
             }
             val probe = probeResult ?: throw (lastError
-                ?: IllegalStateException("사용 가능한 후면 카메라를 찾지 못했습니다."))
+                ?: IllegalStateException(tr("error.rear_camera")))
             queryCapabilities(probe, selectedProfile).also {
                 cachedCapabilitiesByLens[selectedProfile.cameraId] = it
                 cameraProvider.unbindAll()
@@ -1090,7 +1091,7 @@ class CameraEngine(private val context: Context) {
                 // reject that lens transition and restore the previous camera instead.
                 if (bound.frameRate != config.frameRate) {
                     cameraProvider.unbindAll()
-                    throw IllegalStateException("현재 촬영 설정에서는 이 렌즈 전환을 사용할 수 없습니다.")
+                    throw IllegalStateException(tr("error.lens_transition"))
                 }
                 camera = bound.camera
                 activeLensProfile = profile
@@ -1423,7 +1424,7 @@ class CameraEngine(private val context: Context) {
         if (recordingStartPending) return
         val capture = videoCapture ?: run {
             onRecordingFinalized?.invoke(
-                Result.failure(IllegalStateException("카메라 녹화 세션이 준비되지 않았습니다."))
+                Result.failure(IllegalStateException(tr("error.camera_session_not_ready")))
             )
             return
         }
@@ -1438,7 +1439,7 @@ class CameraEngine(private val context: Context) {
             // still complete. Never let that stale callback start a recorder on the old session.
             if (videoCapture !== capture || activeRecording != null) {
                 onRecordingFinalized?.invoke(
-                    Result.failure(IllegalStateException("녹화 시작 전에 카메라 세션이 변경되었습니다."))
+                    Result.failure(IllegalStateException(tr("error.camera_session_changed")))
                 )
                 return
             }
@@ -1629,14 +1630,14 @@ class CameraEngine(private val context: Context) {
             } else {
                 file.delete()
                 onRecordingFinalized?.invoke(
-                    Result.failure(event.cause ?: IllegalStateException("녹화를 완료하지 못했습니다. 오류 코드: ${event.error}"))
+                    Result.failure(event.cause ?: IllegalStateException(tr("error.recording_code", event.error)))
                 )
             }
             return
         }
 
         if (!file.exists() || file.length() == 0L) {
-            onRecordingFinalized?.invoke(Result.failure(IllegalStateException("녹화 파일이 생성되지 않았습니다.")))
+            onRecordingFinalized?.invoke(Result.failure(IllegalStateException(tr("error.recording_file_missing"))))
             return
         }
         onRecordingFinalized?.invoke(
@@ -1763,7 +1764,7 @@ class CameraEngine(private val context: Context) {
             }
         }
         if (didStartStreaming == null) {
-            throw IllegalStateException("카메라 미리보기 스트림을 시작하지 못했습니다.")
+            throw IllegalStateException(tr("error.preview_stream"))
         }
     }
 

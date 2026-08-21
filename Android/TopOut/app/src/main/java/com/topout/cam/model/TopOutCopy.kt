@@ -1,5 +1,7 @@
 package com.topout.cam.model
 
+import com.topout.cam.localization.tr
+
 /**
  * User-facing copy shared with the completed iOS app.
  *
@@ -9,50 +11,50 @@ package com.topout.cam.model
 object TopOutCopy {
     fun previewGuidance(settings: AppSettings): String = when {
         settings.requiresTopHoldSelection && settings.autoClipDetectionEnabled ->
-            "벽과 매트 경계선 · 탑 홀드가 모두 보이게 맞춘 뒤 준비 완료"
+            tr("camera.preview_both")
         settings.requiresTopHoldSelection ->
-            "탑홀드가 잘 보이게 맞춘 뒤 준비 완료"
+            tr("camera.preview_hold")
         settings.autoClipDetectionEnabled ->
-            "벽과 매트 경계선이 보이게 맞춘 뒤 준비 완료"
+            tr("camera.preview_mat")
         else -> ""
     }
 
     fun readyButtonTitle(settings: AppSettings): String =
         if (settings.autoClipDetectionEnabled || settings.requiresTopHoldSelection) {
-            "준비 완료"
+            tr("camera.ready")
         } else {
-            "녹화 시작"
+            tr("camera.start_recording")
         }
 
     fun selectionGuidance(settings: AppSettings): String = when {
         settings.autoClipDetectionEnabled && settings.requiresTopHoldSelection ->
-            "탑홀드를 탭하세요 · 벽과 매트 경계를 보정하세요"
+            tr("camera.selection_both")
         settings.autoClipDetectionEnabled ->
-            "벽과 매트 경계를 보정한 뒤 녹화 시작을 눌러주세요"
-        else -> "탑홀드를 탭하세요"
+            tr("camera.selection_mat")
+        else -> tr("camera.selection_hold")
     }
 
     fun selectionTip(settings: AppSettings): String =
         if (settings.requiresTopHoldSelection) {
             ""
         } else {
-            "Tip. 파란 점은 위아래로 움직일 수 있어요"
+            tr("camera.tip_adjust_line")
         }
 
     fun countdownStatus(settings: AppSettings, remaining: Int? = null): String {
         if (remaining != null && remaining > 0) {
-            return "${remaining}초 후 녹화 시작"
+            return tr("camera.countdown", remaining)
         }
-        return "녹화 준비 중"
+        return tr("camera.preparing")
     }
 
     fun activeRecordingStatus(settings: AppSettings): String =
-        if (settings.autoClipDetectionEnabled) "모션 탐지 중 · 등반 시작 대기" else "녹화 중"
+        if (settings.autoClipDetectionEnabled) tr("camera.waiting_motion") else tr("camera.recording")
 
     fun climbingStatus(settings: AppSettings): String =
         if (settings.topHoldMaskingEnabled) {
-            "등반 구간 감지 중 · 탑홀드 추적 중"
+            tr("camera.tracking_hold")
         } else {
-            "등반 구간 감지 중 · 최고점 추적 중"
+            tr("camera.tracking_peak")
         }
 }

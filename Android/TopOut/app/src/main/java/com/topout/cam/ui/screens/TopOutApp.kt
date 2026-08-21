@@ -78,6 +78,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.topout.cam.R
 import com.topout.cam.TopOutViewModel
+import com.topout.cam.localization.AppLanguageManager
+import com.topout.cam.localization.TopOutStrings
+import com.topout.cam.localization.tr
 import com.topout.cam.model.CameraStage
 import com.topout.cam.model.HoldMask
 import com.topout.cam.model.RecordingState
@@ -356,10 +359,15 @@ fun TopOutApp(viewModel: TopOutViewModel) {
     if (state.settingsVisible) {
         SettingsDialog(
             initial = state.settings,
+            initialLanguage = AppLanguageManager.selectedLanguage(context),
             capabilities = state.capabilities,
             isLandscape = isLandscape,
             onDismiss = viewModel::hideSettings,
-            onSave = viewModel::saveSettings
+            onSave = { settings, language ->
+                viewModel.saveSettings(settings)
+                AppLanguageManager.select(context, language)
+                viewModel.refreshLocalizedCopy()
+            }
         )
     }
 
@@ -368,7 +376,7 @@ fun TopOutApp(viewModel: TopOutViewModel) {
             onDismissRequest = viewModel::clearError,
             title = { Text("TopOut") },
             text = { Text(message) },
-            confirmButton = { Button(onClick = viewModel::clearError) { Text("확인") } }
+            confirmButton = { Button(onClick = viewModel::clearError) { Text(tr("common.ok")) } }
         )
     }
 }
@@ -498,21 +506,7 @@ private fun PreviewControls(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (showTip && !isLandscape) {
-            Text(
-                "Tip. 자동 회전 잠금을 해제하면 가로로 촬영할 수 있어요",
-                modifier = Modifier.background(TopOutColors.TipBackground, RoundedCornerShape(10.dp))
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-                color = Color.White,
-                autoSize = TextAutoSize.StepBased(
-                    minFontSize = 9.5.sp,
-                    maxFontSize = 13.sp,
-                    stepSize = 0.5.sp
-                ),
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Clip
-            )
+            CameraTipBanner(tr("camera.tip_rotation"))
             Spacer(Modifier.height(6.dp))
         }
 
@@ -529,7 +523,7 @@ private fun PreviewControls(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        "%.1fx".format(zoom),
+                        String.format(TopOutStrings.currentLocale(), "%.1fx", zoom),
                         color = Color.White,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 14.sp,
@@ -551,13 +545,13 @@ private fun PreviewControls(
                         .size(40.dp)
                         .background(Color.Black.copy(alpha = 0.82f), RoundedCornerShape(999.dp))
                 ) {
-                    Icon(Icons.Rounded.Settings, "설정", tint = Color.White, modifier = Modifier.size(21.dp))
+                    Icon(Icons.Rounded.Settings, tr("common.settings"), tint = Color.White, modifier = Modifier.size(21.dp))
                 }
             }
         } else {
             Box(Modifier.fillMaxWidth().widthIn(max = 620.dp).height(56.dp)) {
                 Text(
-                    "%.1fx".format(zoom),
+                    String.format(TopOutStrings.currentLocale(), "%.1fx", zoom),
                     modifier = Modifier.align(Alignment.CenterStart),
                     color = Color.White,
                     fontFamily = FontFamily.Monospace,
@@ -575,7 +569,7 @@ private fun PreviewControls(
                     onClick = onSettings,
                     enabled = enabled,
                     modifier = Modifier.align(Alignment.CenterEnd).size(42.dp)
-                ) { Icon(Icons.Rounded.Settings, "설정", tint = Color.White) }
+                ) { Icon(Icons.Rounded.Settings, tr("common.settings"), tint = Color.White) }
             }
         }
     }
@@ -600,20 +594,7 @@ private fun SelectionControls(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (showTip) {
-            Text(
-                tipText,
-                modifier = Modifier.background(TopOutColors.TipBackground, RoundedCornerShape(10.dp))
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-                color = Color.White,
-                autoSize = TextAutoSize.StepBased(
-                    minFontSize = 9.5.sp,
-                    maxFontSize = 13.sp,
-                    stepSize = 0.5.sp
-                ),
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Clip
-            )
+            CameraTipBanner(tipText)
             Spacer(Modifier.height(6.dp))
         }
         Row(
@@ -623,13 +604,13 @@ private fun SelectionControls(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             TopOutCapsuleButton(
-                "다시 촬영",
+                tr("camera.retake"),
                 onRetake,
                 enabled = enabled,
                 modifier = Modifier.weight(1f)
             )
             TopOutCapsuleButton(
-                "녹화 시작",
+                tr("camera.start_recording"),
                 onRecord,
                 primary = true,
                 enabled = canRecord,
@@ -637,6 +618,28 @@ private fun SelectionControls(
             )
         }
     }
+}
+
+@Composable
+private fun CameraTipBanner(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .widthIn(max = 560.dp)
+            .fillMaxWidth()
+            .background(TopOutColors.TipBackground, RoundedCornerShape(10.dp))
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+        color = Color.White,
+        autoSize = TextAutoSize.StepBased(
+            minFontSize = 7.5.sp,
+            maxFontSize = 13.sp,
+            stepSize = 0.25.sp
+        ),
+        textAlign = TextAlign.Center,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Clip
+    )
 }
 
 @Composable
@@ -656,7 +659,7 @@ private fun RecordingControls(
         horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
     ) {
         TopOutCapsuleButton(
-            "실시간 영상 끄기",
+            tr("camera.hide_live_preview"),
             onTogglePreview,
             modifier = Modifier.weight(1f)
         )
@@ -767,7 +770,7 @@ private fun PowerSavingRecordingOverlay(
             val elapsedCenterOffset = recordIconSide / 2 + elapsedGap + elapsedHeight / 2
 
             TopOutCapsuleButton(
-                text = "실시간 영상 표시",
+                text = tr("camera.show_live_preview"),
                 onClick = onTogglePreview,
                 modifier = Modifier.align(Alignment.Center)
                     .offset(y = toggleCenterOffset)

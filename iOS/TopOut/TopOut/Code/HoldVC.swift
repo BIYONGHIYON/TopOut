@@ -50,7 +50,7 @@ final class HoldVC: UIViewController {
         config.baseForegroundColor = .white
         let button = UIButton(configuration: config)
         button.isHidden = true
-        button.accessibilityLabel = "녹화 종료"
+        button.accessibilityLabel = L("camera.stop_recording")
         return button
     }()
 
@@ -75,7 +75,7 @@ final class HoldVC: UIViewController {
 
     let camHint: UILabel = {
         let label = UILabel()
-        label.text = "벽과 매트 경계선 · 탑 홀드가 모두 보이게 맞춘 뒤 준비 완료"
+        label.text = L("camera.preview_both")
         label.textColor = .white
         label.textAlignment = .center
         label.font = .systemFont(ofSize: 14, weight: .semibold)
@@ -85,55 +85,80 @@ final class HoldVC: UIViewController {
         label.layer.shadowRadius = 3
         label.layer.shadowOffset = CGSize(width: 0, height: 1)
         label.clipsToBounds = false
+        label.numberOfLines = 2
+        label.lineBreakMode = .byWordWrapping
         return label
     }()
 
     let previewTipLabel: UILabel = {
         let label = UILabel()
-        label.text = "Tip. 자동 회전 잠금을 해제하면 가로로 촬영할 수 있어요"
+        label.text = L("camera.tip_rotation")
         label.textColor = UIColor.white.withAlphaComponent(0.92)
         label.textAlignment = .center
         label.font = .systemFont(ofSize: 13, weight: .medium)
         label.backgroundColor = UIColor.black.withAlphaComponent(0.35)
         label.layer.cornerRadius = 10
         label.clipsToBounds = true
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.72
         label.isHidden = true
         return label
     }()
 
     let readyBtn: UIButton = {
         var config = UIButton.Configuration.filled()
-        config.title = "준비 완료"
+        config.title = L("camera.ready")
         config.cornerStyle = .capsule
+        config.titleAlignment = .center
+        config.titleLineBreakMode = .byWordWrapping
         config.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 28, bottom: 14, trailing: 28)
         let btn = UIButton(configuration: config)
         btn.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
+        btn.titleLabel?.numberOfLines = 2
+        btn.titleLabel?.textAlignment = .center
+        btn.titleLabel?.lineBreakMode = .byWordWrapping
+        btn.titleLabel?.adjustsFontSizeToFitWidth = true
+        btn.titleLabel?.minimumScaleFactor = 0.72
         return btn
     }()
 
     let manualStopBtn: UIButton = {
         var config = UIButton.Configuration.filled()
-        config.title = "영상 녹화 종료"
+        config.title = L("camera.stop_recording")
         config.cornerStyle = .capsule
         config.baseBackgroundColor = .systemRed
+        config.titleAlignment = .center
+        config.titleLineBreakMode = .byWordWrapping
         config.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 24, bottom: 14, trailing: 24)
         let btn = UIButton(configuration: config)
         btn.titleLabel?.font = .monospacedDigitSystemFont(ofSize: 16, weight: .semibold)
+        btn.titleLabel?.numberOfLines = 2
+        btn.titleLabel?.textAlignment = .center
+        btn.titleLabel?.lineBreakMode = .byWordWrapping
+        btn.titleLabel?.adjustsFontSizeToFitWidth = true
+        btn.titleLabel?.minimumScaleFactor = 0.72
         btn.isHidden = true
         return btn
     }()
 
     let livePreviewToggleButton: UIButton = {
         var config = UIButton.Configuration.filled()
-        config.title = "실시간 영상 표시"
+        config.title = L("camera.show_live_preview")
         config.cornerStyle = .capsule
         config.baseBackgroundColor = UIColor.white.withAlphaComponent(0.18)
         config.baseForegroundColor = .white
+        config.titleAlignment = .center
+        config.titleLineBreakMode = .byWordWrapping
         config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
         let btn = UIButton(configuration: config)
         btn.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+        btn.titleLabel?.numberOfLines = 2
+        btn.titleLabel?.textAlignment = .center
+        btn.titleLabel?.lineBreakMode = .byWordWrapping
+        btn.titleLabel?.adjustsFontSizeToFitWidth = true
+        btn.titleLabel?.minimumScaleFactor = 0.68
         btn.isHidden = true
-        btn.accessibilityLabel = "실시간 영상 표시 전환"
+        btn.accessibilityLabel = L("camera.live_preview_toggle")
         return btn
     }()
 
@@ -145,7 +170,7 @@ final class HoldVC: UIViewController {
         config.background.cornerRadius = 22
         config.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10)
         let btn = UIButton(configuration: config)
-        btn.accessibilityLabel = "설정"
+        btn.accessibilityLabel = L("common.settings")
         return btn
     }()
 
@@ -206,7 +231,7 @@ final class HoldVC: UIViewController {
 
     let selectHint: UILabel = {
         let label = UILabel()
-        label.text = "탑홀드를 탭하세요 · 벽과 매트 경계를 보정하세요"
+        label.text = L("camera.selection_both")
         label.textColor = .white
         label.textAlignment = .center
         label.font = .systemFont(ofSize: 14, weight: .semibold)
@@ -216,6 +241,8 @@ final class HoldVC: UIViewController {
         label.layer.shadowRadius = 3
         label.layer.shadowOffset = CGSize(width: 0, height: 1)
         label.clipsToBounds = false
+        label.numberOfLines = 2
+        label.lineBreakMode = .byWordWrapping
         return label
     }()
 
@@ -228,25 +255,41 @@ final class HoldVC: UIViewController {
         label.backgroundColor = UIColor.black.withAlphaComponent(0.35)
         label.layer.cornerRadius = 10
         label.clipsToBounds = true
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.72
         return label
     }()
 
     let retakeBtn: UIButton = {
         var config = UIButton.Configuration.gray()
-        config.title = "다시 촬영"
+        config.title = L("camera.retake")
         config.cornerStyle = .capsule
+        config.titleAlignment = .center
+        config.titleLineBreakMode = .byWordWrapping
         let btn = UIButton(configuration: config)
         btn.titleLabel?.font = .systemFont(ofSize: 14, weight: .medium)
+        btn.titleLabel?.numberOfLines = 2
+        btn.titleLabel?.textAlignment = .center
+        btn.titleLabel?.lineBreakMode = .byWordWrapping
+        btn.titleLabel?.adjustsFontSizeToFitWidth = true
+        btn.titleLabel?.minimumScaleFactor = 0.72
         return btn
     }()
 
     let recordBtn: UIButton = {
         var config = UIButton.Configuration.filled()
-        config.title = "녹화 시작"
+        config.title = L("camera.start_recording")
         config.cornerStyle = .capsule
-        config.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 36, bottom: 14, trailing: 36)
+        config.titleAlignment = .center
+        config.titleLineBreakMode = .byWordWrapping
+        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
         let btn = UIButton(configuration: config)
         btn.titleLabel?.font = .systemFont(ofSize: 17, weight: .semibold)
+        btn.titleLabel?.numberOfLines = 2
+        btn.titleLabel?.textAlignment = .center
+        btn.titleLabel?.lineBreakMode = .byWordWrapping
+        btn.titleLabel?.adjustsFontSizeToFitWidth = true
+        btn.titleLabel?.minimumScaleFactor = 0.68
         btn.isEnabled = false
         return btn
     }()

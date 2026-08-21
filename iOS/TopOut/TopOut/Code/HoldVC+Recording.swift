@@ -60,7 +60,7 @@ extension HoldVC {
 
                 let remain = seconds - i
                 if remain > 0 {
-                    let countdownText = "\(remain)초 후 녹화 시작"
+                    let countdownText = L("camera.countdown", remain)
                     self.setRecordingStatusText(countdownText)
                     if !self.isDeveloperModeEnabled {
                         self.showPowerSavingCountdown(remain)
@@ -212,7 +212,7 @@ extension HoldVC {
         vc.onSaveTrim = { [weak self, weak vc] startSeconds, endSeconds, includeTopHoldOverlay in
             guard let self else { return }
             vc?.setSaving(true)
-            vc?.setStatus(includeTopHoldOverlay ? "탑홀드 마스크를 입히는 중..." : "선택 구간 자르는 중...")
+            vc?.setStatus(includeTopHoldOverlay ? L("review.processing_mask") : L("review.trimming"))
 
             self.recorder.exportTrimmedClip(
                 fromOffset: startSeconds,
@@ -221,7 +221,7 @@ extension HoldVC {
             ) { result in
                 switch result {
                 case .success(let url):
-                    vc?.setStatus("사진 앱에 저장하고 확인하는 중...")
+                    vc?.setStatus(L("review.saving_verifying"))
                     self.saveVideoToPhotoLibrary(url) { saveResult in
                         vc?.setSaving(false)
                         switch saveResult {
@@ -232,15 +232,15 @@ extension HoldVC {
                                 endSeconds: endSeconds,
                                 includeTopHoldOverlay: includeTopHoldOverlay
                             )
-                            vc?.setStatus("갤러리에 저장된 영상을 확인했습니다")
-                        case .failure(let error):
-                            vc?.setStatus("사진 앱 저장/확인 실패: \(error.localizedDescription)")
+                            vc?.setStatus(L("review.gallery_verified"))
+                        case .failure:
+                            vc?.setStatus(L("error.save_verify"))
                         }
                     }
                     return
-                case .failure(let error):
+                case .failure:
                     vc?.setSaving(false)
-                    vc?.setStatus("구간 저장 실패: \(error.localizedDescription)")
+                    vc?.setStatus(L("error.save_clip"))
                 }
             }
         }
@@ -265,7 +265,7 @@ extension HoldVC {
                 let error = NSError(
                     domain: "TopOut.PhotoLibrary",
                     code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "사진 앱에 저장된 영상을 확인할 권한이 없습니다. 설정에서 사진 접근 권한을 허용해주세요."]
+                    userInfo: [NSLocalizedDescriptionKey: L("error.photo_permission")]
                 )
                 DispatchQueue.main.async { completionBox.completion(.failure(error)) }
                 return
@@ -280,7 +280,7 @@ extension HoldVC {
                     let resolvedError = error ?? NSError(
                         domain: "TopOut.PhotoLibrary",
                         code: 2,
-                        userInfo: [NSLocalizedDescriptionKey: "동영상을 사진 앱에 저장하지 못했습니다."]
+                        userInfo: [NSLocalizedDescriptionKey: L("error.photo_destination")]
                     )
                     DispatchQueue.main.async { completionBox.completion(.failure(resolvedError)) }
                     return
@@ -313,7 +313,7 @@ extension HoldVC {
             let error = NSError(
                 domain: "TopOut.PhotoLibrary",
                 code: 3,
-                userInfo: [NSLocalizedDescriptionKey: "사진 앱에서 저장된 영상을 다시 찾지 못했습니다."]
+                userInfo: [NSLocalizedDescriptionKey: L("error.find_saved_video")]
             )
             completion(.failure(error))
             return
@@ -344,7 +344,7 @@ extension HoldVC {
             let error = underlyingError ?? NSError(
                 domain: "TopOut.PhotoLibrary",
                 code: 4,
-                userInfo: [NSLocalizedDescriptionKey: "사진 앱에 저장된 영상 파일을 다시 열지 못했습니다."]
+                userInfo: [NSLocalizedDescriptionKey: L("error.open_saved_file")]
             )
             completion(.failure(error))
         }

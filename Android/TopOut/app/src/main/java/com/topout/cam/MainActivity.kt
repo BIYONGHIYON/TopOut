@@ -8,7 +8,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -44,15 +43,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.topout.cam.ui.components.TopOutCapsuleButton
 import com.topout.cam.ui.screens.TopOutApp
 import com.topout.cam.ui.theme.TopOutTheme
+import com.topout.cam.localization.tr
 import kotlinx.coroutines.delay
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     private val viewModel: TopOutViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -191,9 +192,9 @@ private fun PermissionGate(
         ) {
             Text(
                 if (android.os.Build.VERSION.SDK_INT <= 28) {
-                    "카메라 및 저장공간 권한이 필요합니다"
+                    tr("permission.camera_storage_title")
                 } else {
-                    "카메라 권한이 필요합니다"
+                    tr("permission.camera_title")
                 },
                 color = Color.White,
                 fontSize = 20.sp,
@@ -201,9 +202,9 @@ private fun PermissionGate(
             )
             Text(
                 if (android.os.Build.VERSION.SDK_INT <= 28) {
-                    "TopOut이 등반 영상을 촬영하고 저장할 수 있도록 카메라와 저장공간 권한을 허용해주세요. 마이크 권한이 없어도 영상 촬영은 가능하지만 소리는 저장되지 않습니다."
+                    tr("permission.camera_storage_message")
                 } else {
-                    "TopOut이 등반 영상을 촬영할 수 있도록 카메라 권한을 허용해주세요. 마이크 권한이 없어도 영상 촬영은 가능하지만 소리는 저장되지 않습니다."
+                    tr("permission.camera_message")
                 },
                 modifier = Modifier.padding(top = 12.dp, bottom = 24.dp),
                 color = Color.White.copy(alpha = 0.74f),
@@ -212,7 +213,7 @@ private fun PermissionGate(
                 textAlign = TextAlign.Center
             )
             TopOutCapsuleButton(
-                text = if (requested) "설정에서 권한 허용" else "권한 요청",
+                text = if (requested) tr("permission.open_settings") else tr("permission.request"),
                 onClick = {
                     if (requested) openSettings() else launcher.launch(MainActivity.requiredPermissions())
                 },

@@ -1,0 +1,4 @@
+"NSCameraUsageDescription" = "錄製攀岩影片需要相機權限。";
+"NSMicrophoneUsageDescription" = "隨影片錄製聲音需要麥克風權限。";
+"NSPhotoLibraryAddUsageDescription" = "將編輯後的攀岩影片儲存到照片需要存取權限。";
+"NSPhotoLibraryUsageDescription" = "驗證並播放 TopOut 剛儲存的影片需要照片存取權限。";

@@ -154,7 +154,11 @@ final class TrackTappableSlider: UIControl {
     }
 
     private func updateAccessibilityValue() {
-        accessibilityValue = String(format: "%.1f배", Double(storedValue))
+        accessibilityValue = String(
+            format: "%.1fx",
+            locale: AppLanguageManager.locale,
+            Double(storedValue)
+        )
     }
 
     private var normalizedProgress: CGFloat {

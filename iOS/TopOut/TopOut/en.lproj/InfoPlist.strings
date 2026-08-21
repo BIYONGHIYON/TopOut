@@ -1,0 +1,4 @@
+"NSCameraUsageDescription" = "Camera access is required to record climbing videos.";
+"NSMicrophoneUsageDescription" = "Microphone access is required to record sound with your videos.";
+"NSPhotoLibraryAddUsageDescription" = "Photos access is required to save your edited climbing videos.";
+"NSPhotoLibraryUsageDescription" = "Photos access is required to verify and play the video TopOut just saved.";

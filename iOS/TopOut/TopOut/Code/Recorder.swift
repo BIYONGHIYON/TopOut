@@ -95,14 +95,14 @@ final class ContinuousRecorder: @unchecked Sendable {
 
             guard let input = self.input, input.isReadyForMoreMediaData else {
                 if self.writer?.status == .failed {
-                    self.recordingError = self.writer?.error ?? RecorderError.recordingFailed("비디오 프레임 기록 중 오류가 발생했습니다.")
+                    self.recordingError = self.writer?.error ?? RecorderError.recordingFailed(L("error.recording_finish"))
                 }
                 return
             }
             if input.append(sampleBuffer) {
                 self.recordingEndPTS = pts
             } else {
-                self.recordingError = self.writer?.error ?? RecorderError.recordingFailed("비디오 프레임을 기록하지 못했습니다.")
+                self.recordingError = self.writer?.error ?? RecorderError.recordingFailed(L("error.recording_finish"))
             }
         }
     }
@@ -121,12 +121,12 @@ final class ContinuousRecorder: @unchecked Sendable {
 
             guard let audioInput = self.audioInput, audioInput.isReadyForMoreMediaData else {
                 if writer.status == .failed {
-                    self.recordingError = writer.error ?? RecorderError.recordingFailed("오디오 기록 중 오류가 발생했습니다.")
+                    self.recordingError = writer.error ?? RecorderError.recordingFailed(L("error.recording_finish"))
                 }
                 return
             }
             if !audioInput.append(sampleBuffer), writer.status == .failed {
-                self.recordingError = writer.error ?? RecorderError.recordingFailed("오디오 프레임을 기록하지 못했습니다.")
+                self.recordingError = writer.error ?? RecorderError.recordingFailed(L("error.recording_finish"))
             }
         }
     }
@@ -159,7 +159,7 @@ final class ContinuousRecorder: @unchecked Sendable {
             let sessionEnd = end
 
             guard writer.status == .writing else {
-                let error = writer.error ?? self.recordingError ?? RecorderError.recordingFailed("녹화 파일 작성기가 정상 상태가 아닙니다.")
+                let error = writer.error ?? self.recordingError ?? RecorderError.recordingFailed(L("error.recording_finish"))
                 self.isStopping = false
                 self.writer = nil
                 self.input = nil
@@ -187,7 +187,7 @@ final class ContinuousRecorder: @unchecked Sendable {
                         let session = RecordingSession(url: sessionURL, startPTS: sessionStart, endPTS: sessionEnd)
                         DispatchQueue.main.async { completion(.success(session)) }
                     } else {
-                        let error = finalError ?? RecorderError.recordingFailed("녹화 파일을 정상적으로 마무리하지 못했습니다.")
+                        let error = finalError ?? RecorderError.recordingFailed(L("error.recording_finish"))
                         DispatchQueue.main.async { completion(.failure(error)) }
                     }
 
@@ -451,7 +451,7 @@ final class ContinuousRecorder: @unchecked Sendable {
             input.transform = .identity
 
             guard writer.canAdd(input) else {
-                recordingError = RecorderError.recordingFailed("비디오 입력을 녹화 파일 작성기에 추가할 수 없습니다.")
+                recordingError = RecorderError.recordingFailed(L("error.recording_finish"))
                 return
             }
 
@@ -467,7 +467,7 @@ final class ContinuousRecorder: @unchecked Sendable {
             }
 
             guard writer.startWriting() else {
-                recordingError = writer.error ?? RecorderError.recordingFailed("녹화 파일 작성을 시작하지 못했습니다.")
+                recordingError = writer.error ?? RecorderError.recordingFailed(L("error.recording_finish"))
                 return
             }
             writer.startSession(atSourceTime: startPTS)
@@ -588,9 +588,9 @@ enum RecorderError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noRecording: return "저장된 녹화 파일이 없습니다."
-        case .invalidRange: return "내보낼 영상 구간이 올바르지 않습니다."
-        case .exportFailed: return "영상 내보내기에 실패했습니다."
+        case .noRecording: return L("error.recording_file_missing")
+        case .invalidRange: return L("error.invalid_clip_range")
+        case .exportFailed: return L("error.save_clip")
         case .recordingFailed(let message): return message
         }
     }

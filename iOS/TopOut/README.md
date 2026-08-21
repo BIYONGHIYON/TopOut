@@ -1,4 +1,4 @@
-# TopOut iOS v1.6 (build 14)
+# TopOut iOS v2.0 (build 16)
 
 > 등반 시작부터 완등 순간까지, 자동으로 찾아주는 클라이밍 촬영 앱
 
@@ -20,6 +20,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 - 자동으로 찾은 구간을 간편하게 미세 조정
 - 원하는 등반 장면만 사진 앱에 저장
 - 촬영 중단과 저장공간 부족 상황에 안전하게 대응
+- 기기 언어 자동 선택과 앱 내 수동 언어 변경 지원
 
 모든 영상 분석은 사용자의 기기 안에서 이루어집니다. 긴 영상을 다시 돌려보며 등반 장면을 찾고 편집하는 시간을 줄이고, 클라이밍에 더 집중할 수 있도록 설계했습니다.
 
@@ -27,10 +28,20 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 
 - Bundle ID: `com.topout.cam`
 - Deployment Target: iOS 16.0
-- Marketing / Current Project Version: `1.6` / `14`
+- Marketing / Current Project Version: `2.0` / `16`
 - UI: Swift, UIKit
 - Camera / media: AVFoundation, AVAssetWriter, AVPlayer, PhotoKit
 - AI: MobileSAM Core ML, Apple Vision Human Body Pose
+
+## 언어와 현지화
+
+- 영어, 한국어, 일본어, 중국어 간체, 중국어 번체, 프랑스어, 독일어, 스페인어, 포르투갈어를 지원합니다.
+- 기본 `자동` 모드는 iOS의 선호 언어 순위를 따르며, 지원하지 않는 언어에서는 영어를 사용합니다.
+- 설정에서 언어를 고르면 저장 전에도 설정과 오픈소스 화면이 즉시 해당 언어로 미리보기됩니다. `저장`할 때만 선택값을 `UserDefaults`에 보존하고 루트 화면을 안전하게 다시 구성합니다.
+- 양 플랫폼 문구는 루트 `localization/topout_strings.json`을 공통 원본으로 사용합니다. 카메라·마이크·사진 권한 안내는 각 언어의 `InfoPlist.strings`로 별도 현지화합니다.
+- 촬영·선택·결과 화면의 긴 상단 문구는 최대 두 줄 가운데 정렬로 표시하고, 결과 화면의 컨트롤은 노치가 있는 가로모드에서도 좌우 안전 영역 안에 배치합니다.
+- 영상 분석, 권한 범위, 네트워크 전송 여부는 언어 선택과 관계없이 동일합니다.
+- 긴 버튼 문구는 말줄임표를 사용하지 않고 두 줄 가운데 정렬·단어 단위 줄바꿈·축소를 적용하며, 설정 스위치는 설명 레이블이 먼저 줄바꿈되어 화면 밖으로 밀리지 않게 합니다.
 
 ## 촬영 준비와 매트 경계
 
@@ -116,9 +127,9 @@ xcodebuild -project TopOut.xcodeproj -scheme TopOut -configuration Debug \
 
 ## 문서
 
-- [v1.6 build 14 변경 사항](V1_6_BUILD_14_NOTES.md)
+- [v2.0 build 16 변경 사항](V2_0_BUILD_16_NOTES.md)
 - [전체 개발 이력과 기술 의사결정](../../DEVELOPMENT_HISTORY.md)
 - [MobileSAM 매트 경계](MOBILESAM_MAT_DETECTOR_NOTES.md)
 - [시작과 프레임 처리](STARTUP_OPTIMIZATION_NOTES.md)
 - [Pose 로직](POSE_LOGIC_ROLLBACK_NOTES.md)
-- 과거 릴리스 기록: [v1.6 build 13](V1_6_BUILD_13_NOTES.md), [v1.6 build 12](V1_6_BUILD_12_NOTES.md), [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)
+- 과거 릴리스 기록: [v1.7 build 15](V1_7_BUILD_15_NOTES.md), [v1.6 build 14](V1_6_BUILD_14_NOTES.md), [v1.6 build 13](V1_6_BUILD_13_NOTES.md), [v1.6 build 12](V1_6_BUILD_12_NOTES.md), [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)

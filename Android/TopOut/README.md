@@ -1,4 +1,4 @@
-# TopOut Android v1.6 (build 14)
+# TopOut Android v2.0 (versionCode 16)
 
 > 등반 시작부터 완등 순간까지, 자동으로 찾아주는 클라이밍 촬영 앱
 
@@ -20,6 +20,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 - 자동으로 찾은 구간을 간편하게 미세 조정
 - 원하는 등반 장면만 갤러리에 저장
 - 촬영 중단과 저장공간 부족 상황에 안전하게 대응
+- 기기 언어 자동 선택과 앱 내 수동 언어 변경 지원
 
 모든 영상 분석은 사용자의 기기 안에서 이루어집니다. 긴 영상을 다시 돌려보며 등반 장면을 찾고 편집하는 시간을 줄이고, 클라이밍에 더 집중할 수 있도록 설계했습니다.
 
@@ -28,10 +29,22 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 - Application ID: `com.topout.cam`
 - Minimum SDK: `26` (Android 8.0)
 - Compile / Target SDK: `36`
-- Version name / code: `1.6` / `14`
+- Version name / code: `2.0` / `16`
 - UI: Kotlin, Jetpack Compose, Material 3
 - Camera / media: CameraX 1.6.1, Media3 1.10.1
 - AI: MobileSAM ONNX Runtime 1.27.0, MoveNet Thunder FP16 LiteRT 1.4.1
+
+## 언어와 현지화
+
+- 영어, 한국어, 일본어, 중국어 간체, 중국어 번체, 프랑스어, 독일어, 스페인어, 포르투갈어를 지원합니다.
+- 기본 `자동` 모드는 Android 앱 언어 우선순위와 시스템 언어를 따르며, 지원하지 않는 언어에서는 영어를 사용합니다.
+- 설정의 언어 목록에서 언어를 고르면 저장 전에도 설정·개인정보처리방침·오픈소스 화면이 즉시 해당 언어로 미리보기되며, `저장`할 때만 선택값을 앱 내부 `SharedPreferences`에 보존합니다.
+- `AppCompatDelegate.setApplicationLocales`로 앱 전용 locale을 적용하며 Android 시스템의 앱별 언어 설정과 동기화합니다.
+- 양 플랫폼 문구는 루트 `localization/topout_strings.json`을 공통 원본으로 사용해 키와 번역 누락을 함께 검증합니다.
+- `res/xml/locales_config.xml`에는 Android가 노출할 9개 언어를 명시합니다.
+- 긴 버튼 문구는 두 줄 가운데 정렬과 자동 글자 크기 조정을 사용하고, 설정 스위치는 설명이 먼저 줄바꿈되어 제어가 화면 밖으로 밀리지 않게 합니다.
+- 촬영 화면의 Tip 배너는 전체 가로폭 안에서 글자 크기를 자동으로 조정해 프랑스어·독일어처럼 긴 번역도 한 줄로 표시합니다.
+- 촬영·선택·결과 화면의 상단 상태 문구는 최대 두 줄 가운데 정렬과 자동 글자 크기 조정을 사용해 작은 화면에서도 끝부분이 잘리지 않습니다.
 
 ## 촬영 준비와 매트 경계
 
@@ -144,10 +157,10 @@ app/build/generated/moveNetPoseAssets/models/movenet-thunder-fp16.tflite
 
 ## 문서
 
-- [v1.6 build 14 변경 사항](V1_6_BUILD_14_NOTES.md)
+- [v2.0 versionCode 16 변경 사항](V2_0_BUILD_16_NOTES.md)
 - [전체 개발 이력과 기술 의사결정](../../DEVELOPMENT_HISTORY.md)
 - [Android 호환성](ANDROID_COMPATIBILITY_NOTES.md)
 - [기기 호환성 수정](DEVICE_COMPATIBILITY_FIX_NOTES.md)
 - [MobileSAM ONNX 배치와 진단](docs/ONNX_INTEGRATION.md)
 - [iOS UI/UX 대응표](docs/UI_PARITY.md)
-- 과거 릴리스 기록: [v1.6 build 13](V1_6_BUILD_13_NOTES.md), [v1.6 build 12](V1_6_BUILD_12_NOTES.md), [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)
+- 과거 릴리스 기록: [v1.7 build 15](V1_7_BUILD_15_NOTES.md), [v1.6 build 14](V1_6_BUILD_14_NOTES.md), [v1.6 build 13](V1_6_BUILD_13_NOTES.md), [v1.6 build 12](V1_6_BUILD_12_NOTES.md), [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)

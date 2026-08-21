@@ -4,7 +4,8 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import java.util.Locale
+import com.topout.cam.localization.TopOutStrings
+import com.topout.cam.localization.tr
 import kotlin.math.max
 import kotlin.math.min
 
@@ -38,13 +39,15 @@ enum class RecordingFrameRate(val fps: Int, val title: String) {
 enum class RecordingAspectRatio(
     val portraitTitle: String,
     val landscapeTitle: String,
-    val subtitle: String,
+    val subtitleKey: String,
     val portraitWidthOverHeight: Float
 ) {
-    STORY_9_16("9:16", "16:9", "스토리·릴스", 9f / 16f),
-    FEED_4_5("4:5", "5:4", "인스타 피드", 4f / 5f),
-    PORTRAIT_3_4("3:4", "4:3", "세로 게시물", 3f / 4f),
-    SQUARE_1_1("1:1", "1:1", "정사각 게시물", 1f);
+    STORY_9_16("9:16", "16:9", "settings.story_reels", 9f / 16f),
+    FEED_4_5("4:5", "5:4", "settings.instagram_feed", 4f / 5f),
+    PORTRAIT_3_4("3:4", "4:3", "settings.portrait_post", 3f / 4f),
+    SQUARE_1_1("1:1", "1:1", "settings.square_post", 1f);
+
+    val subtitle: String get() = tr(subtitleKey)
 
     fun title(isLandscape: Boolean): String = if (isLandscape) landscapeTitle else portraitTitle
 
@@ -165,32 +168,26 @@ data class SavedGalleryVideo(
 
 data class RecordingStopNotice(val title: String, val message: String) {
     companion object {
-        val Background = RecordingStopNotice(
-            "녹화가 자동 종료되었습니다",
-            "앱이 백그라운드로 이동해 녹화를 안전하게 종료했습니다. 녹화된 영상은 결과 화면에서 확인할 수 있습니다."
-        )
-        val CaptureInterruption = RecordingStopNotice(
-            "녹화가 중단되었습니다",
-            "다른 앱의 카메라·마이크 사용으로 촬영 장치가 중단되어 녹화를 안전하게 종료했습니다."
-        )
-        val SessionError = RecordingStopNotice(
-            "카메라 오류로 녹화가 종료되었습니다",
-            "카메라 세션 오류가 발생해 현재까지 촬영된 영상을 안전하게 마무리했습니다."
-        )
+        val Background: RecordingStopNotice
+            get() = RecordingStopNotice(tr("notice.background_title"), tr("notice.background_message"))
+        val CaptureInterruption: RecordingStopNotice
+            get() = RecordingStopNotice(tr("notice.interruption_title"), tr("notice.interruption_message"))
+        val SessionError: RecordingStopNotice
+            get() = RecordingStopNotice(tr("notice.camera_error_title"), tr("notice.camera_error_message"))
         fun lowStorage(availableBytes: Long?): RecordingStopNotice {
-            val available = availableBytes?.let { " 현재 사용 가능한 저장공간은 약 ${formatBytes(it)}입니다." }.orEmpty()
+            val available = availableBytes?.let { tr("notice.available_storage", formatBytes(it)) }.orEmpty()
             return RecordingStopNotice(
-                "저장공간이 부족합니다",
-                "저장공간이 임박해 녹화를 자동 종료했습니다. 영상을 저장하기 전에 기기의 저장공간을 확보해주세요.$available"
+                tr("notice.low_storage_title"),
+                tr("notice.low_storage_message", available)
             )
         }
 
         private fun formatBytes(bytes: Long): String {
             val gb = bytes / 1_073_741_824.0
             return if (gb >= 1) {
-                String.format(Locale.US, "%.1fGB", gb)
+                String.format(TopOutStrings.currentLocale(), "%.1fGB", gb)
             } else {
-                String.format(Locale.US, "%.0fMB", bytes / 1_048_576.0)
+                String.format(TopOutStrings.currentLocale(), "%.0fMB", bytes / 1_048_576.0)
             }
         }
     }
@@ -250,7 +247,7 @@ data class TopOutUiState(
     val recordingElapsedSeconds: Double = 0.0,
     val recordingCountdown: Int? = null,
     val livePreviewEnabled: Boolean = true,
-    val statusText: String = "벽과 매트 경계선이 보이게 맞춘 뒤 준비 완료",
+    val statusText: String = tr("camera.preview_mat"),
     val detectedRanges: List<ClipRange> = emptyList(),
     val recordedVideo: RecordedVideo? = null,
     val settingsVisible: Boolean = false,

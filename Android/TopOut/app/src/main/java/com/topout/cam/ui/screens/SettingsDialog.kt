@@ -30,6 +30,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +48,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.topout.cam.BuildConfig
+import com.topout.cam.localization.AppLanguage
+import com.topout.cam.localization.AppLanguageManager
+import com.topout.cam.localization.TopOutStrings
 import com.topout.cam.model.AppSettings
 import com.topout.cam.model.CameraCapabilities
 import com.topout.cam.model.RecordingAspectRatio
@@ -54,22 +59,32 @@ import com.topout.cam.model.RecordingResolution
 import com.topout.cam.ui.components.SegmentControl
 import com.topout.cam.ui.theme.TopOutColors
 
+private val LocalSettingsLanguage = compositionLocalOf { AppLanguage.AUTOMATIC }
+
+@Composable
+private fun settingsTr(key: String, vararg arguments: Any?): String =
+    TopOutStrings.text(LocalSettingsLanguage.current, key, *arguments)
+
 @Composable
 fun SettingsDialog(
     initial: AppSettings,
+    initialLanguage: AppLanguage,
     capabilities: CameraCapabilities,
     isLandscape: Boolean,
     onDismiss: () -> Unit,
-    onSave: (AppSettings) -> Unit
+    onSave: (AppSettings, AppLanguage) -> Unit
 ) {
     var draft by remember(initial) { mutableStateOf(initial.normalized()) }
+    var draftLanguage by remember(initialLanguage) { mutableStateOf(initialLanguage) }
     var showPrivacyPolicy by remember { mutableStateOf(false) }
     var showOpenSourceLicenses by remember { mutableStateOf(false) }
+    var showLanguageSelection by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = showPrivacyPolicy || showOpenSourceLicenses) {
+    BackHandler(enabled = showPrivacyPolicy || showOpenSourceLicenses || showLanguageSelection) {
         when {
             showPrivacyPolicy -> showPrivacyPolicy = false
             showOpenSourceLicenses -> showOpenSourceLicenses = false
+            showLanguageSelection -> showLanguageSelection = false
         }
     }
 
@@ -96,21 +111,29 @@ fun SettingsDialog(
 
     val output = draft.aspectRatio.outputSize(draft.resolution, isLandscape)
 
-    Dialog(
-        onDismissRequest = {
-            when {
-                showPrivacyPolicy -> showPrivacyPolicy = false
-                showOpenSourceLicenses -> showOpenSourceLicenses = false
-                else -> onDismiss()
-            }
-        },
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Box(Modifier.fillMaxSize().background(TopOutColors.SettingsBackground)) {
+    CompositionLocalProvider(LocalSettingsLanguage provides draftLanguage) {
+        Dialog(
+            onDismissRequest = {
+                when {
+                    showPrivacyPolicy -> showPrivacyPolicy = false
+                    showOpenSourceLicenses -> showOpenSourceLicenses = false
+                    showLanguageSelection -> showLanguageSelection = false
+                    else -> onDismiss()
+                }
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(Modifier.fillMaxSize().background(TopOutColors.SettingsBackground)) {
             if (showPrivacyPolicy) {
                 PrivacyPolicyScreen(onBack = { showPrivacyPolicy = false })
             } else if (showOpenSourceLicenses) {
                 OpenSourceLicensesScreen(onBack = { showOpenSourceLicenses = false })
+            } else if (showLanguageSelection) {
+                LanguageSelectionScreen(
+                    selected = draftLanguage,
+                    onSelected = { draftLanguage = it },
+                    onBack = { showLanguageSelection = false }
+                )
             } else {
                 Column(Modifier.fillMaxSize()) {
                     Row(
@@ -124,9 +147,9 @@ fun SettingsDialog(
                                 contentColor = TopOutColors.Blue
                             ),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
-                        ) { Text("닫기", fontSize = 16.sp) }
+                        ) { Text(settingsTr("common.close"), fontSize = 16.sp) }
                         Text(
-                            "설정",
+                            settingsTr("common.settings"),
                             modifier = Modifier.weight(1f),
                             color = Color.Black,
                             fontSize = 17.sp,
@@ -134,13 +157,13 @@ fun SettingsDialog(
                             textAlign = TextAlign.Center
                         )
                         Button(
-                            onClick = { onSave(draft.normalized()) },
+                            onClick = { onSave(draft.normalized(), draftLanguage) },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Color.Transparent,
                                 contentColor = TopOutColors.Blue
                             ),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
-                        ) { Text("저장", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
+                        ) { Text(settingsTr("common.save"), fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
                     }
 
                     Column(
@@ -148,8 +171,8 @@ fun SettingsDialog(
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(9.dp)
                     ) {
-                        SettingsSection("영상 포맷") {
-                            SettingLabel("해상도")
+                        SettingsSection(settingsTr("settings.video_format")) {
+                            SettingLabel(settingsTr("settings.resolution"))
                             SegmentControl(
                                 entries = RecordingResolution.entries.map { it.title },
                                 selectedIndex = draft.resolution.ordinal,
@@ -162,7 +185,7 @@ fun SettingsDialog(
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Spacer(Modifier.height(6.dp))
-                            SettingLabel("프레임")
+                            SettingLabel(settingsTr("settings.frame_rate"))
                             SegmentControl(
                                 entries = RecordingFrameRate.entries.map { it.title },
                                 selectedIndex = draft.frameRate.ordinal,
@@ -180,7 +203,7 @@ fun SettingsDialog(
                                 draft.frameRate == RecordingFrameRate.FPS60
                             ) {
                                 Text(
-                                    "4K 60fps는 배터리와 저장공간을 빠르게 소모할 수 있어요.",
+                                    settingsTr("settings.battery_warning"),
                                     modifier = Modifier.padding(top = 4.dp),
                                     color = TopOutColors.Orange,
                                     fontSize = 12.sp,
@@ -189,7 +212,7 @@ fun SettingsDialog(
                             }
                         }
 
-                        SettingsSection("화면 비율") {
+                        SettingsSection(settingsTr("settings.aspect_ratio")) {
                             SegmentControl(
                                 entries = RecordingAspectRatio.entries.map { it.title(isLandscape) },
                                 selectedIndex = draft.aspectRatio.ordinal,
@@ -199,40 +222,45 @@ fun SettingsDialog(
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Text(
-                                "${draft.aspectRatio.subtitle} · 저장 크기 ${output.width}×${output.height}",
+                                settingsTr(
+                                    "settings.output_size",
+                                    aspectRatioSubtitle(draft.aspectRatio),
+                                    output.width,
+                                    output.height
+                                ),
                                 modifier = Modifier.padding(top = 4.dp),
                                 color = TopOutColors.SecondaryText,
                                 fontSize = 12.sp
                             )
                         }
 
-                        SettingsSection("자동 구간 탐지") {
+                        SettingsSection(settingsTr("settings.auto_clip")) {
                             SettingSwitch(
-                                text = "비활성화 시 배터리가 절약되지만 수동으로 구간 선택",
+                                text = settingsTr("settings.auto_clip_description"),
                                 checked = draft.autoClipDetectionEnabled,
                                 onChecked = ::setAutoClip
                             )
                         }
 
-                        SettingsSection("탑홀드 마스킹") {
+                        SettingsSection(settingsTr("settings.top_hold_masking")) {
                             SettingSwitch(
-                                text = "결과 영상에 선택 영역을 마스크로 표시해 저장 가능",
+                                text = settingsTr("settings.top_hold_masking_description"),
                                 checked = draft.topHoldMaskingEnabled,
                                 onChecked = { draft = draft.copy(topHoldMaskingEnabled = it) }
                             )
                         }
 
-                        SettingsSection("도움말") {
+                        SettingsSection(settingsTr("settings.help")) {
                             SettingSwitch(
-                                text = "촬영 안내 문구와 Tip 표시",
+                                text = settingsTr("settings.help_description"),
                                 checked = draft.helpEnabled,
                                 onChecked = { draft = draft.copy(helpEnabled = it) }
                             )
                         }
 
-                        SettingsSection("녹화중 실시간 영상 표시") {
+                        SettingsSection(settingsTr("settings.live_preview")) {
                             SettingSwitch(
-                                text = "비활성화 시 배터리 절약을 위해 녹화 중 검은 화면 출력",
+                                text = settingsTr("settings.live_preview_description"),
                                 checked = draft.livePreviewDuringRecordingEnabled,
                                 onChecked = {
                                     draft = draft.copy(livePreviewDuringRecordingEnabled = it)
@@ -240,26 +268,33 @@ fun SettingsDialog(
                             )
                         }
 
-                        SettingsSection("앱 정보") {
+                        SettingsSection(settingsTr("language.title")) {
                             SettingsNavigationRow(
-                                title = "개인정보 처리방침",
+                                title = languageDisplayName(draftLanguage),
+                                onClick = { showLanguageSelection = true }
+                            )
+                        }
+
+                        SettingsSection(settingsTr("settings.app_info")) {
+                            SettingsNavigationRow(
+                                title = settingsTr("privacy.title"),
                                 onClick = { showPrivacyPolicy = true }
                             )
                             HorizontalDivider(color = Color(0xFFE5E5EA))
                             SettingsNavigationRow(
-                                title = "오픈소스 라이선스",
+                                title = settingsTr("licenses.title"),
                                 onClick = { showOpenSourceLicenses = true }
                             )
                             HorizontalDivider(color = Color(0xFFE5E5EA))
                             Text(
-                                "버전 ${BuildConfig.VERSION_NAME}",
+                                settingsTr("settings.version", BuildConfig.VERSION_NAME),
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
                                 color = TopOutColors.SecondaryText,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                "카메라와 마이크는 영상·음성 녹화에만 사용되며, 촬영 데이터는 외부 서버로 전송되지 않습니다.",
+                                settingsTr("privacy.short_notice"),
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp),
                                 color = TopOutColors.SecondaryText,
                                 fontSize = 11.sp,
@@ -267,6 +302,86 @@ fun SettingsDialog(
                             )
                         }
                         Spacer(Modifier.height(6.dp))
+                    }
+                }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun languageDisplayName(language: AppLanguage): String = when (language) {
+    AppLanguage.AUTOMATIC -> settingsTr(
+        "language.automatic_with_value",
+        AppLanguageManager.automaticLanguage().nativeName
+    )
+    else -> language.nativeName
+}
+
+@Composable
+private fun aspectRatioSubtitle(aspectRatio: RecordingAspectRatio): String = when (aspectRatio) {
+    RecordingAspectRatio.STORY_9_16 -> settingsTr("settings.story_reels")
+    RecordingAspectRatio.FEED_4_5 -> settingsTr("settings.instagram_feed")
+    RecordingAspectRatio.PORTRAIT_3_4 -> settingsTr("settings.portrait_post")
+    RecordingAspectRatio.SQUARE_1_1 -> settingsTr("settings.square_post")
+}
+
+@Composable
+private fun LanguageSelectionScreen(
+    selected: AppLanguage,
+    onSelected: (AppLanguage) -> Unit,
+    onBack: () -> Unit
+) {
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().background(Color.White)
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = settingsTr("common.back"),
+                    tint = TopOutColors.Blue
+                )
+            }
+            Text(
+                settingsTr("language.title"),
+                modifier = Modifier.weight(1f),
+                color = Color.Black,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.width(48.dp))
+        }
+
+        Column(
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            AppLanguage.entries.forEach { language ->
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .background(Color.White, RoundedCornerShape(13.dp))
+                        .clickable {
+                            onSelected(language)
+                            onBack()
+                        }
+                        .padding(horizontal = 16.dp, vertical = 15.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        languageDisplayName(language),
+                        modifier = Modifier.weight(1f),
+                        color = Color.Black,
+                        fontSize = 15.sp,
+                        fontWeight = if (language == selected) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                    if (language == selected) {
+                        Text("✓", color = TopOutColors.Blue, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -285,12 +400,12 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
             IconButton(onClick = onBack) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "뒤로",
+                    contentDescription = settingsTr("common.back"),
                     tint = TopOutColors.Blue
                 )
             }
             Text(
-                "개인정보 처리방침",
+                settingsTr("privacy.title"),
                 modifier = Modifier.weight(1f),
                 color = Color.Black,
                 fontSize = 16.sp,
@@ -306,7 +421,7 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                "시행일: 2026년 7월 19일",
+                settingsTr("privacy.effective_date"),
                 color = TopOutColors.SecondaryText,
                 fontSize = 11.sp
             )
@@ -317,113 +432,116 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
                     .padding(14.dp)
             ) {
                 Text(
-                    "TopOut은 별도의 회원가입 기능을 제공하지 않으며, 사용자의 이름, 이메일 주소, 위치정보, 기기 식별자 등의 개인정보를 수집하거나 외부 서버로 전송하지 않습니다.",
+                    settingsTr("privacy.summary_1"),
                     color = Color.Black,
                     fontSize = 12.sp,
                     lineHeight = 18.sp
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "카메라와 마이크는 영상 및 음성 녹화에 사용되며, 신체 포즈 분석과 촬영 데이터 처리는 사용자의 기기 내에서 이루어집니다.",
+                    settingsTr("privacy.summary_2"),
                     color = TopOutColors.SecondaryText,
                     fontSize = 12.sp,
                     lineHeight = 18.sp
                 )
             }
 
-            PrivacyPolicySection("1. 수집하는 개인정보") {
+            PrivacyPolicySection(settingsTr("privacy.section_1")) {
                 PrivacyParagraph(
-                    "TopOut은 이름, 이메일 주소, 전화번호, 주소, 위치정보, 연락처, 기기 식별자, 광고 식별자 또는 앱 이용 기록 등 사용자를 직접 식별하기 위한 개인정보를 수집하지 않습니다."
+                    settingsTr("privacy.section_1_p1")
                 )
                 PrivacyParagraph(
-                    "또한 회원가입, 로그인, 사용자 계정 또는 클라우드 저장 기능을 제공하지 않습니다."
-                )
-            }
-
-            PrivacyPolicySection("2. 카메라 및 마이크 사용") {
-                PrivacyParagraph(
-                    "카메라 권한은 영상 촬영과 자동 촬영 구간 감지에 사용되며, 마이크 권한은 촬영 영상에 포함되는 음성과 주변 소리를 녹음하기 위해 사용됩니다."
+                    settingsTr("privacy.section_1_p2")
                 )
                 PrivacyParagraph(
-                    "카메라와 마이크는 사용자가 권한을 허용하고 촬영 기능을 사용하는 동안에만 접근합니다. 촬영된 영상과 음성은 사용자의 기기에서 처리되며 개발자 또는 외부 서버로 전송되지 않습니다."
+                    settingsTr("privacy.section_1_p3")
                 )
             }
 
-            PrivacyPolicySection("3. 신체 포즈 및 움직임 분석") {
+            PrivacyPolicySection(settingsTr("privacy.section_2")) {
                 PrivacyParagraph(
-                    "TopOut은 클라이밍 시작과 종료 시점을 감지하고 자동 촬영 기능을 제공하기 위해 카메라 영상에서 사용자의 신체 포즈와 매트 주변 움직임을 분석할 수 있습니다."
+                    settingsTr("privacy.section_2_p1")
                 )
                 PrivacyParagraph(
-                    "신체 포즈 분석은 MoveNet SinglePose Thunder FP16과 LiteRT를 이용해 기기 내에서 수행됩니다. 분석 과정에서 생성되는 관절 좌표와 중간 분석 결과는 외부 서버로 전송되지 않으며 사용자를 식별하는 프로필로 저장되지 않습니다."
-                )
-            }
-
-            PrivacyPolicySection("4. 영상 저장 및 사진 앱 접근") {
-                PrivacyParagraph(
-                    "TopOut은 앱에서 새로 촬영한 영상을 사용자의 기기 사진 앱 또는 미디어 저장소에 저장합니다."
-                )
-                PrivacyParagraph(
-                    "저장 완료 후 정상 저장 여부를 확인할 때에는 TopOut이 방금 저장한 영상의 미디어 항목만 다시 조회하고 재생할 수 있습니다. 사용자의 기존 사진이나 영상을 임의로 탐색, 수집, 분석 또는 외부로 전송하지 않습니다. 운영체제 버전에 따라 영상 저장을 위한 권한 요청 방식이 달라질 수 있습니다."
+                    settingsTr("privacy.section_2_p2")
                 )
             }
 
-            PrivacyPolicySection("5. 제3자 제공 및 외부 전송") {
+            PrivacyPolicySection(settingsTr("privacy.section_3")) {
                 PrivacyParagraph(
-                    "TopOut은 사용자의 개인정보나 촬영 데이터를 제3자에게 판매, 제공 또는 공유하지 않습니다. 사용자 데이터를 광고 사업자, 데이터 분석 서비스 또는 외부 서버에 전송하지 않으며 국외로 이전하지 않습니다."
+                    settingsTr("privacy.section_3_p1")
+                )
+                PrivacyParagraph(
+                    settingsTr("privacy.section_3_p2")
                 )
             }
 
-            PrivacyPolicySection("6. 광고 및 분석 도구") {
+            PrivacyPolicySection(settingsTr("privacy.section_4")) {
                 PrivacyParagraph(
-                    "TopOut은 현재 맞춤형 광고, 광고 식별자 기반 추적 또는 사용자 행동 분석을 위한 외부 광고·분석 서비스를 사용하지 않습니다."
+                    settingsTr("privacy.section_4_p1")
                 )
                 PrivacyParagraph(
-                    "향후 광고 또는 분석 서비스가 추가되어 개인정보 처리 방식이 변경되는 경우, 본 개인정보 처리방침을 수정하고 필요한 내용을 안내합니다."
-                )
-            }
-
-            PrivacyPolicySection("7. 데이터 보관 및 삭제") {
-                PrivacyParagraph(
-                    "촬영된 영상과 음성은 사용자의 기기에만 저장되며 TopOut은 별도의 서버에 촬영 콘텐츠를 보관하지 않습니다. 사용자는 기기의 사진 앱 또는 파일 관리 앱에서 촬영 콘텐츠를 직접 확인하고 삭제할 수 있습니다."
-                )
-                PrivacyParagraph(
-                    "앱을 삭제하면 앱 내부 설정과 임시 데이터는 운영체제의 앱 삭제 절차에 따라 제거됩니다. 기기의 사진 앱이나 미디어 저장소에 저장된 영상은 앱 삭제 후에도 남을 수 있으므로 사용자가 직접 삭제해야 합니다."
+                    settingsTr("privacy.section_4_p2")
                 )
             }
 
-            PrivacyPolicySection("8. 개인정보의 안전한 처리") {
+            PrivacyPolicySection(settingsTr("privacy.section_5")) {
                 PrivacyParagraph(
-                    "TopOut은 운영체제가 제공하는 권한 관리 기능과 앱 샌드박스 환경을 사용합니다. 카메라와 마이크는 사용자가 권한을 허용한 경우에만 이용할 수 있습니다."
+                    settingsTr("privacy.section_5_p1")
                 )
             }
 
-            PrivacyPolicySection("9. 권한 변경 및 철회") {
+            PrivacyPolicySection(settingsTr("privacy.section_6")) {
                 PrivacyParagraph(
-                    "사용자는 기기의 설정 → 애플리케이션 → TopOut → 권한에서 카메라와 마이크 권한을 언제든지 변경하거나 철회할 수 있습니다."
+                    settingsTr("privacy.section_6_p1")
                 )
                 PrivacyParagraph(
-                    "카메라 또는 마이크 권한을 철회하면 영상 촬영이나 음성 녹음 등 일부 기능이 정상적으로 작동하지 않을 수 있습니다."
-                )
-            }
-
-            PrivacyPolicySection("10. 아동의 개인정보") {
-                PrivacyParagraph(
-                    "TopOut은 아동을 포함한 사용자로부터 개인정보를 의도적으로 수집하지 않습니다. 개인정보가 의도하지 않게 수집되었다고 판단되는 경우 아래 문의 이메일로 연락해 주세요."
+                    settingsTr("privacy.section_6_p2")
                 )
             }
 
-            PrivacyPolicySection("11. 개인정보 처리방침의 변경") {
+            PrivacyPolicySection(settingsTr("privacy.section_7")) {
                 PrivacyParagraph(
-                    "앱 기능, 적용 기술 또는 관련 법령과 정책의 변경에 따라 본 개인정보 처리방침이 수정될 수 있습니다. 내용이 변경되는 경우 시행일을 갱신하고 앱에서 변경된 내용을 안내합니다."
+                    settingsTr("privacy.section_7_p1")
+                )
+                PrivacyParagraph(
+                    settingsTr("privacy.section_7_p2")
                 )
             }
 
-            PrivacyPolicySection("12. 문의") {
-                PrivacyParagraph("이메일: byeonghyeon383@gmail.com")
+            PrivacyPolicySection(settingsTr("privacy.section_8")) {
+                PrivacyParagraph(
+                    settingsTr("privacy.section_8_p1")
+                )
+            }
+
+            PrivacyPolicySection(settingsTr("privacy.section_9")) {
+                PrivacyParagraph(
+                    settingsTr("privacy.section_9_p1")
+                )
+                PrivacyParagraph(
+                    settingsTr("privacy.section_9_p2")
+                )
+            }
+
+            PrivacyPolicySection(settingsTr("privacy.section_10")) {
+                PrivacyParagraph(
+                    settingsTr("privacy.section_10_p1")
+                )
+            }
+
+            PrivacyPolicySection(settingsTr("privacy.section_11")) {
+                PrivacyParagraph(
+                    settingsTr("privacy.section_11_p1")
+                )
+            }
+
+            PrivacyPolicySection(settingsTr("privacy.section_12")) {
+                PrivacyParagraph(settingsTr("privacy.contact_email"))
             }
 
             Text(
-                "© 2026 TopOut. All rights reserved.",
+                settingsTr("common.copyright"),
                 modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                 color = TopOutColors.SecondaryText,
                 fontSize = 10.sp,
@@ -454,11 +572,12 @@ private fun PrivacyParagraph(text: String) {
 @Composable
 private fun OpenSourceLicensesScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val notices = remember(context) {
-        readAssetText(context, "licenses/THIRD_PARTY_NOTICES.txt")
+    val loadFailedText = settingsTr("licenses.load_failed")
+    val notices = remember(context, loadFailedText) {
+        readAssetText(context, "licenses/THIRD_PARTY_NOTICES.txt", loadFailedText)
     }
-    val apacheLicense = remember(context) {
-        readAssetText(context, "licenses/Apache-2.0.txt")
+    val apacheLicense = remember(context, loadFailedText) {
+        readAssetText(context, "licenses/Apache-2.0.txt", loadFailedText)
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -470,12 +589,12 @@ private fun OpenSourceLicensesScreen(onBack: () -> Unit) {
             IconButton(onClick = onBack) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "뒤로",
+                    contentDescription = settingsTr("common.back"),
                     tint = TopOutColors.Blue
                 )
             }
             Text(
-                "오픈소스 라이선스",
+                settingsTr("licenses.title"),
                 modifier = Modifier.weight(1f),
                 color = Color.Black,
                 fontSize = 16.sp,
@@ -491,13 +610,13 @@ private fun OpenSourceLicensesScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                "TopOut에 포함된 제3자 오픈소스 구성요소와 라이선스를 확인할 수 있습니다.",
+                settingsTr("licenses.description"),
                 color = TopOutColors.SecondaryText,
                 fontSize = 12.sp,
                 lineHeight = 17.sp
             )
 
-            SettingsSection("제3자 구성요소") {
+            SettingsSection(settingsTr("licenses.third_party")) {
                 Text(
                     notices,
                     color = TopOutColors.SecondaryText,
@@ -520,10 +639,10 @@ private fun OpenSourceLicensesScreen(onBack: () -> Unit) {
     }
 }
 
-private fun readAssetText(context: Context, path: String): String = runCatching {
+private fun readAssetText(context: Context, path: String, fallback: String): String = runCatching {
     context.assets.open(path).bufferedReader().use { it.readText() }
 }.getOrElse {
-    "라이선스 문서를 불러오지 못했습니다."
+    fallback
 }
 
 @Composable
@@ -597,6 +716,7 @@ private fun SettingSwitch(
             lineHeight = 16.sp
         )
         Switch(
+            modifier = Modifier.width(52.dp),
             checked = checked,
             enabled = enabled,
             onCheckedChange = onChecked,

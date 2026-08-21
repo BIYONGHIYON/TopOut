@@ -8,16 +8,21 @@ final class OpenSourceLicensesVC: UITableViewController {
         let licenseText: String
     }
 
-    private let items: [LicenseItem] = [
-        LicenseItem(
-            name: "MobileSAM",
-            licenseName: "Apache License 2.0",
-            summary: OpenSourceNotices.mobileSAMSummary,
-            licenseText: OpenSourceNotices.apacheLicense2
-        )
-    ]
+    private let language: AppLanguage
 
-    init() {
+    private var items: [LicenseItem] {
+        [
+            LicenseItem(
+                name: "MobileSAM",
+                licenseName: "Apache License 2.0",
+                summary: L10n.text("licenses.mobilesam_summary", [], language: language),
+                licenseText: OpenSourceNotices.apacheLicense2
+            )
+        ]
+    }
+
+    init(language: AppLanguage = AppLanguageManager.selected) {
+        self.language = language
         super.init(style: .insetGrouped)
     }
 
@@ -27,7 +32,7 @@ final class OpenSourceLicensesVC: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "오픈소스 라이선스"
+        title = L10n.text("licenses.title", [], language: language)
         tableView.backgroundColor = .systemGroupedBackground
         tableView.rowHeight = 64
     }
@@ -41,7 +46,7 @@ final class OpenSourceLicensesVC: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "TopOut에 포함된 제3자 오픈소스 구성요소와 라이선스를 확인할 수 있습니다."
+        L10n.text("licenses.description", [], language: language)
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {

@@ -32,6 +32,10 @@ extension HoldVC {
                 self?.showCameraUI()
             }
         }
+        vc.onLanguageChanged = { [weak self] in
+            guard let sceneDelegate = self?.view.window?.windowScene?.delegate as? SceneDelegate else { return }
+            sceneDelegate.reloadRootForLanguageChange()
+        }
 
         let nav = OrientationLockedNavigationController(rootViewController: vc)
         nav.modalPresentationStyle = .pageSheet
