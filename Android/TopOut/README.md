@@ -132,6 +132,31 @@ Thunder의 추가 연산량은 전체 화면 변환을 제거하고 Motion 변�
 - 카운트다운 취소·백그라운드 전환·카메라 세션 교체 시 대기 중인 줌 확인 콜백과 1.5초 fallback을 함께 무효화하고, 이미 Recorder가 만들어졌지만 Start 이벤트 전 취소된 경우 결과 파일을 폐기해 녹화가 뒤늦게 되살아나지 않도록 보호. 화면·수명주기 재생성으로 시작이 무효화되거나 폐기 Recorder의 Finalize 전에 재시도하면 UI도 즉시 촬영 대기 상태로 복구
 - OEM CameraControl의 줌 future가 완료되지 않거나 실패하면 최대 1.5초까지만 기다린 뒤 현재 바인딩된 세션으로 녹화를 한 번만 시작해 STARTING 무한 대기를 방지
 
+## 코드 구조
+
+```text
+com.topout.cam/
+├── TopOutViewModel.kt          화면 상태와 기능 흐름 조정
+├── camera/                     CameraX 세션, 렌즈 경로, 전환 상태
+├── detection/                  Motion 격자, MoveNet, 등반 상태 판정
+├── sam/                        MobileSAM 매트·탑홀드 분석
+├── media/                      선택 구간 저장
+├── model/                      화면·설정·구간 자료형과 문구 규칙
+├── localization/               언어 선택과 공통 문자열 조회
+└── ui/
+    ├── components/             재사용 가능한 카메라·타임라인 조작부
+    └── screens/
+        ├── TopOutApp.kt        화면 단계 전환과 생명주기 연결
+        ├── CameraControls.kt   촬영 버튼과 절전 화면
+        ├── CameraOverlays.kt   렌즈 전환·매트·탑홀드 표시
+        ├── ReviewScreen.kt     결과 편집 상태와 재생 흐름
+        ├── ReviewComponents.kt 저장본 재생과 결과 보조 UI
+        ├── SettingsDialog.kt   설정 초안과 저장 흐름
+        └── SettingsScreens.kt  언어·개인정보·오픈소스 화면
+```
+
+기능을 수정할 때는 먼저 흐름 파일에서 상태와 콜백 연결을 확인하고, 실제 카메라·탐지·저장 계산은 해당 기능 패키지에서 수정합니다. 화면 전용 표시 코드는 핵심 상태 파일에 다시 넣지 않습니다.
+
 ## 모델 파일과 빌드
 
 MobileSAM 모델은 다음 위치에 유지해야 합니다.

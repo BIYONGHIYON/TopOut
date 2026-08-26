@@ -1,7 +1,7 @@
 import UIKit
 
 extension HoldVC {
-    // MARK: Settings
+    // MARK: - 설정
     @objc func onSettings() {
         guard recState == .idle, mode == .camera else { return }
 
@@ -39,8 +39,7 @@ extension HoldVC {
 
         let nav = OrientationLockedNavigationController(rootViewController: vc)
         nav.modalPresentationStyle = .pageSheet
-        // The main camera/review screens are forced to Dark Mode for readability.
-        // Keep Settings on the device/system appearance instead of inheriting the capture UI style.
+        // 설정 화면은 촬영 화면의 어두운 모드 대신 기기 화면 모드를 따른다.
         if let systemStyle = view.window?.windowScene?.traitCollection.userInterfaceStyle,
            systemStyle != .unspecified {
             vc.overrideUserInterfaceStyle = systemStyle

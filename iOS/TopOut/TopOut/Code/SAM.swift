@@ -1,4 +1,4 @@
-//MobileSAM 모델 로드, embedding, decoder, preprocess
+// MobileSAM 모델 준비와 전처리
 import UIKit
 import CoreML
 
@@ -24,8 +24,7 @@ extension HoldVC {
         if encoder != nil, decoder != nil { return }
 
         let config = MLModelConfiguration()
-        // Camera preview and UIKit already use GPU-backed resources. Restricting Core ML to
-        // CPU + Neural Engine avoids an unnecessary Metal allocation spike on older iPhones.
+        // 구형 기기의 메모리 급증을 줄이기 위해 CPU와 신경망 엔진만 사용한다.
         config.computeUnits = .cpuAndNeuralEngine
 
         if encoder == nil {
@@ -44,10 +43,7 @@ extension HoldVC {
         return embedding
     }
 
-    /// Creates an embedding without publishing it to the tap-selection cache.
-    /// Ready-time mat analysis uses this path because its image differs from the
-    /// fresh frame captured for a later top-hold tap. It also prevents a model
-    /// result that finishes after the UI timeout from becoming a stale cache hit.
+    /// 탑홀드 선택 캐시에 저장하지 않는 매트 분석용 임베딩을 만든다.
     func makeEmbedding(for image: UIImage) throws -> MLMultiArray {
         try loadModelsIfNeeded()
         guard let encoder else { throw AppError.modelNotReady }
@@ -57,14 +53,9 @@ extension HoldVC {
         return output.var_1415
     }
 
-    /// Releases heavyweight Core ML state after selection or under memory pressure.
-    /// All inference uses `workQ`, so enqueuing cleanup on the same serial queue
-    /// cannot tear down a model while a prediction is running. The next analysis
-    /// lazily reloads the models through `loadModelsIfNeeded()`.
+    /// 추론 큐 순서를 지키며 모델과 임베딩을 안전하게 해제한다.
     func releaseMobileSAMResources() {
-        // Callers are MainActor-isolated. Reset before enqueueing teardown so a
-        // quick background -> active transition can enqueue preload immediately;
-        // workQ ordering guarantees that preload then runs after this teardown.
+        // 예열 상태를 먼저 초기화하고 같은 작업 큐에서 해제와 다음 예열 순서를 보장한다.
         hasStartedMobileSAMPreload = false
         workQ.async { [weak self] in
             guard let self else { return }

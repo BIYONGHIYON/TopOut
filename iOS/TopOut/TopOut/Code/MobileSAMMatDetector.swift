@@ -68,17 +68,12 @@ extension HoldVC {
         }
 
         do {
-            // Mat analysis and top-hold selection intentionally use different
-            // camera frames. Do not publish this Ready-time embedding to the
-            // shared tap-selection cache.
+            // 매트 분석 임베딩은 탑홀드 선택 캐시에 저장하지 않는다.
             let embedding = try makeEmbedding(for: image)
             var bestCandidate: SAMMatCandidate?
 
             for promptY in Self.samMatPromptLevels {
-                // Decoder outputs and connected-component work buffers are only
-                // needed for one prompt at a time. Drain autoreleased Core ML
-                // objects between prompts to lower the inference peak on small-RAM
-                // devices while preserving the exact candidate ordering.
+                // 프롬프트마다 임시 추론 객체를 비워 저용량 기기의 최대 메모리를 낮춘다.
                 let promptCandidates: [SAMMatCandidate] = try autoreleasepool {
                     let positive = CGPoint(
                         x: image.size.width * 0.50,
@@ -110,8 +105,7 @@ extension HoldVC {
                     return candidates
                 }
 
-                // Apply candidates in the original prompt/channel order so the
-                // existing epsilon tie-breaking behavior remains bit-for-bit equivalent.
+                // 기존 동률 판정을 유지하도록 프롬프트와 채널 순서대로 후보를 적용한다.
                 for candidate in promptCandidates where isBetterSAMMatCandidate(candidate, than: bestCandidate) {
                     bestCandidate = candidate
                 }

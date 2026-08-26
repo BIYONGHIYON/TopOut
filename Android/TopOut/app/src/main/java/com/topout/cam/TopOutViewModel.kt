@@ -67,8 +67,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private var mobileSamPreloadJob: Job? = null
     private var matBoundaryTimeoutJob: Job? = null
     private var selectionAnalysisJob: Job? = null
-    // The Activity/PreviewView own their lifecycle. Keep only weak handles for explicit rebinds so
-    // a configuration change cannot leave the previous UI tree retained by this ViewModel.
+    // 화면 재생성 뒤 이전 UI가 남지 않도록 생명주기 객체는 약한 참조로 보관한다.
     private var latestLifecycleOwner = WeakReference<LifecycleOwner>(null)
     private var latestPreviewView = WeakReference<PreviewView>(null)
     private var pendingRetakeRecording = false
@@ -95,8 +94,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             startStorageMonitoring()
         }
         cameraEngine.onRecordingStartCancelled = {
-            // Camera surface/lifecycle recreation can invalidate the zoom gate without a user tap.
-            // Reuse the STARTING cancellation path so the UI never remains stuck in its countdown.
+            // 카메라 화면 재생성으로 시작 조건이 무효화되면 같은 시작 취소 경로를 사용한다.
             if (_uiState.value.recordingState == RecordingState.STARTING) stopRecording()
         }
         cameraEngine.onRecordingProgress = { seconds ->
@@ -127,9 +125,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
 
-        // Never gate app or camera entry on two ONNX sessions. The one-second Activity brand screen
-        // normally covers this short in-app delay, and MobileSAM is warmed only after CameraX has
-        // produced a ready preview.
+        // 앱 진입을 막지 않고 카메라 준비 뒤 MobileSAM을 예열한다.
         viewModelScope.launch {
             delay(IN_APP_LAUNCH_DELAY_MILLIS)
             _uiState.update { it.copy(launchVisible = false) }
@@ -139,8 +135,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private fun handleLensTransition(event: LensTransitionEvent) {
         when (event) {
             is LensTransitionEvent.Started -> {
-                // PreviewView.bitmap is already transformed exactly as displayed. Capture only
-                // once per transition; progress events must never allocate another full frame.
+                // 렌즈 전환마다 표시 중인 프레임을 한 번만 캡처한다.
                 val frame = runCatching { latestPreviewView.get()?.bitmap }
                     .getOrNull()
                     ?.takeIf { !it.isRecycled && it.width > 0 && it.height > 0 }
@@ -290,8 +285,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     startRecording()
                 }
             }.onFailure { error ->
-                // Rebinding intentionally cancels the previous camera job. Cancellation is a
-                // normal control-flow event and must never be surfaced as an app error dialog.
+                // 재연결에 따른 이전 작업 취소는 오류로 표시하지 않는다.
                 if (error is CancellationException) return@onFailure
                 val wasPendingRetake = pendingRetakeRecording
                 pendingRetakeRecording = false
@@ -317,9 +311,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
 
     fun updateOrientation(isLandscape: Boolean) {
         _uiState.update { state ->
-            // Android 16 can ignore requestedOrientation on large screens. Once Ready is pressed,
-            // keep the capture orientation immutable until selection/recording ends so Compose
-            // window changes cannot recreate CameraPreview with a different ViewPort.
+            // 준비 완료 후 선택과 녹화가 끝날 때까지 촬영 방향을 유지한다.
             if (state.isBusy || state.stage in setOf(CameraStage.SELECT, CameraStage.RECORDING)) {
                 state
             } else {
@@ -352,8 +344,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         ) return
 
         updateOrientation(isLandscape)
-        // Freeze the exact display rotation used by the ready-time Preview/ViewPort. On Android 16
-        // large displays the window may rotate even while requestedOrientation is ignored.
+        // 준비 완료 시점의 미리보기 회전값을 촬영 종료까지 유지한다.
         _uiState.update { it.copy(cameraTargetRotation = targetRotation) }
         cameraEngine.updateTargetRotation(targetRotation)
         val settings = _uiState.value.settings
@@ -362,8 +353,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
-        // When only top-hold selection is enabled there is nothing to freeze at Ready. Enter the
-        // transparent live editor immediately; each hold tap captures its own fresh frame.
+        // 탑홀드만 선택할 때는 바로 편집 화면으로 이동하고 탭마다 새 프레임을 사용한다.
         if (!settings.autoClipDetectionEnabled) {
             invalidateSelectionRequest()
             mobileSam.releaseCachedEmbedding()
@@ -389,10 +379,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         selectionAnalysisJob = viewModelScope.launch {
-            // The preview may report STREAMING on its very first rendered buffer. Consume several
-            // new ImageAnalysis frames after Ready so CameraX/3A/lens transitions cannot feed a
-            // cold-start frame into MobileSAM. If an OEM rejected ImageAnalysis, take a fresh
-            // PreviewView snapshot only after the camera-ready gate instead.
+            // 준비 완료 뒤 안정된 분석 프레임을 사용하고 분석 미지원 시 미리보기 캡처로 대체한다.
             val frame = if (recordingAnalysisAvailable) {
                 poseAnalyzer.captureNextFrame(
                     maxLongSide = TopOutConfig.CaptureMaxLongSide,
@@ -429,8 +416,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     defaultMatLine()
                 }
             } finally {
-                // A later hold tap captures a different live frame, so this embedding cannot be
-                // reused and should not occupy memory while the user edits the boundary.
+                // 경계 보정 중 재사용하지 않는 임베딩은 즉시 해제한다.
                 mobileSam.releaseCachedEmbedding()
                 if (!frame.isRecycled) frame.recycle()
             }
@@ -503,8 +489,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         selectionAnalysisJob = viewModelScope.launch {
-            // PreviewView.bitmap is the exact displayed crop including the current physical lens and
-            // camera zoom. ImageAnalysis is retained only as a fallback for rare TextureView misses.
+            // 실제 표시 화면을 우선 사용하고 캡처 실패 시 분석 프레임을 사용한다.
             val previewSnapshot = runCatching {
                 latestPreviewView.get()?.bitmap?.copy(Bitmap.Config.ARGB_8888, false)
             }.getOrNull()
@@ -556,7 +541,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             if (index !in state.matLine.indices) state
             else state.copy(
                 matLine = state.matLine.toMutableList().also {
-                    // iOS MatLineView only permits vertical correction; x stays detected.
+                    // 자동 인식한 가로 위치는 유지하고 세로 위치만 보정한다.
                     it[index] = Offset(it[index].x, point.y.coerceIn(0f, 1f))
                 }
             )
@@ -565,8 +550,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setZoom(zoom: Float) {
         val currentState = _uiState.value
-        // Camera composition is editable only before Ready. Selection and recording must keep the
-        // exact lens/zoom FOV used to establish the mat boundary and subsequent hold masks.
+        // 선택과 녹화 중에는 경계와 마스크를 만든 카메라 화각을 유지한다.
         if (currentState.stage != CameraStage.PREVIEW ||
             currentState.recordingState != RecordingState.IDLE ||
             currentState.isBusy ||
@@ -648,9 +632,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             poseAnalyzer.stop()
         }
 
-        // The mat line and optional hold mask are self-contained. Drop the transient MobileSAM
-        // embedding before the long recording begins to reduce steady-state RAM. Keep the sessions
-        // warm so a retake does not move model loading into the five-second analysis watchdog.
+        // 녹화 전 임베딩만 해제하고 재촬영을 위해 모델 세션은 유지한다.
         mobileSam.releaseCachedEmbedding()
         _uiState.update {
             it.copy(
@@ -676,8 +658,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 delay(1_000)
             }
-            // Cancellation and lifecycle callbacks run on the same main dispatcher, but keep an
-            // explicit state gate so a stale countdown can never reopen a canceled recording.
+            // 취소된 카운트다운이 녹화를 다시 시작하지 못하도록 상태를 확인한다.
             if (_uiState.value.recordingState == RecordingState.STARTING) {
                 cameraEngine.startRecording(includeAudio = true)
             }
@@ -804,9 +785,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             ) {
                 rebindLatestCamera()
             }
-            // Camera-session changes recreate PreviewView from Compose. Its onPreviewReady callback
-            // performs the rebind against the correctly sized surface instead of briefly binding
-            // the old 9:16 surface and leaving an OEM SurfaceView artifact.
+            // 새 화면 크기가 확정된 뒤 미리보기 콜백에서 카메라를 다시 연결한다.
         }
     }
 
@@ -919,10 +898,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         pendingRetakeRecording = true
         _uiState.update { state ->
             state.copy(
-                // Leave Review directly into a capture-locked stage. Android 16 may ignore
-                // requestedOrientation on large displays; using RECORDING here keeps AspectFrame,
-                // CameraPreview and the preserved normalized mat/hold coordinates on the exact
-                // orientation/FOV of the previous take while the camera session is rebound.
+                // 재촬영은 이전 촬영 방향과 정규화 좌표를 유지한 채 카메라를 다시 연결한다.
                 stage = CameraStage.RECORDING,
                 recordingState = RecordingState.IDLE,
                 recordingCountdown = null,
@@ -931,20 +907,18 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 savingStatus = null,
                 savingStatusSelection = null,
                 savedGalleryVideos = emptyList(),
-                // Review may rotate independently. Retake must restore the exact orientation used
-                // for the saved mat/hold normalized coordinates, otherwise the preserved boundary
-                // would be drawn over a different camera crop.
+                // 결과 화면에서 회전했어도 재촬영 시 기존 촬영 방향을 복구한다.
                 isLandscape = activeRecordingLandscape,
                 cameraTargetRotation = activeRecordingTargetRotation,
                 statusText = tr("camera.preparing")
             )
         }
-        // The camera composable is recreated on leaving review; bindCamera starts the retake.
+        // 결과 화면을 닫은 뒤 새 카메라 화면의 연결 콜백이 재촬영을 시작한다.
     }
 
     private suspend fun finishRecording(result: Result<CameraEngine.FinalizedRecording>) {
         storageJob?.cancel()
-        // stopRecording() already closes the open detected range before encoder finalization.
+        // 녹화 중지는 인코더 종료 전에 열린 탐지 구간을 닫는다.
         poseAnalyzer.stop()
         cameraEngine.setPreviewRenderingEnabled(true)
         cameraEngine.unbind()
@@ -970,7 +944,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     val startSeconds = range.startSeconds.coerceIn(0.0, duration)
                     val endSeconds = range.endSeconds.coerceIn(0.0, duration)
                     if (endSeconds > startSeconds) {
-                        // completedRanges contains raw, unpadded detection boundaries.
+                        // 완료 구간에는 여백을 넣기 전 원본 탐지 시각을 저장한다.
                         ClipRange(startSeconds, endSeconds)
                     } else null
                 },
@@ -1024,7 +998,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             if (_uiState.value.recordingState !in setOf(RecordingState.RECORDING, RecordingState.FINALIZING)) return@launch
             when (event) {
                 is MotionEvent.Start -> {
-                    // Store only the raw pose-detected start. Padding is added after final cleanup.
+                    // 시작 시각은 원본 값으로 저장하고 최종 정리 뒤 여백을 넣는다.
                     activeDetectedStart = event.seconds
                     val settings = activeRecordingSettings ?: _uiState.value.settings
                     _uiState.update {
@@ -1056,8 +1030,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun appendDetectedRange(range: ClipRange) {
-        // Keep every detected range. Finalization removes isolated short false positives, but valid climbs are never discarded
-        // merely because the recording contains many sections.
+        // 모든 탐지 구간을 모은 뒤 마무리 단계에서 짧은 오탐만 제거한다.
         completedRanges.append(range)
     }
 
@@ -1131,8 +1104,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private fun preloadMobileSamAfterCameraStarts() {
         if (mobileSamPreloadJob != null) return
         mobileSamPreloadJob = viewModelScope.launch {
-            // A later detection call uses the same segmenter mutex and safely waits if this warmup
-            // is still running. A failed warmup is retried by the actual detection path.
+            // 예열 실패는 실제 분석에서 다시 시도하고 동시 요청은 같은 잠금으로 직렬화한다.
             mobileSam.prepare()
         }
     }

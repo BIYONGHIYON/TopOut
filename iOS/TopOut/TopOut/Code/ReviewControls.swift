@@ -1,6 +1,6 @@
 import UIKit
 
-/// Zoom control that owns its track mapping so endpoint input never invokes UISlider haptics.
+/// 끝점 입력에서 기본 슬라이더 진동이 발생하지 않는 확대 조절기다.
 final class TrackTappableSlider: UIControl {
     private enum Layout {
         static let minimumTouchHeight: CGFloat = 44
@@ -180,7 +180,7 @@ final class TrackTappableSlider: UIControl {
 }
 
 extension UIAlertController {
-    /// Keeps the system alert layout and buttons while reducing only a long message's font.
+    /// 기본 경고창 구조를 유지하고 긴 본문 글자만 줄인다.
     func applyCompactMessageFont(matching message: String) {
         loadViewIfNeeded()
         guard let messageLabel = view.descendantLabel(matching: message) else { return }

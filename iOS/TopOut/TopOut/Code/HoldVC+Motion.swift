@@ -2,7 +2,7 @@ import UIKit
 import CoreMedia
 
 extension HoldVC {
-    // MARK: Motion Detection
+    // MARK: - 움직임 탐지
     func setupMotionCallbacks() {
         motionDetector.onEvent = { [weak self] event in
             DispatchQueue.main.async {
@@ -33,7 +33,7 @@ extension HoldVC {
 
         case .finish(let pts):
             if let startPTS = clipTimes.startPTS, CMTimeCompare(pts, startPTS) > 0 {
-                // Store only the original detection boundaries. Padding is added after cleanup.
+                // 원본 탐지 시각만 저장하고 정리 뒤 여백을 넣는다.
                 appendDetectedClipRange(ClipRange(startPTS: startPTS, endPTS: pts))
             }
             clipTimes.startPTS = nil
@@ -48,9 +48,7 @@ extension HoldVC {
             let last = clipTimes.completedRanges[lastIndex]
             let sameStart = abs(CMTimeGetSeconds(last.startPTS - range.startPTS)) < 0.10
             if sameStart {
-                // Manual/automatic stop can snapshot the currently open range just before a
-                // queued FINISH event arrives. Both ranges describe the same climb and share the
-                // same start, so retain the later end instead of showing duplicate review clips.
+                // 같은 시작점의 중지 스냅샷과 종료 이벤트는 더 늦은 끝점 하나로 합친다.
                 let laterEnd = CMTimeCompare(last.endPTS, range.endPTS) >= 0
                     ? last.endPTS
                     : range.endPTS
@@ -62,8 +60,7 @@ extension HoldVC {
             }
         }
 
-        // Keep every detected range until recording finalization. Isolated short false positives
-        // are cleaned up later, so valid early climbs are never discarded.
+        // 모든 탐지 구간을 유지하고 녹화 마무리에서 짧은 오탐만 제거한다.
         clipTimes.completedRanges.append(range)
     }
 

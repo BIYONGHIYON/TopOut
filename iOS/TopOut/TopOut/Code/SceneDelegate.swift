@@ -1,4 +1,3 @@
-//rootViewController = HoldVC()
 import UIKit
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {

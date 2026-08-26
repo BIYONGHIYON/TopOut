@@ -99,8 +99,7 @@ internal object MotionSeedCropFinder {
             val score = cellScores[index]
             if (score < cutoff) continue
 
-            // Keep the strongest N cells in stable row-major order without allocating and sorting
-            // one object per grid cell on every 2/4-Hz analysis tick.
+            // 매 분석마다 객체를 만들지 않고 강한 격자만 행 우선 순서로 유지한다.
             var insertionIndex = 0
             while (
                 insertionIndex < selectedCount &&

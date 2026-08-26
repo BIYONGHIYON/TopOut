@@ -112,9 +112,7 @@ class PoseClimbAnalyzer(
     private var isPostClimbTracking = false
     private var postClimbConsecutivePoseMisses = 0
     private var rgbScratchPixels = IntArray(0)
-    // Analyzer callbacks are serialized by CameraX's single-thread executor. Two buffers preserve
-    // the immediately previous frame while the next frame is filled, avoiding a new ByteArray at
-    // every 2/4-fps analysis tick.
+    // 단일 분석 스레드에서 두 버퍼를 번갈아 써 프레임마다 배열을 만들지 않는다.
     private var lumaScratchFrames: Array<ByteArray?> = arrayOfNulls(2)
     private var nextLumaScratchIndex = 0
 
@@ -135,8 +133,7 @@ class PoseClimbAnalyzer(
             return bitmap
         } finally {
             if (bitmap == null) {
-                // Also runs when the owning UI coroutine is canceled before its timeout. If the
-                // analyzer finishes conversion later, ready.complete() fails and recycles it.
+                // 화면 작업이 먼저 취소되면 늦게 완성된 비트맵을 재활용한다.
                 request.ready.cancel()
                 request.bitmap.getAndSet(null)?.recycle()
             }
@@ -329,8 +326,7 @@ class PoseClimbAnalyzer(
             active && stateGeneration == expectedStateGeneration && trackingMode == mode
         }
         if (!stateIsCurrent) {
-            // The detector call may have finished after stop/configure reset its crop. Analyzer
-            // callbacks are serialized, so clear that stale result before the next generation.
+            // 중지나 재설정 뒤 도착한 이전 탐지 결과는 다음 세대 전에 폐기한다.
             poseDetector.resetTracking()
             return
         }
@@ -471,8 +467,7 @@ class PoseClimbAnalyzer(
         trackingMode = TrackingMode.POSE
         hasInferenceCrop = true
         hasSeenReliablePose = true
-        // POSE-mode inference already advanced the detector crop. Only the first reliable result
-        // from a motion-seeded search still needs an explicit joint-derived crop for the next frame.
+        // 움직임 탐색 뒤 첫 안정 포즈에서만 관절 기준 추적 영역을 초기화한다.
         if (needsTrackingCropPrime) poseDetector.primeTracking(pose, imageWidth, imageHeight)
         lastPoseSeenSeconds = seconds
         postClimbConsecutivePoseMisses = 0
@@ -529,8 +524,7 @@ class PoseClimbAnalyzer(
             }
             trackingMode = TrackingMode.MOTION
 
-            // A MOTION-mode inference already computed this frame pair's crop before MoveNet ran.
-            // Reuse it instead of scanning the same luma buffers a second time on every pose miss.
+            // 포즈 유실 시 이미 계산한 움직임 영역을 다시 사용한다.
             val recoveryCrop = if (motionCropAlreadyEvaluated) {
                 preparedMotionCrop
             } else if (currentFrame != null) {

@@ -1,8 +1,17 @@
 # Android optimization audit — v1.4 (build 5)
 
-> 이 문서는 v1.4 build 5 최적화 당시의 감사 기록입니다. 현재 릴리스는 [v1.6 build 14](V1_6_BUILD_14_NOTES.md)이며 최신 동작은 [Android README](README.md)를 기준으로 합니다.
+> 이 문서는 v1.4 build 5 최적화부터 이어진 감사 기록입니다. 현재 릴리스는 [v2.0 versionCode 16](V2_0_BUILD_16_NOTES.md)이며 최신 동작은 [Android README](README.md)를 기준으로 합니다.
 
 The original optimization pass kept behavior unchanged. Later tracking-alignment notes below remain historical context.
+
+## v2.0 versionCode 16 유지보수 구조 정리
+
+- `TopOutApp`에서 촬영 조작부와 화면 오버레이를 `CameraControls`, `CameraOverlays`로 분리했습니다.
+- `ReviewScreen`에서 저장본 재생 창과 보조 버튼을 `ReviewComponents`로 분리했습니다.
+- `SettingsDialog`에서 언어·개인정보·오픈소스 화면을 `SettingsScreens`로 분리했습니다.
+- 화면 조건, 콜백, 카메라 배율, 탐지 임계값, 저장 규칙은 변경하지 않았습니다.
+- 전체 프로덕션 주석을 간결한 한국어로 통일하고 분리 뒤 남은 사용하지 않는 import를 정리했습니다.
+- Kotlin 컴파일과 정적 단일 참조 선언 검사를 통과했습니다. 앱 빌드와 실기기 동작 검증은 수행하지 않았습니다.
 
 ## Removed
 

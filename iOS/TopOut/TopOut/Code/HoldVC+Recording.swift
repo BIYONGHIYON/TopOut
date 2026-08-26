@@ -12,10 +12,10 @@ private final class PhotoLibrarySaveCompletionBox: @unchecked Sendable {
 }
 
 extension HoldVC {
-    // MARK: Recording
+    // MARK: - 녹화
 
     func startRecording() {
-        // A duplicate callback must not stop a recording that has already entered buffering.
+        // 중복 시작 콜백은 이미 진행 중인 녹화를 건드리지 않는다.
         guard recState == .idle else { return }
         guard UIApplication.shared.applicationState == .active,
               view.window != nil else {
@@ -70,9 +70,7 @@ extension HoldVC {
                 }
 
                 self.recorder.start()
-                // Keep capture callbacks out of the recorder and detector during the countdown.
-                // recorder.start() is enqueued first, so its serial queue is ready before the first
-                // sample admitted by VideoFrameSink reaches append().
+                // 카운트다운 중에는 프레임을 막고 녹화 큐 준비 뒤 입력을 허용한다.
                 self.videoFrameSink.setMotionDetectionEnabled(self.isAutoClipDetectionEnabled)
                 self.videoFrameSink.setRecording(true)
                 if self.isAutoClipDetectionEnabled {
@@ -257,8 +255,7 @@ extension HoldVC {
     ) {
         let completionBox = PhotoLibrarySaveCompletionBox(completion)
 
-        // Build 8 verifies the newly created PHAsset by fetching and reopening that exact video.
-        // This requires read/write Photos access rather than the previous add-only permission.
+        // 저장한 영상을 다시 열어 확인하므로 사진 보관함 읽기와 쓰기 권한을 사용한다.
         PHPhotoLibrary.requestAuthorization(for: .readWrite) { [weak self] status in
             guard let self else { return }
             guard status == .authorized || status == .limited else {
@@ -478,8 +475,7 @@ extension HoldVC {
             }
         }
 
-        // Keep every remaining valid climb separate, even when the next climb starts within one second.
-        // Only after short-range cleanup is complete do we add review context.
+        // 짧은 오탐 정리 뒤에도 유효한 등반 구간은 서로 합치지 않고 여백만 넣는다.
         return working.compactMap { raw in
             let rawStart = raw.unpaddedStartSeconds
             let rawEnd = raw.unpaddedEndSeconds

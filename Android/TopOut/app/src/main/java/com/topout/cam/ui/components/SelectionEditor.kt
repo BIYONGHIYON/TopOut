@@ -95,8 +95,7 @@ fun SelectionEditor(
                         maxPointerCount = max(maxPointerCount, pressed.size)
                         if (pressed.isEmpty()) break
 
-                        // Ready freezes camera zoom. Two-finger gestures are consumed so they cannot
-                        // leak through to PreviewView and accidentally change the camera FOV.
+                        // 선택 중 두 손가락 입력을 소비해 카메라 화각 변경을 막는다.
                         if (pressed.size >= 2) {
                             moved = true
                             event.changes.forEach { it.consume() }

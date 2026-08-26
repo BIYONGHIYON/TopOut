@@ -1,6 +1,6 @@
 import UIKit
 
-// MARK: - Recording Format Options
+// MARK: - 녹화 형식
 
 enum RecordingResolution: Int, CaseIterable, Hashable {
     case fhd = 0
@@ -74,7 +74,7 @@ enum RecordingAspectRatio: Int, CaseIterable {
         }
     }
 
-    /// Portrait video width / height.
+    /// 세로 영상의 가로 대 세로 비율이다.
     var widthOverHeight: CGFloat {
         switch self {
         case .story916: return 9.0 / 16.0
@@ -115,8 +115,7 @@ enum RecordingAspectRatio: Int, CaseIterable {
         return CGSize(width: portrait.height, height: portrait.width)
     }
 
-    /// Center crop inside the camera source. All preview/capture/record/motion code uses this same rect.
-    /// The rect is normalized in the oriented camera source frame.
+    /// 미리보기, 촬영, 녹화, 움직임 분석이 함께 쓰는 정규화 중앙 영역이다.
     func normalizedSourceCropRect(isLandscape: Bool) -> CGRect {
         let sourceAspect = RecordingAspectRatio.story916.widthOverHeight(isLandscape: isLandscape)
         let targetAspect = widthOverHeight(isLandscape: isLandscape)

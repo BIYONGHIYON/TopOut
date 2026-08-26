@@ -21,9 +21,7 @@ internal class DetectedClipRangeStore {
         if (lastIndex >= 0) {
             val last = ranges[lastIndex]
             if (abs(last.startSeconds - range.startSeconds) < DUPLICATE_START_TOLERANCE_SECONDS) {
-                // stop() can snapshot an open climb just before a queued FINISH callback arrives.
-                // They share the same start but may have slightly different end times; keep one
-                // range with the later end rather than producing duplicate review clips.
+                // 같은 시작점의 중지 스냅샷과 종료 이벤트는 더 늦은 끝점 하나로 합친다.
                 ranges[lastIndex] = ClipRange(
                     startSeconds = min(last.startSeconds, range.startSeconds),
                     endSeconds = max(last.endSeconds, range.endSeconds)

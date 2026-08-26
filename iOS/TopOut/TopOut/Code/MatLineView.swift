@@ -3,9 +3,9 @@ import UIKit
 final class MatLineView: UIView {
     private(set) var points: [CGPoint] = [] // normalized, 0...1
     var onChange: (([CGPoint]) -> Void)?
-    /// Selection mode shows draggable endpoint handles; recording preview uses the same normalized line without handles.
+    /// 선택 화면에는 손잡이를, 녹화 화면에는 같은 경계선만 표시한다.
     var showsHandles = true { didSet { isUserInteractionEnabled = showsHandles; setNeedsDisplay() } }
-    /// Keeps the passive recording guide visible without overpowering the climbing video.
+    /// 녹화 영상이 가려지지 않도록 경계선 투명도를 조절한다.
     var lineAlpha: CGFloat = 1.0 { didSet { setNeedsDisplay() } }
 
     private var activeIndex: Int?

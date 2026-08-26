@@ -230,9 +230,7 @@ class CameraEngine(private val context: Context) {
         effectiveMinZoom = (firstLens.anchorRatio * firstLens.nativeMinZoom)
             .coerceAtLeast(TopOutConfig.MinZoom)
 
-        // The first profile owns everything below its optical anchor. If that profile is a logical
-        // camera with native 0.5x support, 1.0x is not a camera-switch boundary and must not force
-        // the user to release/re-pinch there. Remaining profile anchors are real rebind points.
+        // 첫 논리 카메라가 포함한 배율은 연속 확대하고 나머지 기준점에서만 재연결한다.
         effectiveLensZoomRatios = buildList {
             add(effectiveMinZoom)
             rearLensProfiles.drop(1).forEach { add(it.anchorRatio) }
@@ -357,9 +355,7 @@ class CameraEngine(private val context: Context) {
                     .getSupportedFrameRateRanges(baseSession)
             }.getOrDefault(emptySet())
 
-            // Never advertise/accept 60 fps when CameraX cannot guarantee 60 for this exact
-            // Preview + VideoCapture (+ Analysis) configuration. This prevents OEMs from quietly
-            // running a user-selected 60-fps session at 30 fps.
+            // 현재 스트림 조합에서 보장되는 경우에만 60fps를 허용한다.
             if (frameRate == RecordingFrameRate.FPS60 && exactRate !in supportedRanges) {
                 analysis?.clearAnalyzer()
                 return null
@@ -371,8 +367,7 @@ class CameraEngine(private val context: Context) {
                     .setFrameRateRange(exactRate)
                     .build()
             } else {
-                // 30 fps remains the compatibility floor. Older/quirky OEMs may not expose an
-                // exact 30..30 range even though their normal SDR recording pipeline is 30 fps.
+                // 정확한 범위를 제공하지 않는 기기도 30fps 호환 경로는 유지한다.
                 baseSession
             }
 
@@ -409,25 +404,21 @@ class CameraEngine(private val context: Context) {
         }
 
         if (config.requiresAnalysis) {
-            // Automatic clip detection needs ImageAnalysis. Prefer an exact 30-fps session with
-            // analysis over a nominal 60-fps recording that would have to drop analysis entirely.
+            // 자동 탐지에서는 분석을 유지할 수 있는 정확한 30fps 구성을 우선한다.
             for (rate in ratesToTry) {
                 for (targetSize in recordingAnalysisTargetSizes(config.aspectRatio, config.isLandscape)) {
                     tryBind(rate, targetSize)?.let { return accept(it, rate) }
                 }
             }
 
-            // Keep Preview + VideoCapture usable even on OEM stream combinations that reject YUV
-            // analysis. The ViewModel then blocks auto-detection recording with a clear message.
+            // 분석 스트림을 거부하는 기기에서도 미리보기와 촬영은 유지한다.
             for (rate in ratesToTry.asReversed()) {
                 val fallback = tryBind(rate, null) ?: continue
                 onRecordingAnalysisUnavailable?.invoke()
                 return accept(fallback, rate)
             }
         } else {
-            // Manual/top-hold-only recording does not need a continuous ImageAnalysis stream.
-            // Binding only Preview + VideoCapture avoids unnecessarily disqualifying exact 60 fps
-            // on devices whose three-stream combination is limited to 30 fps.
+            // 자동 탐지를 쓰지 않으면 분석 스트림을 제외해 지원 가능한 촬영 설정을 넓힌다.
             for (rate in ratesToTry) {
                 tryBind(rate, null)?.let { return accept(it, rate) }
             }
@@ -472,9 +463,7 @@ class CameraEngine(private val context: Context) {
             return cameraProvider.bindToLifecycle(lifecycleOwner, selector, probePreview)
         }
 
-        // Enumerate the actual rear cameras instead of assuming DEFAULT_BACK_CAMERA can reach
-        // 0.5x. On phones that expose ultra-wide as a separate Camera2/CameraX ID, this is the
-        // only reliable way to start on the real ultra-wide lens.
+        // 실제 후면 카메라를 열거해 별도 초광각 카메라도 시작 렌즈로 선택한다.
         if (!lensDiscoveryComplete) {
             rearLensProfiles = discoverRearLensProfiles(
                 cameraProvider = cameraProvider,
@@ -503,8 +492,7 @@ class CameraEngine(private val context: Context) {
 
             updateEffectiveZoomRange()
 
-            // Cold start always selects the lowest real optical anchor (normally 0.5x). Later
-            // lifecycle rebinds preserve the user's current requested zoom.
+            // 최초 실행은 가장 낮은 광학 배율로 시작하고 재연결은 현재 배율을 유지한다.
             requestedZoom = effectiveMinZoom
             activeLensProfile = profileForDisplayZoom(requestedZoom)
             lensDiscoveryComplete = true
@@ -596,9 +584,7 @@ class CameraEngine(private val context: Context) {
         camera = boundSession.camera
         sessionConfig = config.copy(frameRate = boundSession.frameRate)
 
-        // Refresh the base hardware capabilities for the lens that actually bound. Exact 60-fps
-        // support is session-specific, so keep that knowledge separately instead of poisoning the
-        // lens cache when only one aspect/orientation/analysis combination cannot sustain 60 fps.
+        // 연결된 렌즈의 기본 기능과 현재 세션의 60fps 지원 여부를 분리해 관리한다.
         val baseCapabilities = queryCapabilities(boundSession.camera, selectedProfile)
         cachedCapabilitiesByLens[selectedProfile.cameraId] = baseCapabilities
 
@@ -652,8 +638,7 @@ class CameraEngine(private val context: Context) {
     }
 
     fun unbind() {
-        // Invalidate delayed rebinds and remove their PreviewView observer before unbinding emits
-        // another stream-state event. This also releases the transition overlay on rotation/exit.
+        // 연결 해제 전에 지연 작업과 관찰자를 정리해 중복 상태 이벤트를 막는다.
         cancelLensSwitch()
         cancelRecordingStartForSessionChange()
         activeRecording?.stop()
@@ -703,8 +688,7 @@ class CameraEngine(private val context: Context) {
      * Here the display ratio is mapped to the camera whose optical anchor owns that section.
      */
     fun setZoom(zoom: Float) {
-        // Pinch samples continue arriving while CameraX tears down and opens the next camera.
-        // Never let those samples overwrite the transition boundary zoom.
+        // 렌즈 전환 중 들어오는 핀치 값은 전환 기준 배율을 덮어쓰지 못하게 한다.
         if (hasActiveLensSwitch) return
 
         val targetZoom = zoom.coerceIn(effectiveMinZoom, effectiveMaxZoom)
@@ -725,7 +709,7 @@ class CameraEngine(private val context: Context) {
         if (future == null) {
             onApplied?.invoke()
         } else if (onApplied != null) {
-            // Continue camera-bind readiness only after CameraControl confirms the preview zoom.
+            // 미리보기 배율 적용이 확인된 뒤 카메라 준비를 완료한다.
             future.addListener({ onApplied() }, mainExecutor)
         }
     }
@@ -746,10 +730,7 @@ class CameraEngine(private val context: Context) {
             .coerceIn(max(profile.nativeMinZoom, stateMin), min(profile.nativeMaxZoom, stateMax))
 
         lastSubmittedZoom = target
-        // Every bound lens uses its own native zoom coordinate. In particular, a physical
-        // ultra-wide pinned through Camera2Interop must start at native 1.0x; sending the public
-        // display ratio (0.5) through CONTROL_ZOOM_RATIO can be outside the logical camera's
-        // supported range on Samsung/OEM devices and is a common source of broken 0.5x startup.
+        // 물리 렌즈에는 표시 배율이 아닌 해당 렌즈의 기본 배율 좌표를 전달한다.
         return activeCamera.cameraControl.setZoomRatio(nativeTarget)
     }
 
@@ -995,9 +976,7 @@ class CameraEngine(private val context: Context) {
                 if (attemptId != currentAttemptId) return
                 if (previewStreamReady && boundaryZoomReady && !readyFinishPosted) {
                     readyFinishPosted = true
-                    // CameraControl's future confirms the ratio was accepted. Keep the captured
-                    // frame for one more display tick so PreviewView can present that ratio before
-                    // the 150-ms overlay fade begins.
+                    // 배율 적용 뒤 한 화면 주기를 기다린 후 전환 프레임을 페이드한다.
                     config.previewView.postOnAnimation {
                         if (attemptId != currentAttemptId) return@postOnAnimation
                         readyFinishPosted = false
@@ -1086,9 +1065,7 @@ class CameraEngine(private val context: Context) {
 
             fun bindProfile(profile: RearLensProfile): Camera {
                 val bound = bindUnifiedSession(cameraProvider, config, profile)
-                // A zoom gesture must never silently turn a user-selected exact 60-fps session
-                // into 30 fps. If the target physical lens cannot sustain the current session,
-                // reject that lens transition and restore the previous camera instead.
+                // 대상 렌즈가 현재 60fps를 유지하지 못하면 전환을 취소하고 이전 렌즈를 복구한다.
                 if (bound.frameRate != config.frameRate) {
                     cameraProvider.unbindAll()
                     throw IllegalStateException(tr("error.lens_transition"))
@@ -1130,8 +1107,7 @@ class CameraEngine(private val context: Context) {
                 val targetAttemptId = beginAttempt()
                 scheduleTimeout(targetAttemptId, ::restorePreviousProfile)
                 bindProfile(targetProfile)
-                // Zoom-in may carry a final frozen-frame ratio chosen before finger release;
-                // zoom-out still uses the exact boundary that triggered its immediate switch.
+                // 확대는 손을 뗄 때의 배율을, 축소는 전환을 시작한 경계 배율을 사용한다.
                 requestedZoom = transitionZoom
                 awaitBoundaryZoom(
                     future = submitZoomImmediately(),
@@ -1143,16 +1119,13 @@ class CameraEngine(private val context: Context) {
             }
         }
 
-        // Give Compose one complete draw between publishing the captured frame and unbinding the
-        // old camera. A single postOnAnimation still runs before that frame's view traversal; the
-        // second one starts the rebind only after the overlay has been presented once.
+        // 정지 프레임이 한 번 그려진 뒤 기존 카메라를 해제한다.
         config.previewView.postOnAnimation {
             if (isCurrentRebind(request.id)) {
                 config.previewView.postOnAnimation(startRebind)
             }
         }
-        // A detached or stalled PreviewView may not deliver both animation callbacks. Keep the
-        // transition idempotent and guarantee that its timeout/observer are eventually installed.
+        // 화면 콜백이 멈춰도 대체 지연 작업으로 전환을 한 번만 진행한다.
         config.previewView.postDelayed(startRebind, LENS_SWITCH_REBIND_FALLBACK_MS)
     }
 
@@ -1226,11 +1199,9 @@ class CameraEngine(private val context: Context) {
             val camera2Max = characteristics
                 .get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM)
                 ?: TopOutConfig.CameraMaxZoom
-            // ZoomState can still expose its pre-bind default (1.0x) while cameras are being
-            // enumerated. On Android 11+ the Camera2 zoom-ratio range is the authoritative static
-            // capability and includes zoom-out through an OEM logical ultra-wide camera.
+            // 연결 전에는 Camera2의 정적 배율 범위를 우선해 초광각 지원을 판단한다.
             val camera2ZoomRatioRange = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                // Camera2CameraInfo applies CameraX's device-quirk-safe characteristic lookup.
+                // CameraX가 보정한 Camera2 특성 조회 경로를 사용한다.
                 runCatching {
                     camera2Info.getCameraCharacteristic(
                         CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE
@@ -1265,8 +1236,7 @@ class CameraEngine(private val context: Context) {
                 )
             }
 
-            // Some OEMs hide ultra-wide/tele IDs from CameraX's public camera list but expose
-            // them as physical members of a logical rear camera. Pin all use cases to that ID.
+            // 논리 카메라의 물리 구성원으로만 노출된 렌즈도 직접 고정해 사용한다.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && logical) {
                 logicalPhysicalCameraIds.forEach physicalLoop@ { physicalId ->
                     val physicalCharacteristics = runCatching {
@@ -1314,8 +1284,7 @@ class CameraEngine(private val context: Context) {
             }
             .filter { it.anchorRatio in TopOutConfig.MinZoom..TopOutConfig.CameraMaxZoom }
 
-        // A public logical camera may cover only ultra-wide + wide while a telephoto is exposed as
-        // another camera ID. Keep non-member higher lenses so only those boundaries require rebind.
+        // 논리 그룹 밖의 망원 렌즈는 별도 전환 대상으로 유지한다.
         selectHybridRearLensCandidates(
             candidates = profiles.map { profile ->
                 HybridRearLensCandidate(
@@ -1380,7 +1349,7 @@ class CameraEngine(private val context: Context) {
 
     private fun snapPhysicalLensAnchor(rawRatio: Float): Float {
         if (rawRatio < 0.8f) {
-            // Consumer camera UIs conventionally expose 12-14 mm ultra-wide cameras as 0.5x.
+            // 12~14mm 초광각은 일반 카메라 표기와 같이 0.5배로 표시한다.
             return TopOutConfig.MinZoom
         }
         if (abs(rawRatio - 1f) <= 0.25f) return 1f
@@ -1414,8 +1383,7 @@ class CameraEngine(private val context: Context) {
 
     fun startRecording(includeAudio: Boolean = true) {
         if (activeRecording != null) {
-            // A canceled pre-Start recorder remains owned by CameraX until its Finalize event.
-            // Reject a retry explicitly so the new countdown cannot wait forever on this handle.
+            // 취소된 녹화 객체의 종료 이벤트 전에는 새 시작 요청을 거부한다.
             if (discardedRecordingGeneration == activeRecordingGeneration) {
                 onRecordingStartCancelled?.invoke()
             }
@@ -1435,8 +1403,7 @@ class CameraEngine(private val context: Context) {
             recordingStartTimeout?.let(mainHandler::removeCallbacks)
             recordingStartTimeout = null
             recordingStartPending = false
-            // A lifecycle/configuration rebind replaces VideoCapture while the zoom future may
-            // still complete. Never let that stale callback start a recorder on the old session.
+            // 재연결 전 세션의 지연 배율 콜백은 녹화를 시작하지 못하게 한다.
             if (videoCapture !== capture || activeRecording != null) {
                 onRecordingFinalized?.invoke(
                     Result.failure(IllegalStateException(tr("error.camera_session_changed")))
@@ -1446,14 +1413,12 @@ class CameraEngine(private val context: Context) {
             beginRecording(capture, includeAudio, startGeneration)
         }
 
-        // Some OEM CameraControl futures neither succeed nor fail after a session disturbance.
-        // Start once with the already-bound session after the same 1.5-second limit used by bind.
+        // 배율 요청이 응답하지 않으면 1.5초 뒤 현재 연결된 세션으로 한 번만 시작한다.
         val timeout = Runnable { beginOnce() }
         recordingStartTimeout = timeout
         mainHandler.postDelayed(timeout, ZOOM_APPLY_TIMEOUT_MS)
 
-        // The same bound session has remained visible since preview. Prefer its confirmed zoom;
-        // a failed future is not confirmation and therefore falls through to the timed fallback.
+        // 확인된 배율을 우선하고 실패한 요청은 시간 제한 대체 경로로 넘긴다.
         runCatching {
             lastSubmittedZoom = Float.NaN
             submitZoomImmediately()
@@ -1571,8 +1536,7 @@ class CameraEngine(private val context: Context) {
     fun stopRecording(notice: RecordingStopNotice? = null) {
         cancelPendingRecordingStart()
         if (notice != null && requestedStopNotice == null) requestedStopNotice = notice
-        // No more automatic-detection frames are needed once the user taps stop. Detaching the
-        // analyzer releases CPU pressure while Recorder flushes the encoder and closes the MP4.
+        // 중지 즉시 분석기를 분리해 파일 마무리 중 CPU 사용을 줄인다.
         analysisUseCase?.clearAnalyzer()
         activeRecording?.stop()
     }
@@ -1657,8 +1621,7 @@ class CameraEngine(private val context: Context) {
     ): CameraCapabilities {
         val qualities = Recorder.getVideoCapabilities(camera.cameraInfo).getSupportedQualities(DynamicRange.SDR)
         val manager = context.getSystemService(CameraManager::class.java)
-        // Query the exact physical/logical camera selected by CameraX. Picking the first back camera
-        // can report the ultra-wide lens capabilities on multi-camera devices such as the Z Flip3.
+        // CameraX가 선택한 실제 카메라의 기능을 조회한다.
         val cameraId = profile.physicalCameraId ?: runCatching {
             Camera2CameraInfo.from(camera.cameraInfo).cameraId
         }.getOrElse {

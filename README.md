@@ -76,6 +76,10 @@ TopOut/
 │   ├── V1_5_BUILD_10_NOTES.md
 │   ├── TopOut.xcodeproj/
 │   └── TopOut/
+├── iOS-TopOut-Mock/
+│   ├── README.md
+│   ├── TopOutMock.xcodeproj/
+│   └── TopOutMock/
 ├── Android/TopOut/
 │   ├── README.md
 │   ├── V2_0_BUILD_16_NOTES.md
@@ -95,6 +99,7 @@ TopOut/
 ```
 
 - [iOS 현재 문서](iOS/TopOut/README.md)
+- [iOS 다국어 목업 앱](iOS-TopOut-Mock/README.md)
 - [Android 현재 문서](Android/TopOut/README.md)
 - [개발 이력과 기술 의사결정](DEVELOPMENT_HISTORY.md)
 - [iOS v2.0 build 16 변경 사항](iOS/TopOut/V2_0_BUILD_16_NOTES.md)
@@ -105,6 +110,13 @@ TopOut/
 `V1_4_*`, `V1_5_*`, `V1_6_*`, `V1_7_*`는 당시 동작을 보존하는 과거 릴리스 기록입니다. 현재 동작의 기준은 각 플랫폼 README와 v2.0 릴리스 노트입니다.
 
 로컬의 `TopOut-app/` 폴더는 별도 Git 이력을 가진 공개 저장소 checkout이므로 이 비공개 저장소의 `.gitignore`에서 제외합니다.
+
+### 앱 소스 책임 구분
+
+- Android는 `TopOutViewModel`이 화면 상태를 조정하고, `camera/`, `detection/`, `sam/`, `media/`가 카메라·탐지·분할·저장을 각각 담당합니다. Compose 화면은 `ui/screens/`의 흐름 파일과 조작부·오버레이·보조 화면 파일로 나눴습니다.
+- iOS는 `HoldVC`와 기능별 확장이 촬영 흐름을 조정하고, `Camera`와 `VideoFrameSink`, `MotionDetector`, `Recorder`, MobileSAM 파일이 입출력 책임을 나눕니다. 결과 편집 화면과 구간 슬라이더도 별도 파일로 분리했습니다.
+- iOS 다국어 목업은 출시 앱의 UI·분석·편집 흐름을 복제하되 실제 카메라·마이크 없이 번들 `test.MOV`를 무음 반복 입력으로 사용합니다.
+- 플랫폼별 세부 파일 역할과 수정 시작점은 각 README의 `코드 구조` 절을 기준으로 합니다.
 
 ## 개발 흐름과 의사결정
 

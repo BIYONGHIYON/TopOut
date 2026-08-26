@@ -286,7 +286,7 @@ object TopOutConfig {
     const val FallbackHoldMaskMinDiameter = 44f
     const val FallbackHoldMaskMaxDiameterRatio = 0.12f
 
-    // Match the completed iOS app: selection is capped at 5x and camera raw zoom at 8x.
+    // iOS와 같이 선택 화면은 5배, 카메라는 8배로 제한한다.
     const val MinZoom = 0.5f
     const val SelectionMinZoom = 1f
     const val SelectionMaxZoom = 5f

@@ -3,7 +3,7 @@ import AVFoundation
 import CoreML
 
 final class HoldVC: UIViewController {
-    // MARK: Camera UI
+    // MARK: - 카메라 화면
     let camView = UIView()
     var previewLayer: AVCaptureVideoPreviewLayer?
 
@@ -187,7 +187,7 @@ final class HoldVC: UIViewController {
         return label
     }()
 
-    // MARK: Selection UI
+    // MARK: - 선택 화면
     let selectView = UIView()
 
     let scrollView: UIScrollView = {
@@ -220,7 +220,7 @@ final class HoldVC: UIViewController {
 
     let matLineView = MatLineView()
 
-    /// Read-only mat guide shown over the live recording preview when automatic clip detection is enabled.
+    /// 자동 구간 탐지 중 실시간 화면에 표시하는 읽기 전용 매트 경계선이다.
     let recordingMatLineView: MatLineView = {
         let view = MatLineView()
         view.showsHandles = false
@@ -296,7 +296,7 @@ final class HoldVC: UIViewController {
 
     let spinner = UIActivityIndicatorView(style: .large)
 
-    // MARK: Camera State
+    // MARK: - 카메라 상태
     let session = AVCaptureSession()
     let sessionQ = DispatchQueue(label: "camera.session.queue")
     let videoOutput = AVCaptureVideoDataOutput()
@@ -304,8 +304,7 @@ final class HoldVC: UIViewController {
     let videoOutputQ = DispatchQueue(label: "camera.video.output.queue", qos: .userInitiated)
     let audioOutputQ = DispatchQueue(label: "camera.audio.output.queue", qos: .userInitiated)
     var isCameraReady = false
-    /// True only after the configured capture session has delivered enough real video frames.
-    /// `isCameraReady` alone means only that the AVCapture graph was committed.
+    /// 촬영 세션에서 실제 영상 프레임이 충분히 도착했을 때만 참이다.
     var isCameraStreamReady = false
     var appliedRecordingResolution: RecordingResolution?
     var appliedRecordingFrameRate: RecordingFrameRate?
@@ -319,7 +318,7 @@ final class HoldVC: UIViewController {
     var currentCameraZoomFactor: CGFloat = 1.0
     var pinchStartZoomFactor: CGFloat = 1.0
 
-    // MARK: SAM State
+    // MARK: - 이미지 분할 상태
     var mode: ScreenMode = .camera
     var frameImage: UIImage?
     var pixels: PixelMap?
@@ -337,23 +336,23 @@ final class HoldVC: UIViewController {
     let workQ = DispatchQueue(label: "sam.work.queue", qos: .userInitiated)
     var hasStartedMobileSAMPreload = false
 
-    // MARK: Recording State
+    // MARK: - 녹화 상태
     let recorder = ContinuousRecorder()
     let motionDetector = MotionDetector()
     lazy var videoFrameSink = VideoFrameSink(recorder: recorder, motionDetector: motionDetector)
     var recState: RecordingState = .idle
     var clipTimes = ClipTimes()
     var recordingCountdownWorkItems: [DispatchWorkItem] = []
-    /// Invalidates delayed countdown callbacks from an older recording request.
+    /// 이전 녹화 요청의 지연 카운트다운을 무효화한다.
     var recordingRequestGeneration = 0
-    /// Invalidates asynchronous Ready completions when capture leaves the foreground flow.
+    /// 촬영 흐름을 벗어나면 비동기 준비 완료 결과를 무효화한다.
     var readyFlowRequestID = 0
     var recordingElapsedTimer: Timer?
     var recordingElapsedStartDate: Date?
     var recordingStatusMessage: String?
     var hasHiddenLaunchScreen = false
 
-    // MARK: Recording Stability
+    // MARK: - 녹화 안정성
     var recordingStorageTimer: Timer?
     var isStorageCheckInFlight = false
     var isAutomaticStopInProgress = false
@@ -375,7 +374,7 @@ final class HoldVC: UIViewController {
     var isTopHoldMaskingEnabled = false
     var isDeveloperModeEnabled = false
 
-    // MARK: Orientation
+    // MARK: - 화면 방향
     var lockedVideoOrientation: TopOutVideoOrientation?
 
     var isLandscapeLayout: Bool {
@@ -414,14 +413,11 @@ final class HoldVC: UIViewController {
         }
     }
 
-    // MARK: Lifecycle
+    // MARK: - 생명주기
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        // Do not force Dark Mode here.
-        // The custom launch image must read the device/system appearance first.
-        // The launch image follows the device appearance.
-        // The main camera UI switches to Dark Mode as soon as the camera is ready.
+        // 시작 이미지는 기기 화면 모드를 따르고 카메라 준비 뒤 어두운 모드로 전환한다.
 
         setScreenAwake(true)
         UIDevice.current.beginGeneratingDeviceOrientationNotifications()
@@ -438,9 +434,7 @@ final class HoldVC: UIViewController {
         setupMotionCallbacks()
         registerTraitChangeHandlers()
         showLaunchScreen()
-        // Camera access and the first preview must never wait for Core ML model loading.
-        // Older devices can otherwise remain on the launch image while Core ML allocates
-        // its execution resources, or be terminated under transient memory pressure.
+        // 카메라 권한과 첫 화면은 모델 로딩을 기다리지 않는다.
         requestCameraAccess()
     }
 
@@ -477,15 +471,14 @@ final class HoldVC: UIViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        // Review follows the user's normal auto-lock timeout instead of inheriting capture mode.
+        // 결과 화면은 촬영 화면의 자동 잠금 방지 설정을 이어받지 않는다.
         setScreenAwake(false)
         stopCamera()
     }
 
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()
-        // Model teardown is serialized behind any in-flight inference. The next
-        // Ready/tap analysis reloads MobileSAM lazily, so this is safe in every UI mode.
+        // 진행 중인 추론 뒤 모델을 해제하고 다음 분석에서 필요할 때 다시 불러온다.
         releaseMobileSAMResources()
     }
 

@@ -50,8 +50,7 @@ class OnnxMobileSamSegmenter(
     private val appContext = context.applicationContext
     private val environment = OrtEnvironment.getEnvironment()
     private val sessionMutex = Mutex()
-    // ViewModel cancellation must not cancel teardown while a non-cancellable ORT call still owns
-    // the mutex. This independent scope serializes session close without blocking the main thread.
+    // 취소 불가능한 추론과 세션 종료를 같은 잠금 순서로 직렬화한다.
     private val teardownScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val closeRequested = AtomicBoolean(false)
     private val embeddingCacheGeneration = AtomicLong(0L)
@@ -90,8 +89,7 @@ class OnnxMobileSamSegmenter(
                 val sessions = ensureSessionsLocked()
                 val embedding = obtainEmbedding(bitmap, sessions.encoder)
                 val results = MAT_PROMPT_Y_VALUES.asSequence().map { promptY ->
-                    // A timeout/canceled selection can stop after the current native decoder call
-                    // instead of running the remaining prompts in the background.
+                    // 시간 초과나 취소 뒤에는 현재 디코더 호출까지만 마치고 중단한다.
                     ensureActive()
                     MobileSamMatBoundaryDetector.PromptResult(
                         promptY = promptY,
@@ -113,8 +111,7 @@ class OnnxMobileSamSegmenter(
 
     /** Releases the frozen-frame embedding once selection is complete. Model sessions stay warm. */
     fun releaseCachedEmbedding() {
-        // A timed-out native encoder may still finish after this call. Its generation check keeps
-        // that obsolete embedding from being published again during the recording stage.
+        // 늦게 끝난 인코더 결과는 세대 번호로 폐기한다.
         embeddingCacheGeneration.incrementAndGet()
         cachedEmbedding = null
     }
@@ -155,8 +152,7 @@ class OnnxMobileSamSegmenter(
 
     override fun close() {
         if (!closeRequested.compareAndSet(false, true)) return
-        // Reject newly queued work immediately. The current native call, if any, is allowed to
-        // leave the mutex before its sessions are closed underneath it.
+        // 새 작업은 즉시 막고 진행 중인 호출이 잠금을 벗어난 뒤 세션을 닫는다.
         closed = true
         embeddingCacheGeneration.incrementAndGet()
         cachedEmbedding = null
@@ -188,8 +184,7 @@ class OnnxMobileSamSegmenter(
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
         }
         try {
-            // Materialize uncompressed assets once and let ORT load from a file path. This avoids
-            // retaining 40+ MB of temporary model ByteArrays during the launch thumbnail.
+            // 모델을 파일 경로로 읽어 대용량 임시 바이트 배열 생성을 피한다.
             val encoder = environment.createSession(materializeModelFile(ENCODER_FILE_NAME).absolutePath, options)
             encoderSession = encoder
             val decoder = environment.createSession(materializeModelFile(DECODER_FILE_NAME).absolutePath, options)
@@ -302,7 +297,7 @@ class OnnxMobileSamSegmenter(
         }
     }
 
-    // MARK: iOS Pipeline.swift + Correction.swift
+    // iOS 파이프라인과 보정 로직
 
     private fun runSelectionPipeline(
         bitmap: Bitmap,
@@ -478,7 +473,7 @@ class OnnxMobileSamSegmenter(
         return result
     }
 
-    // MARK: Decoder
+    // 디코더
 
     private fun decodeMatMasks(
         bitmap: Bitmap,
@@ -680,7 +675,7 @@ class OnnxMobileSamSegmenter(
         isLowResolution: Boolean
     ): BinaryMask {
         val parsed = parseMaskShape(shape)
-        // Swift maskChannel(_:) always selects channel 1 when multiple masks exist.
+        // 마스크가 여러 개면 iOS와 같이 두 번째 채널을 사용한다.
         val maskIndex = if (parsed.maskCount > 1) 1 else 0
         val maskOffset = maskIndex * parsed.width * parsed.height
         require(maskOffset + parsed.width * parsed.height <= data.size) {
@@ -720,7 +715,7 @@ class OnnxMobileSamSegmenter(
         return BinaryMask(outputWidth, outputHeight, binary)
     }
 
-    // MARK: Mask.swift colour filter/blob extraction
+    // 색상 필터와 연결 영역 추출
 
     private fun makePick(
         mask: BinaryMask,
@@ -1034,7 +1029,7 @@ class OnnxMobileSamSegmenter(
         return hue * 0.8f + abs(a.s - b.s) * 0.1f + abs(a.v - b.v) * 0.1f
     }
 
-    // MARK: Encoder preprocessing / metadata helpers
+    // 인코더 전처리와 메타데이터
 
     private fun preprocessBitmap(bitmap: Bitmap, rawShape: LongArray): PreprocessedImage {
         val shape = positiveShape(rawShape, longArrayOf(1, 3, TopOutConfig.SamSize.toLong(), TopOutConfig.SamSize.toLong()))
@@ -1053,8 +1048,7 @@ class OnnxMobileSamSegmenter(
         resized.getPixels(pixels, 0, resizedWidth, 0, 0, resizedWidth, resizedHeight)
         if (resized !== bitmap) resized.recycle()
 
-        // Write normalized pixels straight into ONNX's direct input buffer. Keeping an additional
-        // 1024x1024x3 FloatArray here would add roughly 12 MB to MobileSAM's peak heap usage.
+        // 정규화 픽셀을 직접 입력 버퍼에 써 약 12MB의 임시 배열을 만들지 않는다.
         val values = ByteBuffer.allocateDirect(targetWidth * targetHeight * 3 * Float.SIZE_BYTES)
             .order(ByteOrder.nativeOrder())
             .asFloatBuffer()
@@ -1099,7 +1093,7 @@ class OnnxMobileSamSegmenter(
     }
 
     private fun resolveMaskOutputName(available: Set<String>): String =
-        // Swift explicitly consumes low_res_masks.
+        // iOS와 같이 저해상도 마스크 출력을 우선한다.
         resolveNameOrNull(available, LOW_RES_MASK_ALIASES)
             ?: resolveNameOrNull(available, FULL_MASK_ALIASES)
             ?: available.firstOrNull { it.contains("mask", ignoreCase = true) }

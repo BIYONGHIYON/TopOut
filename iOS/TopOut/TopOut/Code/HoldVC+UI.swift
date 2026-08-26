@@ -2,274 +2,7 @@ import UIKit
 import AVFoundation
 
 extension HoldVC {
-    // MARK: UI Setup
-    func setupUI() {
-        view.addSubview(camView)
-        view.addSubview(overlayView)
-        view.addSubview(recordingMatLineView)
-        view.addSubview(powerSavingOverlayView)
-        powerSavingOverlayView.addSubview(powerSavingCountdownLabel)
-        powerSavingOverlayView.addSubview(powerSavingRecordButton)
-        powerSavingOverlayView.addSubview(powerSavingElapsedLabel)
-        view.addSubview(camHint)
-        view.addSubview(previewTipLabel)
-        view.addSubview(readyBtn)
-        view.addSubview(manualStopBtn)
-        view.addSubview(livePreviewToggleButton)
-        view.addSubview(settingsBtn)
-        view.addSubview(zoomLabel)
-
-        view.addSubview(selectView)
-        selectView.addSubview(scrollView)
-        scrollView.addSubview(imgView)
-        imgView.addSubview(selectOverlayView)
-        imgView.addSubview(matLineView)
-        selectView.addSubview(selectHint)
-        selectView.addSubview(selectTipLabel)
-        selectView.addSubview(retakeBtn)
-        selectView.addSubview(recordBtn)
-
-        view.addSubview(spinner)
-        view.addSubview(launchImageView)
-
-        scrollView.delegate = self
-        // The selection surface is a transparent overlay over the live camera. Once Ready is
-        // pressed the camera FOV is intentionally frozen, so the overlay itself never scrolls/zooms.
-        scrollView.isScrollEnabled = false
-        scrollView.pinchGestureRecognizer?.isEnabled = false
-        matLineView.onChange = { [weak self] points in
-            self?.matLinePoints = points
-        }
-
-        readyBtn.addTarget(self, action: #selector(onReady), for: .touchUpInside)
-        manualStopBtn.addTarget(self, action: #selector(onManualStop), for: .touchUpInside)
-        powerSavingRecordButton.addTarget(self, action: #selector(onManualStop), for: .touchUpInside)
-        livePreviewToggleButton.addTarget(self, action: #selector(onToggleLivePreviewDuringRecording), for: .touchUpInside)
-        settingsBtn.addTarget(self, action: #selector(onSettings), for: .touchUpInside)
-        retakeBtn.addTarget(self, action: #selector(onRetake), for: .touchUpInside)
-        recordBtn.addTarget(self, action: #selector(onRecordStart), for: .touchUpInside)
-
-        let tap = UITapGestureRecognizer(target: self, action: #selector(onSelectTap(_:)))
-        tap.numberOfTapsRequired = 1
-        imgView.addGestureRecognizer(tap)
-
-        let cameraPinch = UIPinchGestureRecognizer(target: self, action: #selector(onCameraPinch(_:)))
-        camView.addGestureRecognizer(cameraPinch)
-
-        loadUserSettings()
-        showCameraUI()
-    }
-
-    func layoutUI() {
-        let bounds = view.bounds
-        let safe = view.safeAreaInsets
-        let isLandscape = isLandscapeLayout
-        let activeFrame = selectedRecordingAspectRatio.displayRect(in: bounds, isLandscape: isLandscape)
-
-        let topMessageHeight: CGFloat = isLandscape ? 38 : 44
-        let topMessageOffsetBelowBaseline: CGFloat = 7
-        let topMessageGap: CGFloat = 6 - topMessageOffsetBelowBaseline
-        let topMessageY = alignedTopMessageY(
-            contentTopY: activeFrame.minY,
-            safeTopY: safe.top,
-            messageHeight: topMessageHeight,
-            gap: topMessageGap,
-            offsetBelowBaseline: topMessageOffsetBelowBaseline
-        )
-
-        camView.frame = activeFrame
-        previewLayer?.frame = camView.bounds
-        overlayView.frame = activeFrame
-        overlayView.contentMode = .scaleAspectFill
-        recordingMatLineView.frame = activeFrame
-        launchImageView.frame = bounds
-        powerSavingOverlayView.frame = bounds
-        layoutPowerSavingUI(in: bounds)
-
-        selectView.frame = bounds
-        scrollView.frame = activeFrame
-        spinner.center = CGPoint(x: bounds.midX, y: bounds.midY)
-
-        let messageWidthLimit: CGFloat = isLandscape ? 560 : bounds.width - 40
-        let messageWidth = min(bounds.width - 40, messageWidthLimit)
-        let messageX = bounds.midX - messageWidth * 0.5
-        camHint.frame = CGRect(x: messageX, y: topMessageY, width: messageWidth, height: topMessageHeight)
-        selectHint.frame = CGRect(x: messageX, y: topMessageY, width: messageWidth, height: topMessageHeight)
-
-        if isLandscape {
-            layoutLandscapeControls(in: bounds, safe: safe)
-        } else {
-            layoutPortraitControls(in: bounds, safe: safe)
-        }
-        updatePreviewTipVisibility()
-
-        if imgView.bounds.size != scrollView.bounds.size {
-            imgView.frame = scrollView.bounds
-            selectOverlayView.frame = imgView.bounds
-            matLineView.frame = imgView.bounds
-            scrollView.contentSize = imgView.bounds.size
-            resetZoom()
-        } else {
-            selectOverlayView.frame = imgView.bounds
-            matLineView.frame = imgView.bounds
-        }
-
-        view.bringSubviewToFront(overlayView)
-        view.bringSubviewToFront(recordingMatLineView)
-        view.bringSubviewToFront(powerSavingOverlayView)
-        view.bringSubviewToFront(camHint)
-        view.bringSubviewToFront(previewTipLabel)
-        view.bringSubviewToFront(settingsBtn)
-        view.bringSubviewToFront(zoomLabel)
-        view.bringSubviewToFront(readyBtn)
-        view.bringSubviewToFront(manualStopBtn)
-        view.bringSubviewToFront(livePreviewToggleButton)
-        view.bringSubviewToFront(selectView)
-        view.bringSubviewToFront(spinner)
-        if !launchImageView.isHidden { view.bringSubviewToFront(launchImageView) }
-    }
-
-    private func layoutPortraitControls(in bounds: CGRect, safe: UIEdgeInsets) {
-        let buttonHeight: CGFloat = 54
-        let bottomPadding: CGFloat = 12
-        let controlY = bounds.height - safe.bottom - buttonHeight - bottomPadding
-
-        let tipFrame = CGRect(x: 32, y: controlY - 44, width: bounds.width - 64, height: 34)
-        previewTipLabel.frame = tipFrame
-        selectTipLabel.frame = tipFrame
-        readyBtn.frame = CGRect(x: bounds.midX - 90, y: controlY, width: 180, height: buttonHeight)
-
-        let recordingButtonHeight: CGFloat = 54
-        let recordingButtonWidth = min((bounds.width - 58) * 0.5, CGFloat(168))
-        let recordingButtonSpacing: CGFloat = 12
-        if recState == .buffering && isDeveloperModeEnabled {
-            let totalWidth = recordingButtonWidth * 2 + recordingButtonSpacing
-            let startX = bounds.midX - totalWidth * 0.5
-            livePreviewToggleButton.frame = CGRect(
-                x: startX,
-                y: controlY,
-                width: recordingButtonWidth,
-                height: recordingButtonHeight
-            )
-            manualStopBtn.frame = CGRect(
-                x: startX + recordingButtonWidth + recordingButtonSpacing,
-                y: controlY,
-                width: recordingButtonWidth,
-                height: recordingButtonHeight
-            )
-        } else {
-            manualStopBtn.frame = CGRect(x: bounds.midX - 105, y: controlY, width: 210, height: buttonHeight)
-        }
-        settingsBtn.frame = CGRect(x: bounds.width - safe.right - 70, y: controlY + 5, width: 44, height: 44)
-        zoomLabel.frame = CGRect(x: safe.left + 22, y: controlY + 13, width: 64, height: 28)
-
-        let buttonWidth = min((bounds.width - 58) * 0.5, CGFloat(168))
-        let spacing: CGFloat = 12
-        let totalWidth = buttonWidth * 2 + spacing
-        let startX = bounds.midX - totalWidth * 0.5
-        retakeBtn.frame = CGRect(x: startX, y: controlY, width: buttonWidth, height: buttonHeight)
-        recordBtn.frame = CGRect(x: startX + buttonWidth + spacing, y: controlY, width: buttonWidth, height: buttonHeight)
-    }
-
-    private func layoutLandscapeControls(in bounds: CGRect, safe: UIEdgeInsets) {
-        let buttonHeight: CGFloat = 48
-        let controlY = bounds.height - safe.bottom - buttonHeight - 12
-        let centerX = bounds.midX
-
-        readyBtn.frame = CGRect(x: centerX - 84, y: controlY, width: 168, height: buttonHeight)
-        if recState == .buffering && isDeveloperModeEnabled {
-            let buttonWidth: CGFloat = 176
-            let spacing: CGFloat = 12
-            let totalWidth = buttonWidth * 2 + spacing
-            let startX = centerX - totalWidth * 0.5
-            livePreviewToggleButton.frame = CGRect(x: startX, y: controlY, width: buttonWidth, height: buttonHeight)
-            manualStopBtn.frame = CGRect(x: startX + buttonWidth + spacing, y: controlY, width: buttonWidth, height: buttonHeight)
-        } else {
-            manualStopBtn.frame = CGRect(x: centerX - 98, y: controlY, width: 196, height: buttonHeight)
-        }
-        zoomLabel.frame = CGRect(x: readyBtn.frame.minX - 78, y: controlY + 10, width: 64, height: 28)
-        settingsBtn.frame = CGRect(x: readyBtn.frame.maxX + 16, y: controlY + 2, width: 44, height: 44)
-
-        let buttonWidth: CGFloat = 176
-        let spacing: CGFloat = 12
-        let totalWidth = buttonWidth * 2 + spacing
-        let startX = centerX - totalWidth * 0.5
-        retakeBtn.frame = CGRect(x: startX, y: controlY, width: buttonWidth, height: buttonHeight)
-        recordBtn.frame = CGRect(x: startX + buttonWidth + spacing, y: controlY, width: buttonWidth, height: buttonHeight)
-
-        let tipWidth = min(bounds.width - safe.left - safe.right - 40, CGFloat(380))
-        let landscapeTipFrame = CGRect(
-            x: centerX - tipWidth * 0.5,
-            y: max(safe.top + 38, controlY - 42),
-            width: tipWidth,
-            height: 32
-        )
-        previewTipLabel.frame = landscapeTipFrame
-        selectTipLabel.frame = landscapeTipFrame
-    }
-
-    private func layoutPowerSavingUI(in bounds: CGRect) {
-        let isLandscape = bounds.width > bounds.height
-        let countdownSize = isLandscape
-            ? min(bounds.height * 0.72, bounds.width * 0.32)
-            : min(bounds.width * 0.96, bounds.height * 0.62)
-        powerSavingCountdownLabel.frame = CGRect(
-            x: bounds.midX - countdownSize * 0.5,
-            y: bounds.midY - countdownSize * 0.5,
-            width: countdownSize,
-            height: countdownSize
-        )
-        powerSavingCountdownLabel.font = .monospacedDigitSystemFont(ofSize: countdownSize * 0.88, weight: .black)
-
-        let recordIconSize = isLandscape
-            ? min(bounds.height * 0.44, bounds.width * 0.22)
-            : min(bounds.width * 0.42, bounds.height * 0.34)
-        powerSavingRecordButton.frame = CGRect(
-            x: bounds.midX - recordIconSize * 0.5,
-            y: bounds.midY - recordIconSize * 0.5,
-            width: recordIconSize,
-            height: recordIconSize
-        )
-
-        let elapsedHeight: CGFloat = isLandscape ? 64 : 86
-        let recordGroupSpacing: CGFloat = isLandscape ? 16 : 28
-        let elapsedWidthLimit: CGFloat = isLandscape ? 360 : bounds.width - 48
-        let elapsedWidth = min(bounds.width - 48, elapsedWidthLimit)
-        powerSavingElapsedLabel.frame = CGRect(
-            x: bounds.midX - elapsedWidth * 0.5,
-            y: powerSavingRecordButton.frame.maxY + recordGroupSpacing,
-            width: elapsedWidth,
-            height: elapsedHeight
-        )
-
-        if recState == .buffering && !isDeveloperModeEnabled {
-            let toggleWidth = min(bounds.width - 72, isLandscape ? CGFloat(176) : CGFloat(198))
-            let toggleHeight: CGFloat = 42
-            livePreviewToggleButton.frame = CGRect(
-                x: bounds.midX - toggleWidth * 0.5,
-                y: max(24, powerSavingRecordButton.frame.minY - toggleHeight - 22),
-                width: toggleWidth,
-                height: toggleHeight
-            )
-        }
-    }
-
-    private func alignedTopMessageY(
-        contentTopY: CGFloat,
-        safeTopY: CGFloat,
-        messageHeight: CGFloat,
-        gap: CGFloat,
-        offsetBelowBaseline: CGFloat
-    ) -> CGFloat {
-        let preferredY = contentTopY - messageHeight - gap
-        if contentTopY > messageHeight + gap {
-            return max(CGFloat(6), preferredY)
-        }
-        return safeTopY + 2 + offsetBelowBaseline
-    }
-
-
-    // MARK: Launch / Model Loading
+    // MARK: - 시작 화면과 모델 준비
     func showLaunchScreen() {
         hasHiddenLaunchScreen = false
         launchImageView.image = launchImageForCurrentAppearance()
@@ -353,7 +86,7 @@ extension HoldVC {
         return image
     }
 
-    // MARK: Recording Status
+    // MARK: - 녹화 상태
     func setRecordingStatusText(_ text: String) {
         recordingStatusMessage = text
         camHint.text = text
@@ -374,7 +107,7 @@ extension HoldVC {
         isAutoClipDetectionEnabled ? L("camera.waiting_motion") : L("camera.recording")
     }
 
-    // MARK: Screen State
+    // MARK: - 화면 상태
     func showCameraUI() {
         mode = recState == .buffering ? .recording : .camera
         let isRecording = recState == .buffering
@@ -643,13 +376,11 @@ extension HoldVC {
         pendingOverlay = nil
         pendingTopBox = nil
 
-        // Keep the Ready-time frame only as the MobileSAM mat-analysis source. The user always
-        // edits against the live camera preview, so movement after Ready is immediately visible.
+        // 준비 완료 프레임은 매트 분석에만 쓰고 보정은 실시간 화면 위에서 진행한다.
         imgView.image = nil
         selectOverlayView.image = nil
 
-        // The Ready-time frame is used only for mat detection. Hold selection builds a fresh
-        // PixelMap/embedding from the frame captured at the exact tap moment.
+        // 탑홀드는 탭한 순간의 새 프레임으로 색상 정보와 임베딩을 만든다.
         pixels = nil
         emb = nil
 
@@ -688,8 +419,7 @@ extension HoldVC {
                     self.selectHint.text = L("camera.selection_both")
                     self.selectTipLabel.text = ""
                     self.selectTipLabel.isHidden = true
-                    // Do not cache the Ready-time embedding for hold selection. Each hold tap
-                    // captures a fresh live frame while keeping the Ready-time camera FOV fixed.
+                    // 준비 완료 임베딩은 저장하지 않고 탑홀드 탭마다 새 프레임을 사용한다.
                     self.emb = nil
                 } else {
                     self.selectHint.text = L("camera.selection_mat")
@@ -722,7 +452,7 @@ extension HoldVC {
         camView.isHidden = false
         overlayView.isHidden = true
         recordingMatLineView.isHidden = true
-        // Ready freezes the chosen camera FOV until recording finishes or the user retakes setup.
+        // 준비 완료 뒤 녹화 종료나 재촬영 전까지 카메라 화각을 고정한다.
         zoomLabel.isHidden = true
         camHint.isHidden = true
         previewTipLabel.isHidden = true
@@ -756,7 +486,7 @@ extension HoldVC {
         readyBtn.isEnabled = false
     }
 
-    // MARK: Cache
+    // MARK: - 선택 캐시
     func clearSelectionCache(clearPending: Bool) {
         matBoundaryAnalysisTimeoutWorkItem?.cancel()
         matBoundaryAnalysisTimeoutWorkItem = nil

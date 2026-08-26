@@ -6,7 +6,7 @@ import CoreVideo
 import Vision
 import CoreImage
 
-// MARK: - Motion Events
+// MARK: - 움직임 이벤트
 
 enum MotionEvent {
     case start(pts: CMTime)
@@ -19,9 +19,9 @@ enum MotionFinishReference: String {
     case highestPosePoint
 }
 
-// MARK: - Motion Detector Pose Climb
+// MARK: - 자세 기반 등반 탐지
 
-/// MotionDetector Pose Climb
+/// 움직임과 자세를 이용해 등반 구간을 찾는다.
 ///
 /// 기준:
 /// - 별도 환경 보정 없이 녹화 시작 후 고정 2fps로 현재 프레임과 직전 분석 프레임을 비교합니다.
@@ -133,7 +133,7 @@ final class MotionDetector {
     private var lastSelectedPoseCenter: CGPoint?
     private var lastSelectedPoseBounds: CGRect?
 
-    // MARK: Public
+    // MARK: - 공개 동작
 
     func configure(
         matLine: [CGPoint],
@@ -150,7 +150,6 @@ final class MotionDetector {
             self.activeCropRect = self.clamped(activeCropRect)
             self.resetStateLocked(keepConfig: true)
             self.setFrameUpdatesEnabled(false, for: generation)
-            self.debug("🎯 motion configured pose climb: matPoints=\(matLine.count), finishReference=\(finishReference.rawValue), topBox=\(self.topBox), crop=\(self.activeCropRect), cvRegionAboveMat=\(Cfg.motionCVRegionAboveMatHeightRatio), analysisFPS=\(Cfg.motionAnalysisFPS)")
         }
     }
 
@@ -161,7 +160,6 @@ final class MotionDetector {
             guard let self else { return }
             self.resetStateLocked(keepConfig: true)
             self.setFrameUpdatesEnabled(false, for: generation)
-            self.debug("👀 motion detector armed for recording")
         }
     }
 
@@ -174,14 +172,13 @@ final class MotionDetector {
             self.isActive = true
             self.state = .waiting
             self.setFrameUpdatesEnabled(true, for: generation)
-            self.debug("👀 motion detector started without baseline calibration")
         }
     }
 
     func activeClipRangeForRecordingStop() -> ClipRange? {
         q.sync { [weak self] in
             guard let self else { return nil }
-            return self.openClipRangeLocked(reason: "recording stop")
+            return self.openClipRangeLocked()
         }
     }
 
@@ -192,7 +189,6 @@ final class MotionDetector {
             self.isActive = false
             self.resetStateLocked(keepConfig: true)
             self.setFrameUpdatesEnabled(false, for: generation)
-            self.debug("🛑 motion detector stopped")
         }
     }
 
@@ -219,8 +215,7 @@ final class MotionDetector {
         }
     }
 
-    /// Closes admission immediately and gives the queued state mutation an ordering token.
-    /// An older queued `markRecordingStarted` must never reopen the gate after a newer stop/reset.
+    /// 새 프레임 입력을 막고 이전 시작 작업이 상태를 다시 열지 못하게 한다.
     @discardableResult
     private func invalidateFrameUpdatesAndDiscardPending() -> UInt64 {
         pendingFrameLock.lock()
@@ -245,7 +240,7 @@ final class MotionDetector {
         pendingFrameLock.unlock()
     }
 
-    // MARK: Processing
+    // MARK: - 프레임 처리
 
     /// 한 번에 프레임 하나만 분석 큐로 넘깁니다.
     /// 분석 중 새 프레임이 들어오면 이전 대기 프레임을 교체하고 최신 프레임만 다음 작업으로 처리합니다.
@@ -304,28 +299,13 @@ final class MotionDetector {
 
         let cvMotion = cvSearchRegionMotion(frame: frame, base: base)
 
-        var latestPose: PoseSnapshot?
-        var poseReason = "-"
-
-        func runPose(reason: String) -> PoseSnapshot? {
+        func runPose() -> PoseSnapshot? {
             guard canRunPose(at: pts, interval: Cfg.motionPoseStartVerificationInterval) else { return nil }
             lastPosePTS = pts
-            let snapshot = detectPose(in: pixelBuffer)
-            latestPose = snapshot
-            poseReason = reason
-            return snapshot
+            return detectPose(in: pixelBuffer)
         }
 
         handleWaitingCVRegion(cvMotion, pts: pts, pose: runPose)
-
-        if Cfg.motionDebugLog, (cvMotion != nil || latestPose != nil) {
-            debugState(
-                pts: pts,
-                cvMotion: cvMotion,
-                latestPose: latestPose,
-                poseReason: poseReason
-            )
-        }
     }
 
     private func processPoseTrackingFrame(pixelBuffer: CVPixelBuffer, pts: CMTime) {
@@ -336,62 +316,13 @@ final class MotionDetector {
         lastPosePTS = pts
         let snapshot = detectPose(in: pixelBuffer)
         handlePoseTrackingSnapshot(snapshot, pts: pts)
-
-        if Cfg.motionDebugLog {
-            debugState(
-                pts: pts,
-                cvMotion: nil,
-                latestPose: snapshot,
-                poseReason: state == .climbing ? "climbingPose" : "trackingPose"
-            )
-        }
-    }
-
-    private func debugState(
-        pts: CMTime,
-        cvMotion: CVRegionMotion?,
-        latestPose: PoseSnapshot?,
-        poseReason: String
-    ) {
-        let poseText: String
-        if let latestPose {
-            let selected = latestPose.selectedObservationIndex.map(String.init) ?? "-"
-            poseText = "obs=\(latestPose.observationCount) selected=\(selected) points=\(latestPose.reliablePoints.count)"
-        } else {
-            poseText = "-"
-        }
-
-        let cvText: String
-        if let cvMotion {
-            cvText = String(
-                format: "raw=%.3f adjusted=%.3f threshold=%.3f cells=%d center=(%.3f,%.3f)",
-                Double(cvMotion.rawSignal),
-                Double(cvMotion.adjustedSignal),
-                Double(Cfg.motionCVRegionActiveThreshold),
-                cvMotion.target.cells.count,
-                Double(cvMotion.target.weightedCenter.x),
-                Double(cvMotion.target.weightedCenter.y)
-            )
-        } else {
-            cvText = "-"
-        }
-
-        let noPoseAge: String
-        if let lastPoseSeenPTS {
-            noPoseAge = String(format: "%.1f", duration(from: lastPoseSeenPTS, to: pts))
-        } else {
-            noPoseAge = "-"
-        }
-
-        debug("📈 cv region=\(cvText) | pose=\(poseText) reason=\(poseReason) noPoseAge=\(noPoseAge) state=\(state.rawValue)")
     }
 
     private func currentAnalysisInterval() -> TimeInterval {
         1.0 / Swift.max(1.0, Cfg.motionAnalysisFPS)
     }
 
-    /// Pre-start tracking and pose-loss recovery run at 4fps. Waiting CV search and stable climbing
-    /// remain at 2fps.
+    /// 시작 확인과 포즈 복구는 초당 4회, 대기 탐색과 안정 추적은 초당 2회 처리한다.
     private func currentPoseTrackingInterval() -> TimeInterval {
         let preStartPoseTracking = state == .tracking && hasSeenReliablePose
         if preStartPoseTracking || isPoseLossRecovery {
@@ -400,25 +331,21 @@ final class MotionDetector {
         return Cfg.motionPoseTrackingInterval
     }
 
-    // MARK: State Machine
+    // MARK: - 상태 흐름
 
     private func handleWaitingCVRegion(
         _ motion: CVRegionMotion?,
         pts: CMTime,
-        pose: (_ reason: String) -> PoseSnapshot?
+        pose: () -> PoseSnapshot?
     ) {
         guard let motion else { return }
 
-        enterPoseTrackingFromCV(
-            at: pts,
-            motionTarget: motion.target,
-            reason: String(format: "CV region changed adjusted=%.3f", Double(motion.adjustedSignal))
-        )
-        guard let snapshot = pose("cvMotionPose") else { return }
+        enterPoseTrackingFromCV(at: pts, motionTarget: motion.target)
+        guard let snapshot = pose() else { return }
         handlePoseTrackingSnapshot(snapshot, pts: pts)
     }
 
-    private func enterPoseTrackingFromCV(at pts: CMTime, motionTarget: MotionTarget, reason: String) {
+    private func enterPoseTrackingFromCV(at pts: CMTime, motionTarget: MotionTarget) {
         previousCVFrame = nil
         state = .tracking
         poseTrackingStartedPTS = pts
@@ -432,7 +359,6 @@ final class MotionDetector {
         resetPoseSelectionTracking()
         pendingMotionTarget = motionTarget
         resetFinishReferenceTracking()
-        debug("🏃 pose tracking started after CV: \(reason)")
     }
 
     private func handlePoseTrackingSnapshot(_ snapshot: PoseSnapshot, pts: CMTime) {
@@ -452,23 +378,15 @@ final class MotionDetector {
 
         switch state {
         case .tracking:
-            // A missing or side-edge torso must not become a new climb just because its remaining
-            // joints all sit above the start line. A central torso keeps the existing start
-            // behavior even when only a limb touches the side edge.
+            // 몸통이 없거나 가장자리에 걸리면 남은 관절만으로 새 등반을 시작하지 않는다.
             guard snapshot.startEligible else { return }
-            // CV 이후 첫 pose에서 이미 가장 낮은 점이 선택 영상 높이의 6% 시작선 위라면 즉시 start로 잡습니다.
-            // 아니면 시작 경계의 아래→위 crossing 순간을 start로 잡습니다.
-            let firstValidPose = lastLowestAboveMat == nil
+            // 첫 포즈가 시작선 위면 즉시 시작하고 아니면 아래에서 위로 통과한 순간을 사용한다.
             let crossedUp = lowestAboveStartBoundary && (lastLowestAboveMat != true)
             lastLowestAboveMat = lowestAboveStartBoundary
             guard crossedUp else { return }
 
-            // Store only the original crossing time. Review padding is added after all short-range
-            // cleanup and merging when the recording is finalized.
-            let startReason = firstValidPose
-                ? "first pose already above mat"
-                : "lowest pose point crossed above mat"
-            emitStart(pts, reason: startReason)
+            // 원본 통과 시각만 저장하고 구간 정리 뒤 결과 화면 여백을 넣는다.
+            emitStart(pts)
             updateFinishReferenceMoment(snapshot: snapshot, pts: pts)
 
         case .climbing:
@@ -482,11 +400,7 @@ final class MotionDetector {
             // 완등 후보가 START와 같은 프레임에만 잡힌 경우에는 현재 매트 하강 시각을 사용합니다.
             // 0.1초를 인위적으로 더하지 않으면서도 FINISH가 무시된 채 CLIMBING에 고착되는 것을 막습니다.
             let finishBasePTS = validFinishReference(after: activeStartPTS, fallback: pts) ?? pts
-            emitFinish(
-                finishBasePTS,
-                reason: "lowest pose point crossed below finish boundary; raw end from \(finishReferenceDescription())",
-                normalFinish: true
-            )
+            emitFinish(finishBasePTS, normalFinish: true)
 
         default:
             return
@@ -500,7 +414,7 @@ final class MotionDetector {
         if state == .tracking, isPostClimbTracking {
             postClimbConsecutivePoseMisses += 1
             if postClimbConsecutivePoseMisses >= 2 {
-                returnToCVSearch(reason: "two consecutive pose misses after normal finish")
+                returnToCVSearch()
             }
             return
         }
@@ -515,21 +429,17 @@ final class MotionDetector {
         guard missingAge >= Cfg.motionPoseNoPoseRetrySeconds else { return }
 
         if state == .climbing {
-            if let range = openClipRangeLocked(reason: String(format: "pose missing for %.1fs", missingAge)) {
-                emitFinish(
-                    range.endPTS,
-                    reason: String(format: "pose missing for %.1fs; raw close from %@", missingAge, finishReferenceDescription())
-                )
+            if let range = openClipRangeLocked() {
+                emitFinish(range.endPTS)
             } else {
-                emitRetry(reason: String(format: "pose missing for %.1fs and no finish reference", missingAge))
+                emitRetry()
             }
         } else {
-            returnToCVSearch(reason: String(format: "pose missing before start for %.1fs", missingAge))
+            returnToCVSearch()
         }
     }
 
-    private func returnToCVSearch(reason: String) {
-        debug("↩️ return to CV search: \(reason)")
+    private func returnToCVSearch() {
         previousCVFrame = nil
         lastAnalyzedPTS = nil
         state = .waiting
@@ -546,7 +456,7 @@ final class MotionDetector {
         resetFinishReferenceTracking()
     }
 
-    private func openClipRangeLocked(reason: String) -> ClipRange? {
+    private func openClipRangeLocked() -> ClipRange? {
         guard state == .climbing else { return nil }
         guard let startPTS = activeStartPTS else { return nil }
 
@@ -556,24 +466,21 @@ final class MotionDetector {
             return nil
         }
 
-        debug("📌 raw open clip range salvaged: \(reason)")
         return ClipRange(startPTS: startPTS, endPTS: finishBasePTS)
     }
 
-    private func emitStart(_ pts: CMTime, reason: String) {
+    private func emitStart(_ pts: CMTime) {
         state = .climbing
         isPostClimbTracking = false
         postClimbConsecutivePoseMisses = 0
         isPoseLossRecovery = false
         activeStartPTS = pts
         resetFinishReferenceTracking()
-        debug("🚀 raw start detected: \(reason)")
         onEvent?(.start(pts: pts))
     }
 
-    private func emitRetry(reason: String) {
+    private func emitRetry() {
         guard state == .climbing else { return }
-        debug("🔁 retry detected: \(reason)")
         onEvent?(.retry)
         previousCVFrame = nil
         lastAnalyzedPTS = nil
@@ -591,19 +498,17 @@ final class MotionDetector {
         resetFinishReferenceTracking()
     }
 
-    private func emitFinish(_ pts: CMTime, reason: String, normalFinish: Bool = false) {
+    private func emitFinish(_ pts: CMTime, normalFinish: Bool = false) {
         guard state == .climbing else { return }
         if let start = activeStartPTS, CMTimeCompare(pts, start) <= 0 {
-            debug("⚠️ ignored invalid finish before start")
             return
         }
-        debug("🏁 raw finish detected: \(reason)")
         onEvent?(.finish(pts: pts))
         resetForNextStartSearchLocked(normalFinish: normalFinish)
     }
 
     private func resetForNextStartSearchLocked(normalFinish: Bool) {
-        // finish 직후에는 CV로 돌아가지 않고, 같은 녹화 안에서 다음 등반 start를 찾기 위해 pose tracking을 유지합니다.
+        // 종료 직후에는 자세 추적을 유지해 같은 녹화의 다음 등반을 찾는다.
         state = .tracking
         lastPosePTS = nil
         lastPoseSeenPTS = nil
@@ -616,7 +521,7 @@ final class MotionDetector {
         resetFinishReferenceTracking()
     }
 
-    // MARK: Pose
+    // MARK: - 자세
 
     private func canRunPose(at pts: CMTime, interval: TimeInterval) -> Bool {
         guard let lastPosePTS else { return true }
@@ -644,7 +549,6 @@ final class MotionDetector {
             do {
                 try handler.perform([poseRequest])
             } catch {
-                debug("⚠️ pose failed: \(error.localizedDescription)")
                 return emptyPoseSnapshot()
             }
 
@@ -664,8 +568,7 @@ final class MotionDetector {
         candidates.reserveCapacity(observations.count)
         let sideMargin = clamp(Cfg.motionPoseStartTorsoSideEdgeMarginRatio, min: 0, max: 0.25)
 
-        // Vision 추론은 한 번만 수행합니다. 각 observation의 관절은 섞지 않고, 초기 움직임
-        // 격자 또는 직전 선택 대상과 가장 잘 이어지는 한 사람만 상태 판단에 사용합니다.
+        // 한 번의 추론 결과에서 초기 움직임이나 직전 대상과 가장 가까운 한 사람만 사용한다.
         for (index, observation) in observations.enumerated() {
             var points: [CGPoint] = []
             var shoulderPointCount = 0
@@ -774,9 +677,7 @@ final class MotionDetector {
                 }
             }
             let maximumDistance = Cfg.motionPoseSelectionMaxCenterDistanceRatio
-            // A distant bystander must not silently replace a lost climber. Returning no pose here
-            // lets the existing two-miss post-finish or six-second active-climb recovery policy
-            // return to Motion search before choosing a new person.
+            // 멀리 있는 사람이 유실된 등반자를 대신하지 못하게 자세 없음으로 처리한다.
             guard bestOverlap > 0 || bestDistance <= maximumDistance * maximumDistance else {
                 return nil
             }
@@ -958,7 +859,7 @@ final class MotionDetector {
     }
 
     private func isAboveStartBoundary(_ point: CGPoint) -> Bool {
-        // Both values are normalized inside activeCropRect, the selected output video's crop.
+        // 두 좌표는 선택한 출력 영상 영역 안에서 정규화되어 있다.
         let startBoundary = Swift.max(
             0.0,
             lineY(at: point.x) - Cfg.motionPoseStartAboveMatVideoHeightRatio
@@ -984,8 +885,7 @@ final class MotionDetector {
             }
 
         case .highestPosePoint:
-            // Vision 좌표를 화면 좌표로 정규화한 뒤 사용하므로 y가 작을수록 화면의 더 높은 위치입니다.
-            // 각 프레임에서 가장 높은 관절점을 찾고, 등반 전체에서 그 y가 가장 작았던 시점을 저장합니다.
+            // 화면에서 가장 높은 관절점이 등반 전체 중 최고점에 도달한 시각을 저장한다.
             guard let highestPoint = snapshot.reliablePoints.min(by: { $0.y < $1.y }) else { return }
             if activeHighestPoseY == nil || highestPoint.y < (activeHighestPoseY ?? .greatestFiniteMagnitude) {
                 activeHighestPoseY = highestPoint.y
@@ -1013,15 +913,6 @@ final class MotionDetector {
             return fallback
         }
         return nil
-    }
-
-    private func finishReferenceDescription() -> String {
-        switch finishReference {
-        case .closestTopHold:
-            return "closest top-hold moment"
-        case .highestPosePoint:
-            return "highest pose-point moment"
-        }
     }
 
     private func closestDistanceToTopHold(from snapshot: PoseSnapshot) -> CGFloat? {
@@ -1056,7 +947,7 @@ final class MotionDetector {
     }
 
 
-    // MARK: CV Search Region
+    // MARK: - 움직임 탐색 영역
 
     /// 매트 경계선 바로 위쪽에서 화면 높이의 40%만큼을 전 너비로 비교합니다.
     /// 현재 프레임과 직전 2fps 분석 프레임의 변화량을 반환합니다.
@@ -1167,7 +1058,7 @@ final class MotionDetector {
         return CVRegionMotion(rawSignal: rawSignal, adjustedSignal: adjustedSignal, target: target)
     }
 
-    // MARK: Region Geometry
+    // MARK: - 영역 계산
 
     private func lineY(at x: CGFloat) -> CGFloat {
         guard !matLine.isEmpty else { return Cfg.matDefaultY }
@@ -1197,7 +1088,7 @@ final class MotionDetector {
         return CGRect(x: minX, y: minY, width: Swift.max(0, maxX - minX), height: Swift.max(0, maxY - minY))
     }
 
-    // MARK: Frame Conversion
+    // MARK: - 프레임 변환
 
     private func makeSmallFrame(from sampleBuffer: CMSampleBuffer) -> SmallFrame? {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return nil }
@@ -1239,7 +1130,7 @@ final class MotionDetector {
     }
 
 
-    // MARK: Helpers
+    // MARK: - 도우미
 
     private func resetFinishReferenceTracking() {
         activeBestTopHoldPTS = nil
@@ -1288,11 +1179,5 @@ final class MotionDetector {
     private func clampedY(_ y: CGFloat) -> CGFloat { clamp(y, min: 0, max: 1) }
     private func clamp(_ v: CGFloat, min lo: CGFloat, max hi: CGFloat) -> CGFloat {
         Swift.max(lo, Swift.min(v, hi))
-    }
-
-
-
-    private func debug(_ text: @autoclosure () -> String) {
-        if Cfg.motionDebugLog { print(text()) }
     }
 }

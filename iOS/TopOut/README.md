@@ -112,6 +112,32 @@ Vision은 한 프레임에서 여러 observation을 반환하므로 사람마다
 - 백그라운드 자동 종료가 실제 영상 프레임 없이 끝난 경우에도 앱이 이미 활성 상태라면 카메라 프리뷰를 즉시 복구합니다.
 - 시뮬레이터 빌드는 실제 iPhone의 peak RSS·Neural Engine 할당·프레임 드롭·발열을 측정하지 않으므로, 4K·60fps와 iPhone 12 mini급 기기는 별도 실기기 검증이 필요합니다.
 
+## 코드 구조
+
+```text
+Code/
+├── HoldVC.swift                촬영 화면 상태와 공통 객체
+├── HoldVC+Layout.swift         화면 생성과 기기별 배치
+├── HoldVC+UI.swift             화면 단계와 표시 상태
+├── HoldVC+Actions.swift        준비·선택 사용자 입력
+├── HoldVC+Recording.swift      녹화·구간 정리·사진 저장
+├── HoldVC+Motion.swift         탐지 이벤트와 구간 수집
+├── HoldVC+Stability.swift      중단·저장공간·백그라운드 대응
+├── Camera.swift                권한과 촬영 세션 구성
+├── VideoFrameSink.swift        영상·오디오 프레임 전달과 안정 프레임 캡처
+├── MotionDetector.swift        Motion·Vision Pose 상태 흐름
+├── SAM.swift                   MobileSAM 모델 수명과 공통 추론
+├── MobileSAMMatDetector.swift  매트 경계 후보 계산
+├── Recorder.swift              원본 기록과 선택 구간 저장
+├── ReviewVC.swift              결과 화면 상태와 재생 흐름
+├── TrimRangeSlider.swift       시작·끝·재생 위치 편집
+└── ReviewControls.swift        결과 화면의 작은 공통 조작부
+```
+
+레이아웃은 `HoldVC+Layout`, 카메라 프레임 전달은 `VideoFrameSink`, 결과 구간 입력은 `TrimRangeSlider`에서 독립적으로 수정합니다. `MotionDetector`의 임계값과 상태 흐름은 `Config`와 함께 확인합니다.
+
+다국어 화면 촬영용 목업은 [`../../iOS-TopOut-Mock`](../../iOS-TopOut-Mock/README.md)에 분리했습니다. 출시 앱 코드를 직접 변경하지 않고 카메라·마이크 입력만 `test.MOV` 무음 반복 재생으로 대체합니다.
+
 ## 빌드
 
 1. `TopOut.xcodeproj`를 엽니다.

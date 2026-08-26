@@ -1,14 +1,14 @@
 import UIKit
 
-// MARK: - Global Config
+// MARK: - 공통 설정
 enum Cfg {
-    // MARK: SAM
+    // MARK: - 이미지 분할
     static let samSize = 1024
     static let maskSize = 256
     static let mean: [Float] = [123.675, 116.28, 103.53]
     static let std: [Float] = [58.395, 57.12, 57.375]
 
-    // MARK: Hold Picking
+    // MARK: - 홀드 선택
     static let hsvTol: Float = 0.15
     static let looseHsvTols: [Float] = [0.18, 0.21]
     static let wallSpanRatio: CGFloat = 0.25
@@ -20,11 +20,11 @@ enum Cfg {
     static let fallbackHoldMaskMinDiameter: CGFloat = 44
     static let fallbackHoldMaskMaxDiameterRatio: CGFloat = 0.12
 
-    // MARK: Zoom
+    // MARK: - 확대
     static let minZoom: CGFloat = 1.0
     static let maxZoom: CGFloat = 5.0
 
-    // MARK: Outline
+    // MARK: - 외곽선
     static let tinyRoundMaxSpan: CGFloat = 6
     static let tinyRoundMaxArea = 75
     static let roundAspectLimit: CGFloat = 1.8
@@ -41,20 +41,19 @@ enum Cfg {
     static let minRedLineWidth: CGFloat = 8
     static let minWhiteLineWidth: CGFloat = 2.5
 
-    // MARK: Mat Detection
+    // MARK: - 매트 탐지
     static let matDefaultY: CGFloat = 0.75
     static let matBoundaryAnalysisTimeout: TimeInterval = 5
 
-    // MARK: Mat Line UI
+    // MARK: - 매트 경계 UI
     static let matLineWidth: CGFloat = 3
     static let matPointRadius: CGFloat = 8
     static let matHitRadius: CGFloat = 32
 
-    // MARK: Review
+    // MARK: - 결과 편집
     static let reviewEndPreviewLeadSeconds: TimeInterval = 3
 
-    // MARK: Motion Detection
-    static let motionDebugLog = false
+    // MARK: - 움직임 탐지
     static let motionAnalysisFPS: Double = 2
     static let motionFrameWidth = 160
     static let motionPixelDiff: UInt8 = 20
@@ -70,7 +69,7 @@ enum Cfg {
     static let motionSeedRelativeCellThreshold: CGFloat = 0.45
     static let motionSeedMinimumCellChangedRatio: CGFloat = 0.02
 
-    // MARK: Pose Detection
+    // MARK: - 자세 탐지
     static let motionPoseStartVerificationInterval: TimeInterval = 0.5
     static let motionPoseTrackingInterval: TimeInterval = 0.5
     static let motionPoseFastTrackingInterval: TimeInterval = 0.25

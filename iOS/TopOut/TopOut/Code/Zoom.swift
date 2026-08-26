@@ -11,8 +11,7 @@ extension HoldVC: UIScrollViewDelegate {
     }
 
     func resetZoom() {
-        // Selection is drawn over a live camera preview. Keep the overlay at 1x so normalized
-        // mat/hold coordinates always match the fresh frame captured for MobileSAM.
+        // 선택 화면은 1배로 유지해 정규화 좌표와 새 분석 프레임을 맞춘다.
         scrollView.minimumZoomScale = 1
         scrollView.maximumZoomScale = 1
         scrollView.setZoomScale(1, animated: false)

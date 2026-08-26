@@ -1,4 +1,4 @@
-//main 앱 진입점
+// 앱 진입점
 import UIKit
 
 @main
@@ -16,7 +16,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {
         let config = UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
-        // Info.plist의 Scene Manifest 설정이 누락되어도 SceneDelegate가 반드시 호출되도록 명시합니다.
+        // 설정 누락 여부와 관계없이 화면 대리자를 지정한다.
         config.delegateClass = SceneDelegate.self
         return config
     }

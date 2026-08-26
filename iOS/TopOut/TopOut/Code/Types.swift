@@ -1,4 +1,4 @@
-//RGB, HSV, Blob, Pick, 상태 enum
+// 색상, 영역, 선택 결과, 상태 형식
 import UIKit
 import CoreML
 import CoreMedia
@@ -22,10 +22,9 @@ enum RecordingState: Equatable {
     case reviewing
 }
 
-// MARK: - Camera Orientation
+// MARK: - 카메라 방향
 
-/// Internal orientation model.
-/// Avoids AVCaptureVideoOrientation, which is deprecated from iOS 17.
+/// iOS 17부터 사용 중단된 형식을 대신하는 내부 방향 모델이다.
 enum TopOutVideoOrientation: Equatable {
     case portrait
     case portraitUpsideDown
@@ -54,8 +53,7 @@ enum TopOutVideoOrientation: Equatable {
         }
     }
 
-    /// Rotation angle used by AVCaptureConnection.videoRotationAngle.
-    /// These values match the previous TopOut camera mapping.
+    /// 카메라 연결에 적용할 기존 TopOut 회전 각도다.
     var captureRotationAngle: CGFloat {
         switch self {
         case .portrait:

@@ -55,7 +55,7 @@ class VideoExporter(private val context: Context) {
             .build()
 
         val effects = mutableListOf<Effect>()
-        // Recorder output already uses the selected camera ViewPort. Export only trims or adds the hold mask.
+        // 촬영 화면비는 이미 적용되어 있으므로 내보내기에서는 자르기와 마스크만 처리한다.
         if (includeOverlay && overlayBitmap != null) {
             effects += OverlayEffect(listOf(BitmapOverlay.createStaticBitmapOverlay(overlayBitmap)))
         }
@@ -103,9 +103,7 @@ class VideoExporter(private val context: Context) {
 
     private suspend fun transform(item: EditedMediaItem, output: File) = suspendCancellableCoroutine { continuation ->
         val transformer = Transformer.Builder(context)
-            // Keep OEM gallery players from receiving audio timestamps before the first output
-            // video frame. Media3 already transcodes a non-keyframe clipping start; this additionally
-            // aligns the output beginning for players that otherwise hold the first frame.
+            // 첫 영상 프레임보다 오디오가 먼저 시작하지 않도록 출력 시작 시각을 맞춘다.
             .setEnsureFileStartsOnVideoFrameEnabled(true)
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {

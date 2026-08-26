@@ -94,8 +94,7 @@ fun CameraPreview(
                         if (latestZoomTransitionInProgress.value) {
                             transitionWasLockedDuringGesture = true
                             if (latestZoomTransitionAwaitingGestureEnd.value) {
-                                // On zoom-in, keep the previous frame under the user's fingers and
-                                // defer the actual CameraX rebind until both fingers are released.
+                                // 확대 중에는 정지 프레임을 유지하고 손을 뗀 뒤 카메라를 전환한다.
                                 latestOnDeferredZoomChanged.value(
                                     zoomController.updatePendingTransition(detector.scaleFactor)
                                 )
@@ -108,20 +107,14 @@ fun CameraPreview(
                             transitionWasLockedDuringGesture ||
                             completedSwitchToken != gestureRebaseToken
                         ) {
-                            // The new preview is now streaming. Rebase this still-active pinch at
-                            // the exact transition ratio (1.0x, 0.9x, 3.0x, ...), and discard the
-                            // first post-load sample so movement during loading cannot leak in.
-                            // The token also handles very fast switches where Compose coalesces
-                            // the temporary `transitionInProgress=true` state.
+                            // 새 미리보기 시작 뒤 전환 배율에서 핀치를 다시 잡고 첫 입력은 버린다.
                             resetZoomControllerAtCurrentZoom()
                             gestureRebaseToken = completedSwitchToken
                             transitionWasLockedDuringGesture = false
                             return true
                         }
 
-                        // StateFlow-to-Compose propagation can trail the boundary event by one
-                        // frame. Continue an already-held transition immediately so that fast
-                        // finger motion is not lost before the deferred flag reaches this View.
+                        // 상태 전달이 한 프레임 늦어도 진행 중인 전환 입력은 이어서 처리한다.
                         if (zoomController.hasContinuablePendingTransition()) {
                             latestOnDeferredZoomChanged.value(
                                 zoomController.updatePendingTransition(detector.scaleFactor)
@@ -136,13 +129,12 @@ fun CameraPreview(
                     override fun onScaleEnd(detector: ScaleGestureDetector) {
                         zoomController.end()
                         transitionWasLockedDuringGesture = false
-                        // CameraEngine ignores this when no deferred zoom-in switch is waiting.
+                        // 지연된 확대 전환이 없으면 카메라 엔진에서 무시한다.
                         latestOnZoomGestureEnded.value()
                     }
                 }
             ).apply {
-                // Avoid Android's one-finger double-tap quick-scale path. TopOut uses only the
-                // predictable two-finger pinch gesture.
+                // 한 손가락 빠른 확대를 막고 두 손가락 핀치만 사용한다.
                 isQuickScaleEnabled = false
             }
 
@@ -167,8 +159,7 @@ fun CameraPreview(
 
                 val previewView = this
                 doOnLayout {
-                    // Bind only after AspectFrame has given PreviewView its final measured size.
-                    // CameraEngine can then derive one exact ViewPort from the real preview frame.
+                    // 최종 화면 크기가 정해진 뒤 카메라 화면 영역을 계산해 연결한다.
                     latestPreviewViewChanged.value(previewView)
                     latestOnPreviewReady.value(lifecycleOwner, previewView)
                 }

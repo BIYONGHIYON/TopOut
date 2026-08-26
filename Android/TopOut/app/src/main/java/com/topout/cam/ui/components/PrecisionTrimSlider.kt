@@ -166,7 +166,7 @@ fun PrecisionTrimSlider(
         viewportSpan = safeDuration
     }
 
-    // Keep the generous touch target while shrinking only the visible controls.
+    // 표시 크기는 줄이고 터치 영역은 넉넉하게 유지한다.
     val thumbRadiusPx = with(density) { 12.dp.toPx() }
     val hitRadiusPx = with(density) { 34.dp.toPx() }
     val dragStartPx = with(density) { 4.dp.toPx() }
@@ -501,9 +501,7 @@ fun PrecisionTrimSlider(
             }
         }
 
-        // Keep the labels positioned relative to the compact zoom slider. The label row is
-        // allocated above the slider and then lifted slightly inside that shared container, so
-        // neither the title nor the current magnification can be covered by the slider thumb.
+        // 제목과 배율이 손잡이에 가리지 않도록 슬라이더 위에 배치한다.
         Column(
             modifier = Modifier
                 .fillMaxWidth()

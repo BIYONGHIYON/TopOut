@@ -1,8 +1,18 @@
 # iOS optimization audit — v1.4 (build 5)
 
-> 이 문서는 v1.4 build 5 최적화 당시의 감사 기록입니다. 현재 릴리스는 [v1.6 build 14](V1_6_BUILD_14_NOTES.md)이며 최신 동작은 [iOS README](README.md)를 기준으로 합니다.
+> 이 문서는 v1.4 build 5 최적화부터 이어진 감사 기록입니다. 현재 릴리스는 [v2.0 build 16](V2_0_BUILD_16_NOTES.md)이며 최신 동작은 [iOS README](README.md)를 기준으로 합니다.
 
 The original optimization pass kept behavior unchanged. Later platform-alignment notes below remain historical context.
+
+## v2.0 build 16 유지보수 구조 정리
+
+- `ReviewVC`에 포함돼 있던 구간 편집 컨트롤을 `TrimRangeSlider`로 분리했습니다.
+- `Camera`에 포함돼 있던 프레임 대리자를 `VideoFrameSink`로 분리했습니다.
+- `HoldVC+UI`의 화면 생성과 배치 계산을 `HoldVC+Layout`으로 분리했습니다.
+- 비활성 상태였던 Motion 디버그 문자열 생성과 출력 경로를 제거해 분석 코드의 불필요한 분기와 문자열 생성을 없앴습니다.
+- 화면 조건, 카메라 세션 순서, 탐지 임계값, 구간 시각, 저장 규칙은 변경하지 않았습니다.
+- 전체 프로덕션 주석을 간결한 한국어로 통일했습니다.
+- Swift 전체 타입 검사를 통과했습니다. 앱 빌드와 실기기 동작 검증은 수행하지 않았습니다.
 
 ## Removed
 

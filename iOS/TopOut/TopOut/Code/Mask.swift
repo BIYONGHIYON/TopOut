@@ -3,7 +3,7 @@ import UIKit
 import CoreML
 
 extension HoldVC {
-    // MARK: - Pick Creation
+    // MARK: - 선택 결과 생성
 
     func makePick(from mask: MLMultiArray, at point: CGPoint, image: UIImage, tol: Float, origin: CGPoint) throws -> Pick {
         guard let pixels else { throw AppError.encoderOutputMissing }
@@ -17,7 +17,7 @@ extension HoldVC {
         return Pick(point: point, tol: tol, blob: blob, status: status, dist: dist)
     }
 
-    // MARK: - Overlay Rendering
+    // MARK: - 마스크 표시
 
     /// 최종 결과는 mask fill 배열이 아니라 outline path만 사용합니다.
     /// 내부는 항상 투명합니다.
@@ -33,7 +33,7 @@ extension HoldVC {
         }
     }
 
-    /// SAM이 홀드 분리에 실패했을 때 사용하는 기본 원형 마스크입니다.
+    /// 홀드 분리에 실패했을 때 사용하는 기본 원형 마스크다.
     /// 반환하는 maskBox는 기존 Blob.box와 같은 mask-space 좌표라서
     /// 이후 MotionDetector / 저장 overlay 흐름을 그대로 탈 수 있습니다.
     func makeDefaultTouchOverlay(at point: CGPoint, image: UIImage) -> (overlay: UIImage, maskBox: CGRect)? {
@@ -76,7 +76,7 @@ extension HoldVC {
     }
 
     /// 실제로 필요한 최종 영역 정보입니다.
-    /// UIBezierPath만 보관하면 이후 hit test, overlay render 등에 재사용할 수 있습니다.
+    /// 경로를 보관해 터치 판정과 화면 표시에 다시 사용한다.
     func outlinePath(for blob: Blob, image: UIImage) -> UIBezierPath? {
         let baseRect = imageRect(for: blob, image: image)
         let roundedRect = roundedDrawingRect(base: baseRect, image: image)
@@ -97,7 +97,7 @@ extension HoldVC {
     }
 
     /// 작은 compact 홀드만 rounded로 처리합니다.
-    /// rounded outline이 벽면 기준 이상으로 커질 경우 contour로 강제 전환합니다.
+    /// 둥근 외곽선이 너무 커지면 윤곽선 방식으로 전환한다.
     func shouldUseRoundedShape(for blob: Blob, roundedRect: CGRect, image: UIImage) -> Bool {
         let maxSpan = max(blob.box.width, blob.box.height)
         let minSpan = max(min(blob.box.width, blob.box.height), 1)
@@ -159,9 +159,9 @@ extension HoldVC {
         return (red, white)
     }
 
-    // MARK: - Contour Points
+    // MARK: - 윤곽선 점
 
-    /// rounded가 아닌 모든 홀드는 단일 contour 로직만 사용합니다.
+    /// 둥근 형태가 아닌 홀드는 하나의 윤곽선 로직을 사용한다.
     /// 크기별 세분화 없음.
     func contourPoints(from blob: Blob, image: UIImage) -> [CGPoint] {
         let size = Cfg.maskSize
@@ -353,7 +353,7 @@ extension HoldVC {
         return edge
     }
 
-    // MARK: - Mask Filtering
+    // MARK: - 마스크 필터
 
     func validMaskMap(_ mask: MLMultiArray, image: UIImage, pixels: PixelMap, target: RGB, tol: Float) -> [Bool] {
         let size = Cfg.maskSize
@@ -482,7 +482,7 @@ extension HoldVC {
         Int(visibleMaskArea(for: image) * Cfg.tinyAreaRatio)
     }
 
-    // MARK: - Coordinate Conversion
+    // MARK: - 좌표 변환
 
     func imagePoint(from viewPoint: CGPoint, image: UIImage) -> CGPoint? {
         let viewSize = imgView.bounds.size
@@ -518,7 +518,7 @@ extension HoldVC {
         return CGPoint(x: modelX / samScale, y: modelY / samScale)
     }
 
-    // MARK: - MLMultiArray Helpers
+    // MARK: - 배열 도우미
 
     func maskChannel(_ mask: MLMultiArray) -> Int {
         let channels = mask.shape[1].intValue
@@ -530,7 +530,7 @@ extension HoldVC {
         return mask[index].floatValue
     }
 
-    // MARK: - Color
+    // MARK: - 색상
 
     static func rgbToHSV(_ rgb: RGB) -> HSV {
         let r = Float(rgb.r) / 255

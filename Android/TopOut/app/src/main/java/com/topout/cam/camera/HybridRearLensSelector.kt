@@ -85,8 +85,7 @@ internal fun <T> selectHybridRearLensCandidates(
         )
         val requiredPreviousZoom = (anchor - safeGap).coerceAtLeast(previousGestureAnchor)
         if (previousDisplayMax + boundaryEpsilon < requiredPreviousZoom) {
-            // The current camera would clamp while the UI continued toward this anchor. Do not
-            // expose this or any higher route unless the preceding route can actually reach it.
+            // 이전 렌즈가 기준 배율에 닿지 못하면 이후 렌즈 경로도 노출하지 않는다.
             break
         }
         selected += chosen

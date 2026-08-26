@@ -65,13 +65,11 @@ class MainActivity : AppCompatActivity() {
             navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // Keep the gesture-navigation area transparent when content intentionally draws
-            // edge-to-edge. Insets are applied by the individual Compose controls.
+            // 전체 화면 콘텐츠를 위해 제스처 영역을 투명하게 유지한다.
             window.isNavigationBarContrastEnforced = false
         }
 
-        // Resolve the ViewModel before composing the one-second brand thumbnail so launch state is
-        // ready. Heavy MobileSAM sessions are prepared only after CameraX is already streaming.
+        // 시작 상태를 먼저 준비하고 MobileSAM은 카메라 스트리밍 뒤에 불러온다.
         val startupViewModel = viewModel
 
         setContent {

@@ -3,8 +3,7 @@ import CoreImage
 @preconcurrency import AVFoundation
 
 enum CameraCfg {
-    // SAM 입력은 1024이므로 캡처 원본을 너무 크게 들고 있을 필요가 없습니다.
-    // 녹화 해상도와 무관하게 탑홀드 선택용 캡처 이미지는 이 크기로 축소합니다.
+    // 분석용 캡처 이미지는 녹화 해상도와 무관하게 이 크기로 줄인다.
     static let captureMaxLongSide: CGFloat = 1600
 }
 
@@ -75,10 +74,7 @@ extension HoldVC {
             return
         }
 
-        // setupCamera() builds the initial graph. After an audio interruption, however,
-        // disableAudioCaptureForCurrentSession() removes only the microphone branch while keeping
-        // the video graph alive. Restore that branch explicitly for the next recording instead of
-        // relying on setupCamera(), which intentionally returns early once the camera is ready.
+        // 오디오 중단 뒤 영상 연결은 유지하고 다음 녹화 전에 마이크 연결만 복구한다.
         sessionQ.async { [weak self] in
             guard let self else { return }
 
@@ -129,18 +125,13 @@ extension HoldVC {
     }
 
     func setupCamera() {
-        // Swift 6 대응:
-        // VideoFrameSink delegate conformance가 MainActor-isolated로 해석될 수 있으므로
-        // delegate 연결은 setupCamera()의 MainActor 컨텍스트에서 처리합니다.
-        // 실제 콜백은 아래 videoOutputQ에서 들어옵니다.
+        // Swift 6 격리를 위해 대리자 연결은 주 실행자에서, 콜백은 전용 큐에서 처리한다.
         videoOutput.setSampleBufferDelegate(videoFrameSink, queue: videoOutputQ)
         audioOutput.setSampleBufferDelegate(videoFrameSink, queue: audioOutputQ)
         videoFrameSink.setStreamReadinessHandler { [weak self] in
             guard let self else { return }
             self.isCameraStreamReady = true
-            // A review retake restarts the stream immediately before the recording countdown.
-            // Do not reload models that recording entry deliberately released to lower peak RAM.
-            // Selection states still preload after a background/foreground camera restart.
+            // 재촬영 카운트다운에서는 해제한 모델을 다시 불러오지 않고 선택 단계에서만 예열한다.
             if self.recState == .idle,
                self.mode == .camera || self.mode == .select || self.mode == .processing {
                 self.preloadMobileSAMAfterCameraStarts()
@@ -546,8 +537,7 @@ extension HoldVC {
     }
 
     func startCamera() {
-        // Async camera setup can finish after the user has already backgrounded
-        // the app. Never revive capture until an active lifecycle callback asks again.
+        // 앱이 비활성 상태면 늦게 끝난 카메라 설정으로 촬영을 다시 시작하지 않는다.
         guard UIApplication.shared.applicationState == .active else { return }
 
         sessionQ.async { [weak self] in
@@ -585,8 +575,7 @@ extension HoldVC {
     }
 
     func refreshReadyButtonAfterSessionRecovery() {
-        // startCamera() is queued on sessionQ first. Checking on the same queue distinguishes an
-        // already-running session from a fresh restart whose six-frame readiness gate must run.
+        // 같은 세션 큐에서 실행 상태를 확인해 새 시작에만 프레임 준비 조건을 적용한다.
         sessionQ.async { [weak self] in
             guard let self else { return }
             let isRunning = self.session.isRunning
@@ -703,7 +692,7 @@ extension HoldVC {
         let requestID = readyFlowRequestID
 
         // 준비완료 화면과 동일한 비율/줌의 비디오 프레임을 그대로 사용합니다.
-        // PhotoOutput은 비디오 프리뷰와 FOV가 달라질 수 있어 선택/마스크 좌표 오차를 만들 수 있습니다.
+        // 사진 출력은 영상 화각과 다를 수 있으므로 사용하지 않는다.
         applySelectedCaptureFormatIfPossible { [weak self] in
             guard let self else { return }
             guard self.isReadyFlowValid(requestID) else { return }
@@ -765,269 +754,5 @@ extension HoldVC {
             mode == .camera &&
             recState == .idle &&
             isBusy
-    }
-}
-
-
-final class VideoFrameSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate {
-    private let recorder: ContinuousRecorder
-    private let motionDetector: MotionDetector
-    private let stateQ = DispatchQueue(label: "topout.video.frame.sink.state")
-    private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
-    private var isRecording = false
-    private var isMotionDetectionEnabled = false
-    private var videoFramesSinceReset = 0
-    private var didNotifyStreamReady = false
-    private var streamReadinessHandler: (() -> Void)?
-
-    private enum FrameCapturePolicy {
-        case nextFrame
-        case stableCamera(AVCaptureDevice?)
-    }
-
-    private struct FrameCaptureRequest {
-        let id: UUID
-        let aspectRatio: CGFloat
-        let maxLongSide: CGFloat
-        let completion: (UIImage?) -> Void
-        let policy: FrameCapturePolicy
-        let requestedAt: TimeInterval
-        var observedFrames: Int
-        var consecutiveStableFrames: Int
-    }
-
-    private var pendingFrameCapture: FrameCaptureRequest?
-
-    init(recorder: ContinuousRecorder, motionDetector: MotionDetector) {
-        self.recorder = recorder
-        self.motionDetector = motionDetector
-        super.init()
-    }
-
-    func setStreamReadinessHandler(_ handler: @escaping () -> Void) {
-        stateQ.async { [weak self] in
-            self?.streamReadinessHandler = handler
-        }
-    }
-
-    func resetStreamReadiness() {
-        stateQ.async { [weak self] in
-            self?.videoFramesSinceReset = 0
-            self?.didNotifyStreamReady = false
-        }
-    }
-
-
-    func setRecording(_ recording: Bool) {
-        stateQ.async { [weak self] in
-            guard let self else { return }
-            self.isRecording = recording
-            if !recording {
-                self.isMotionDetectionEnabled = false
-            }
-        }
-    }
-
-    func setMotionDetectionEnabled(_ enabled: Bool) {
-        stateQ.async { [weak self] in
-            self?.isMotionDetectionEnabled = enabled
-        }
-    }
-
-    func captureCurrentFrame(
-        aspectRatio: CGFloat,
-        maxLongSide: CGFloat,
-        completion: @escaping (UIImage?) -> Void
-    ) {
-        enqueueFrameCapture(
-            aspectRatio: aspectRatio,
-            maxLongSide: maxLongSide,
-            policy: .nextFrame,
-            completion: completion
-        )
-    }
-
-    /// Waits for new post-Ready frames and prefers frames captured after camera 3A has settled.
-    /// This prevents a cold-start or just-reconfigured frame from becoming MobileSAM input.
-    func captureStableFrame(
-        aspectRatio: CGFloat,
-        maxLongSide: CGFloat,
-        camera: AVCaptureDevice?,
-        completion: @escaping (UIImage?) -> Void
-    ) {
-        enqueueFrameCapture(
-            aspectRatio: aspectRatio,
-            maxLongSide: maxLongSide,
-            policy: .stableCamera(camera),
-            completion: completion
-        )
-    }
-
-    private func enqueueFrameCapture(
-        aspectRatio: CGFloat,
-        maxLongSide: CGFloat,
-        policy: FrameCapturePolicy,
-        completion: @escaping (UIImage?) -> Void
-    ) {
-        let request = FrameCaptureRequest(
-            id: UUID(),
-            aspectRatio: aspectRatio,
-            maxLongSide: maxLongSide,
-            completion: completion,
-            policy: policy,
-            requestedAt: ProcessInfo.processInfo.systemUptime,
-            observedFrames: 0,
-            consecutiveStableFrames: 0
-        )
-
-        // Keep preview running at the selected camera FPS, but do not retain every preview frame.
-        stateQ.async { [weak self] in
-            self?.pendingFrameCapture = request
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
-            guard let self else { return }
-            self.stateQ.async { [weak self] in
-                guard let self, self.pendingFrameCapture?.id == request.id else { return }
-                self.pendingFrameCapture = nil
-                DispatchQueue.main.async { request.completion(nil) }
-            }
-        }
-    }
-
-    func captureOutput(
-        _ output: AVCaptureOutput,
-        didOutput sampleBuffer: CMSampleBuffer,
-        from connection: AVCaptureConnection
-    ) {
-        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
-        let mediaType = CMFormatDescriptionGetMediaType(formatDescription)
-
-        if mediaType == kCMMediaType_Audio {
-            let shouldRecord = stateQ.sync { isRecording }
-            guard shouldRecord else { return }
-            recorder.appendAudio(sampleBuffer)
-            return
-        }
-        guard mediaType == kCMMediaType_Video else { return }
-
-        let state = stateQ.sync { () -> (
-            recording: Bool,
-            motionDetection: Bool,
-            capture: FrameCaptureRequest?,
-            streamReadyHandler: (() -> Void)?
-        ) in
-            var capture: FrameCaptureRequest?
-            var readyHandler: (() -> Void)?
-
-            videoFramesSinceReset += 1
-            if !didNotifyStreamReady, videoFramesSinceReset >= 6 {
-                didNotifyStreamReady = true
-                readyHandler = streamReadinessHandler
-            }
-
-            if var request = pendingFrameCapture {
-                request.observedFrames += 1
-                let shouldCapture: Bool
-                switch request.policy {
-                case .nextFrame:
-                    shouldCapture = true
-                case let .stableCamera(camera):
-                    let elapsed = ProcessInfo.processInfo.systemUptime - request.requestedAt
-                    let cameraIsSettled = camera.map {
-                        !$0.isAdjustingExposure && !$0.isAdjustingFocus && !$0.isAdjustingWhiteBalance
-                    } ?? true
-                    request.consecutiveStableFrames = cameraIsSettled
-                        ? request.consecutiveStableFrames + 1
-                        : 0
-                    let hasFreshFrames = request.observedFrames >= 4 && elapsed >= 0.20
-                    let hasStableCamera = request.consecutiveStableFrames >= 2
-                    shouldCapture = (hasFreshFrames && hasStableCamera) || elapsed >= 0.90
-                }
-
-                if shouldCapture {
-                    capture = request
-                    pendingFrameCapture = nil
-                } else {
-                    pendingFrameCapture = request
-                }
-            }
-            return (isRecording, isMotionDetectionEnabled, capture, readyHandler)
-        }
-        let shouldRecord = state.recording
-        let shouldRunMotionDetection = state.motionDetection
-
-        if let readyHandler = state.streamReadyHandler {
-            DispatchQueue.main.async(execute: readyHandler)
-        }
-
-        if let request = state.capture,
-           let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
-            DispatchQueue.global(qos: .userInitiated).async { [ciContext, pixelBuffer] in
-                let image = autoreleasepool {
-                    Self.makeCroppedImage(
-                        from: pixelBuffer,
-                        aspectRatio: request.aspectRatio,
-                        maxLongSide: request.maxLongSide,
-                        context: ciContext
-                    )
-                }
-                DispatchQueue.main.async { request.completion(image) }
-            }
-        }
-
-        guard shouldRecord else { return }
-        recorder.append(sampleBuffer)
-        if shouldRunMotionDetection {
-            motionDetector.update(sampleBuffer)
-        }
-    }
-
-    private static func makeCroppedImage(
-        from pixelBuffer: CVPixelBuffer,
-        aspectRatio: CGFloat,
-        maxLongSide: CGFloat,
-        context: CIContext
-    ) -> UIImage? {
-        let source = CIImage(cvPixelBuffer: pixelBuffer)
-        let sourceExtent = source.extent.integral
-        guard sourceExtent.width > 0, sourceExtent.height > 0, aspectRatio > 0 else { return nil }
-
-        let currentAspect = sourceExtent.width / sourceExtent.height
-        let crop: CGRect
-        if currentAspect > aspectRatio {
-            let width = sourceExtent.height * aspectRatio
-            crop = CGRect(
-                x: sourceExtent.midX - width * 0.5,
-                y: sourceExtent.minY,
-                width: width,
-                height: sourceExtent.height
-            )
-        } else {
-            let height = sourceExtent.width / aspectRatio
-            crop = CGRect(
-                x: sourceExtent.minX,
-                y: sourceExtent.midY - height * 0.5,
-                width: sourceExtent.width,
-                height: height
-            )
-        }
-
-        let normalized = source
-            .cropped(to: crop.integral)
-            .transformed(by: CGAffineTransform(translationX: -crop.integral.minX, y: -crop.integral.minY))
-
-        let longSide = max(normalized.extent.width, normalized.extent.height)
-        let scale = longSide > maxLongSide ? maxLongSide / longSide : 1
-        let outputExtent = CGRect(
-            x: 0,
-            y: 0,
-            width: floor(normalized.extent.width * scale),
-            height: floor(normalized.extent.height * scale)
-        )
-        let output = normalized.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-
-        guard let cgImage = context.createCGImage(output, from: outputExtent) else { return nil }
-        return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
     }
 }

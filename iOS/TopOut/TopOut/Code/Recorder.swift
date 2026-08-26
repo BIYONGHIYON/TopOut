@@ -4,7 +4,7 @@ import UIKit
 @preconcurrency import AVFoundation
 import CoreMedia
 
-// MARK: - Continuous Recorder
+// MARK: - 연속 녹화기
 
 /// 하나의 .mov 파일에 계속 쓰는 연속 녹화 recorder입니다.
 /// 녹화 중에는 segment 파일을 만들지 않고, 사용자가 종료한 뒤 필요한 구간만 잘라 저장합니다.
@@ -46,7 +46,7 @@ final class ContinuousRecorder: @unchecked Sendable {
     private(set) var isRunning = false
     private var isStopping = false
 
-    // MARK: Public
+    // MARK: - 공개 동작
 
     func configure(resolution: RecordingResolution, frameRate: RecordingFrameRate, aspectRatio: RecordingAspectRatio = .story916) {
         q.async {
@@ -76,12 +76,7 @@ final class ContinuousRecorder: @unchecked Sendable {
 
 
     func append(_ sampleBuffer: CMSampleBuffer) {
-        // Keep capture backpressure on AVCaptureVideoDataOutput's delegate queue.
-        // Enqueuing every 4K/60fps CMSampleBuffer asynchronously can retain an
-        // unbounded number of full-resolution frames when AVAssetWriter stalls.
-        // The capture output already discards late frames, so processing the
-        // append synchronously here bounds memory without changing timestamp or
-        // writer ordering semantics.
+        // 고해상도 프레임이 무한히 쌓이지 않도록 캡처 큐에서 동기 순서로 기록한다.
         q.sync {
             guard self.isRunning, !self.isStopping else { return }
             guard CMSampleBufferDataIsReady(sampleBuffer) else { return }
@@ -108,8 +103,7 @@ final class ContinuousRecorder: @unchecked Sendable {
     }
 
     func appendAudio(_ sampleBuffer: CMSampleBuffer) {
-        // Audio follows the same serial writer ordering and must not build a
-        // second retained sample-buffer backlog while video is under pressure.
+        // 오디오도 같은 기록 순서를 사용해 별도 버퍼 적체를 막는다.
         q.sync {
             guard self.isRunning, !self.isStopping else { return }
             guard CMSampleBufferDataIsReady(sampleBuffer) else { return }
@@ -201,7 +195,7 @@ final class ContinuousRecorder: @unchecked Sendable {
     }
 
     /// 종료된 원본 녹화 파일에서 선택 구간만 잘라 별도 파일로 export합니다.
-    /// from/to는 녹화 파일 시작 기준 초 단위입니다.
+    /// 시작과 끝은 녹화 파일 기준 초 단위다.
     func exportTrimmedClip(
         fromOffset startSeconds: TimeInterval,
         toOffset endSeconds: TimeInterval,
@@ -279,10 +273,7 @@ final class ContinuousRecorder: @unchecked Sendable {
             overlayImage = nil
         }
 
-        // Passthrough trimming can begin between H.264 sync frames. In that case audio starts at
-        // the requested time while video can hold a stale frame until its dependencies arrive.
-        // Always use a high-quality transcode so the exported clip gets a decodable first frame
-        // at the exact user-selected boundary. This also keeps masked and unmasked saves aligned.
+        // 선택한 시작점에서 영상과 오디오가 함께 시작하도록 고화질 재인코딩한다.
         return try await exportComposedTrim(
             source: source,
             outURL: outURL,
@@ -433,7 +424,7 @@ final class ContinuousRecorder: @unchecked Sendable {
         }
     }
 
-    // MARK: Writer Lifecycle
+    // MARK: - 기록기 생명주기
 
     private func startWriterLocked(firstBuffer: CMSampleBuffer, startPTS: CMTime) {
         guard let folder else { return }
@@ -482,7 +473,7 @@ final class ContinuousRecorder: @unchecked Sendable {
         }
     }
 
-    // MARK: Settings / Files
+    // MARK: - 설정과 파일
 
     private func videoSettings(from sampleBuffer: CMSampleBuffer) -> [String: Any] {
         guard let fmt = CMSampleBufferGetFormatDescription(sampleBuffer) else {

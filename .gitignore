@@ -28,6 +28,9 @@ local.properties
 # Separate public repository checkout
 /TopOut-app/
 
+# Local mock app (including bundled test media)
+/iOS-TopOut-Mock/
+
 # Android signing keys
 keystore/
 *.jks

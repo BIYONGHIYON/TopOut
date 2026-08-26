@@ -72,8 +72,7 @@ extension HoldVC {
 
         selectionRequestID += 1
         let requestID = selectionRequestID
-        // Every tap represents a new live-camera selection. Discard the old FOV-dependent mask
-        // immediately so camera movement between taps can never leave a stale overlay enabled.
+        // 탭할 때마다 이전 화각의 마스크를 버리고 새 선택을 시작한다.
         pendingOverlay = nil
         pendingTopBox = nil
         selectOverlayView.image = nil
@@ -84,8 +83,7 @@ extension HoldVC {
         selectHint.text = L("camera.analyzing_hold")
         setLoading(true)
 
-        // Capture a new video frame for every tap so MobileSAM follows any physical camera-angle
-        // change while the Ready-time lens/zoom FOV remains locked.
+        // 카메라 화각은 고정하되 탭마다 새 영상 프레임을 캡처한다.
         videoFrameSink.captureCurrentFrame(
             aspectRatio: activeRecordingAspect,
             maxLongSide: CameraCfg.captureMaxLongSide
@@ -112,8 +110,7 @@ extension HoldVC {
 
             self.workQ.async { [weak self] in
                 autoreleasepool {
-                    // No post-capture editor zoom is applied. The Ready-time camera zoom is already baked
-                    // into this fresh image, so correction distances use the native 1x image scale.
+                    // 촬영 배율이 이미지에 반영되어 있으므로 보정 좌표는 이미지 1배 기준을 사용한다.
                     self?.runSAM(at: imagePoint, image: image, zoom: 1, requestID: requestID)
                 }
             }

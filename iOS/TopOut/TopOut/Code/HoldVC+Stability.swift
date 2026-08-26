@@ -2,7 +2,7 @@ import UIKit
 import AVFoundation
 
 extension HoldVC {
-    // MARK: - App / Capture Session Interruptions
+    // MARK: - 앱과 촬영 중단
 
     func registerRecordingStabilityObservers() {
         let center = NotificationCenter.default
@@ -130,7 +130,7 @@ extension HoldVC {
         }
     }
 
-    // MARK: - Storage Monitoring
+    // MARK: - 저장 공간 확인
 
     func startRecordingStorageMonitor() {
         stopRecordingStorageMonitor()
@@ -200,7 +200,7 @@ extension HoldVC {
         return max(absoluteMinimum, estimatedBytesForTwoMinutes + finalizationReserve)
     }
 
-    // MARK: - Automatic Stop
+    // MARK: - 자동 종료
 
     func requestAutomaticRecordingStop(notice: RecordingStopNotice) {
         guard recState == .buffering, !isAutomaticStopInProgress else { return }
@@ -304,8 +304,7 @@ extension HoldVC {
               recState == .idle,
               mode == .camera else { return }
 
-        // The foreground notification can arrive while recorder.stop is still pending. If that
-        // stop then yields no usable file, no second activation callback follows to revive capture.
+        // 녹화 종료 중 복귀해도 다음 촬영을 위해 오디오와 카메라 복구를 준비한다.
         prepareAudioSessionForCameraUse()
         startCamera()
     }
@@ -343,7 +342,7 @@ extension HoldVC {
         presenter.present(alert, animated: true)
     }
 
-    // MARK: - Background Task
+    // MARK: - 백그라운드 작업
 
     func beginRecordingStopBackgroundTask() {
         guard recordingStopBackgroundTask == .invalid else { return }

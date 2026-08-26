@@ -40,9 +40,7 @@ extension HoldVC {
                 self.pendingOverlay = selection.overlay
                 self.pendingTopBox = selection.box
                 self.selectOverlayView.image = selection.overlay
-                // Pixel RGB data and this frame's embedding are no longer needed.
-                // Keep the already loaded models until recording starts so Retake
-                // can analyze promptly without putting model load inside the 5s watchdog.
+                // 선택 뒤 픽셀과 임베딩만 비우고 재촬영을 위해 모델은 유지한다.
                 self.pixels = nil
                 self.emb = nil
                 self.mode = .select

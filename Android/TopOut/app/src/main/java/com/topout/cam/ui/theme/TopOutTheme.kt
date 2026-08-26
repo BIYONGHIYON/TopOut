@@ -34,8 +34,7 @@ private val scheme = darkColorScheme(
 @Composable
 fun TopOutTheme(content: @Composable () -> Unit) {
     val density = LocalDensity.current
-    // Samsung display/font settings can otherwise enlarge fixed camera controls enough to clip.
-    // Keep physical dp density intact and cap only font scaling for this camera-first UI.
+    // 기기 글자 확대 설정으로 고정 카메라 조작부가 잘리지 않도록 글자 배율만 제한한다.
     val stableDensity = Density(density.density, fontScale = density.fontScale.coerceAtMost(1f))
     CompositionLocalProvider(LocalDensity provides stableDensity) {
         MaterialTheme(colorScheme = scheme, content = content)
