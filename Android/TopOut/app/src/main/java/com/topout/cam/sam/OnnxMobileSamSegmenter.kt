@@ -150,6 +150,13 @@ class OnnxMobileSamSegmenter(
         }
     }
 
+    /** 분석 제한 시간에 도달했을 때 탭 위치를 보존하는 기본 원형 마스크입니다. */
+    internal fun fallbackHoldMask(bitmap: Bitmap, normalizedTap: Offset): HoldMask {
+        require(!bitmap.isRecycled) { "선택할 카메라 이미지가 이미 해제되었습니다." }
+        require(bitmap.width > 0 && bitmap.height > 0) { "선택할 이미지 크기가 올바르지 않습니다." }
+        return makeFallbackHoldMask(bitmap, normalizedTap.clamped())
+    }
+
     override fun close() {
         if (!closeRequested.compareAndSet(false, true)) return
         // 새 작업은 즉시 막고 진행 중인 호출이 잠금을 벗어난 뒤 세션을 닫는다.

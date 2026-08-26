@@ -38,7 +38,7 @@ fun TopStatusBanner(
             ),
         color = Color.White,
         autoSize = TextAutoSize.StepBased(
-            minFontSize = 10.sp,
+            minFontSize = 8.5.sp,
             maxFontSize = 14.5.sp,
             stepSize = 0.25.sp
         ),
@@ -51,8 +51,8 @@ fun TopStatusBanner(
             )
         ),
         textAlign = TextAlign.Center,
-        maxLines = 2,
-        softWrap = true,
+        maxLines = 1,
+        softWrap = false,
         overflow = TextOverflow.Clip
     )
 }

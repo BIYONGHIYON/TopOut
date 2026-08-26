@@ -285,6 +285,7 @@ object TopOutConfig {
     const val FallbackHoldMaskDiameterRatio = 0.075f
     const val FallbackHoldMaskMinDiameter = 44f
     const val FallbackHoldMaskMaxDiameterRatio = 0.12f
+    const val TopHoldAnalysisTimeoutMillis = 5_000L
 
     // iOS와 같이 선택 화면은 5배, 카메라는 8배로 제한한다.
     const val MinZoom = 0.5f

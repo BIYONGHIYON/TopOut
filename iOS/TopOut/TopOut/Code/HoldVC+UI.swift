@@ -490,6 +490,8 @@ extension HoldVC {
     func clearSelectionCache(clearPending: Bool) {
         matBoundaryAnalysisTimeoutWorkItem?.cancel()
         matBoundaryAnalysisTimeoutWorkItem = nil
+        topHoldAnalysisTimeoutWorkItem?.cancel()
+        topHoldAnalysisTimeoutWorkItem = nil
         selectionRequestID += 1
 
         if clearPending {

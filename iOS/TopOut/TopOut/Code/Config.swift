@@ -44,6 +44,7 @@ enum Cfg {
     // MARK: - 매트 탐지
     static let matDefaultY: CGFloat = 0.75
     static let matBoundaryAnalysisTimeout: TimeInterval = 5
+    static let topHoldAnalysisTimeout: TimeInterval = 5
 
     // MARK: - 매트 경계 UI
     static let matLineWidth: CGFloat = 3
@@ -76,7 +77,6 @@ enum Cfg {
     static let motionPoseInputMaxLongSide: CGFloat = 384
     static let motionPoseMinConfidence: Float = 0.25
     static let motionPoseSelectionBoundsPaddingRatio: CGFloat = 0.04
-    static let motionPoseSelectionMaxCenterDistanceRatio: CGFloat = 0.40
     static let motionPoseNoPoseRetrySeconds: TimeInterval = 6.0
     static let motionClipBoundaryPaddingSeconds: TimeInterval = 3.0
     static let motionShortClipMinimumDetectionSeconds: TimeInterval = 2.0

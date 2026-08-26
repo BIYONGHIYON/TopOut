@@ -107,6 +107,11 @@ extension HoldVC {
             self.frameImage = image
             self.pixels = PixelMap(image: image)
             self.emb = nil
+            self.scheduleTopHoldAnalysisTimeout(
+                at: imagePoint,
+                image: image,
+                requestID: requestID
+            )
 
             self.workQ.async { [weak self] in
                 autoreleasepool {

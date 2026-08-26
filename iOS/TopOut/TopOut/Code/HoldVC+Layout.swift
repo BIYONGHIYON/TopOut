@@ -65,8 +65,8 @@ extension HoldVC {
         let isLandscape = isLandscapeLayout
         let activeFrame = selectedRecordingAspectRatio.displayRect(in: bounds, isLandscape: isLandscape)
 
-        let topMessageHeight: CGFloat = isLandscape ? 38 : 44
-        let topMessageOffsetBelowBaseline: CGFloat = 7
+        let topMessageHeight: CGFloat = isLandscape ? 30 : 32
+        let topMessageOffsetBelowBaseline: CGFloat = 4
         let topMessageGap: CGFloat = 6 - topMessageOffsetBelowBaseline
         let topMessageY = alignedTopMessageY(
             contentTopY: activeFrame.minY,

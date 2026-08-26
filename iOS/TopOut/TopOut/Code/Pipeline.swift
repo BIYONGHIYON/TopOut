@@ -2,6 +2,43 @@ import UIKit
 import CoreML
 
 extension HoldVC {
+    func scheduleTopHoldAnalysisTimeout(at point: CGPoint, image: UIImage, requestID: Int) {
+        topHoldAnalysisTimeoutWorkItem?.cancel()
+
+        let timeoutWorkItem = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.selectionRequestID == requestID,
+                  self.mode == .processing else { return }
+
+            self.topHoldAnalysisTimeoutWorkItem = nil
+            self.selectionRequestID += 1
+
+            if let fallback = self.makeDefaultTouchOverlay(at: point, image: image) {
+                self.pendingOverlay = fallback.overlay
+                self.pendingTopBox = fallback.maskBox
+                self.selectOverlayView.image = fallback.overlay
+                self.recordBtn.isEnabled = true
+                self.selectHint.text = L("camera.selection_complete")
+            } else {
+                self.recordBtn.isEnabled = false
+                self.selectHint.text = L("camera.selection_failed")
+            }
+
+            self.pixels = nil
+            self.emb = nil
+            self.isBusy = false
+            self.mode = .select
+            self.retakeBtn.isEnabled = true
+            self.setLoading(false)
+        }
+
+        topHoldAnalysisTimeoutWorkItem = timeoutWorkItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Cfg.topHoldAnalysisTimeout,
+            execute: timeoutWorkItem
+        )
+    }
+
     func runSAM(at point: CGPoint, image: UIImage, zoom: CGFloat, requestID: Int) {
         do {
             let emb = try getEmbedding(for: image)
@@ -37,6 +74,8 @@ extension HoldVC {
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.selectionRequestID == requestID, self.mode == .processing else { return }
 
+                self.topHoldAnalysisTimeoutWorkItem?.cancel()
+                self.topHoldAnalysisTimeoutWorkItem = nil
                 self.pendingOverlay = selection.overlay
                 self.pendingTopBox = selection.box
                 self.selectOverlayView.image = selection.overlay
@@ -54,6 +93,8 @@ extension HoldVC {
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.selectionRequestID == requestID, self.mode == .processing else { return }
 
+                self.topHoldAnalysisTimeoutWorkItem?.cancel()
+                self.topHoldAnalysisTimeoutWorkItem = nil
                 if let fallback = self.makeDefaultTouchOverlay(at: point, image: image) {
                     self.pendingOverlay = fallback.overlay
                     self.pendingTopBox = fallback.maskBox

@@ -676,11 +676,6 @@ final class MotionDetector {
                     bestOverlap = overlap
                 }
             }
-            let maximumDistance = Cfg.motionPoseSelectionMaxCenterDistanceRatio
-            // 멀리 있는 사람이 유실된 등반자를 대신하지 못하게 자세 없음으로 처리한다.
-            guard bestOverlap > 0 || bestDistance <= maximumDistance * maximumDistance else {
-                return nil
-            }
             return best
         }
 

@@ -85,8 +85,11 @@ final class HoldVC: UIViewController {
         label.layer.shadowRadius = 3
         label.layer.shadowOffset = CGSize(width: 0, height: 1)
         label.clipsToBounds = false
-        label.numberOfLines = 2
-        label.lineBreakMode = .byWordWrapping
+        label.numberOfLines = 1
+        label.lineBreakMode = .byClipping
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.62
+        label.allowsDefaultTighteningForTruncation = true
         return label
     }()
 
@@ -95,12 +98,15 @@ final class HoldVC: UIViewController {
         label.text = L("camera.tip_rotation")
         label.textColor = UIColor.white.withAlphaComponent(0.92)
         label.textAlignment = .center
-        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.font = .systemFont(ofSize: 12, weight: .medium)
         label.backgroundColor = UIColor.black.withAlphaComponent(0.35)
         label.layer.cornerRadius = 10
         label.clipsToBounds = true
         label.adjustsFontSizeToFitWidth = true
-        label.minimumScaleFactor = 0.72
+        label.minimumScaleFactor = 0.76
+        label.numberOfLines = 1
+        label.lineBreakMode = .byClipping
+        label.allowsDefaultTighteningForTruncation = true
         label.isHidden = true
         return label
     }()
@@ -241,8 +247,11 @@ final class HoldVC: UIViewController {
         label.layer.shadowRadius = 3
         label.layer.shadowOffset = CGSize(width: 0, height: 1)
         label.clipsToBounds = false
-        label.numberOfLines = 2
-        label.lineBreakMode = .byWordWrapping
+        label.numberOfLines = 1
+        label.lineBreakMode = .byClipping
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.62
+        label.allowsDefaultTighteningForTruncation = true
         return label
     }()
 
@@ -251,12 +260,15 @@ final class HoldVC: UIViewController {
         label.text = ""
         label.textColor = UIColor.white.withAlphaComponent(0.92)
         label.textAlignment = .center
-        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.font = .systemFont(ofSize: 12, weight: .medium)
         label.backgroundColor = UIColor.black.withAlphaComponent(0.35)
         label.layer.cornerRadius = 10
         label.clipsToBounds = true
         label.adjustsFontSizeToFitWidth = true
-        label.minimumScaleFactor = 0.72
+        label.minimumScaleFactor = 0.76
+        label.numberOfLines = 1
+        label.lineBreakMode = .byClipping
+        label.allowsDefaultTighteningForTruncation = true
         return label
     }()
 
@@ -328,6 +340,7 @@ final class HoldVC: UIViewController {
     var matLinePoints: [CGPoint] = []
     var selectionRequestID = 0
     var matBoundaryAnalysisTimeoutWorkItem: DispatchWorkItem?
+    var topHoldAnalysisTimeoutWorkItem: DispatchWorkItem?
     var samScale: CGFloat = 1
     var isBusy = false
 
@@ -494,6 +507,7 @@ final class HoldVC: UIViewController {
     deinit {
         NotificationCenter.default.removeObserver(self)
         matBoundaryAnalysisTimeoutWorkItem?.cancel()
+        topHoldAnalysisTimeoutWorkItem?.cancel()
         cancelRecordingCountdown()
         recordingElapsedTimer?.invalidate()
         recordingStorageTimer?.invalidate()

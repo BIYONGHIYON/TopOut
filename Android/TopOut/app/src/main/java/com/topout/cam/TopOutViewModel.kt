@@ -22,6 +22,7 @@ import com.topout.cam.model.ClipRange
 import com.topout.cam.model.ClipRangeNormalizer
 import com.topout.cam.model.DetectedClipRangeStore
 import com.topout.cam.model.GalleryClipSelection
+import com.topout.cam.model.HoldMask
 import com.topout.cam.model.LensTransitionPhase
 import com.topout.cam.model.LensTransitionUiState
 import com.topout.cam.model.RecordedVideo
@@ -66,6 +67,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private var cameraBindingJob: Job? = null
     private var mobileSamPreloadJob: Job? = null
     private var matBoundaryTimeoutJob: Job? = null
+    private var topHoldAnalysisTimeoutJob: Job? = null
     private var selectionAnalysisJob: Job? = null
     // 화면 재생성 뒤 이전 UI가 남지 않도록 생명주기 객체는 약한 참조로 보관한다.
     private var latestLifecycleOwner = WeakReference<LifecycleOwner>(null)
@@ -433,6 +435,8 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private fun invalidateSelectionRequest() {
         matBoundaryTimeoutJob?.cancel()
         matBoundaryTimeoutJob = null
+        topHoldAnalysisTimeoutJob?.cancel()
+        topHoldAnalysisTimeoutJob = null
         selectionAnalysisJob?.cancel()
         selectionAnalysisJob = null
         selectionRequestId += 1
@@ -442,6 +446,8 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         if (requestId != selectionRequestId) return false
         matBoundaryTimeoutJob?.cancel()
         matBoundaryTimeoutJob = null
+        topHoldAnalysisTimeoutJob?.cancel()
+        topHoldAnalysisTimeoutJob = null
         selectionAnalysisJob = null
         selectionRequestId += 1
         return true
@@ -506,33 +512,38 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
 
+            val fallbackMask = mobileSam.fallbackHoldMask(frame, normalizedPoint)
+            topHoldAnalysisTimeoutJob = viewModelScope.launch {
+                delay(TopOutConfig.TopHoldAnalysisTimeoutMillis)
+                cancelSelectionAnalysis(requestId)
+                completeTopHoldAnalysis(requestId, fallbackMask)
+            }
+
             try {
                 holdSegmenter.segment(frame, normalizedPoint, 1f)
                     .onSuccess { mask ->
-                        if (!finishSelectionRequest(requestId)) return@onSuccess
-                        _uiState.update { currentState ->
-                            if (currentState.stage != CameraStage.SELECT) currentState
-                            else currentState.copy(
-                                holdMask = mask,
-                                isBusy = false,
-                                statusText = tr("camera.selection_complete")
-                            )
-                        }
+                        completeTopHoldAnalysis(requestId, mask)
                     }
                     .onFailure {
-                        if (!finishSelectionRequest(requestId)) return@onFailure
-                        _uiState.update {
-                            it.copy(
-                                isBusy = false,
-                                statusText = tr("camera.selection_failed"),
-                                errorMessage = tr("camera.selection_failed")
-                            )
-                        }
+                        completeTopHoldAnalysis(requestId, fallbackMask)
                     }
             } finally {
                 mobileSam.releaseCachedEmbedding()
                 if (!frame.isRecycled) frame.recycle()
             }
+        }
+    }
+
+    private fun completeTopHoldAnalysis(requestId: Long, mask: HoldMask) {
+        if (!finishSelectionRequest(requestId)) return
+        _uiState.update { currentState ->
+            if (currentState.stage != CameraStage.SELECT) currentState
+            else currentState.copy(
+                holdMask = mask,
+                isBusy = false,
+                statusText = tr("camera.selection_complete"),
+                errorMessage = null
+            )
         }
     }
 
@@ -1121,6 +1132,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         cameraBindingJob?.cancel()
         mobileSamPreloadJob?.cancel()
         matBoundaryTimeoutJob?.cancel()
+        topHoldAnalysisTimeoutJob?.cancel()
         selectionAnalysisJob?.cancel()
         poseAnalyzer.stop()
         poseAnalyzer.close()

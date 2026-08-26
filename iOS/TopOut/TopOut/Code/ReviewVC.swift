@@ -67,8 +67,11 @@ final class ReviewVC: UIViewController {
         label.layer.shadowRadius = 3
         label.layer.shadowOffset = CGSize(width: 0, height: 1)
         label.clipsToBounds = false
-        label.numberOfLines = 2
-        label.lineBreakMode = .byWordWrapping
+        label.numberOfLines = 1
+        label.lineBreakMode = .byClipping
+        label.adjustsFontSizeToFitWidth = true
+        label.minimumScaleFactor = 0.62
+        label.allowsDefaultTighteningForTruncation = true
         return label
     }()
 
@@ -452,8 +455,8 @@ final class ReviewVC: UIViewController {
         }
         positionSliderTimeBubbleIfVisible()
 
-        let statusHeight: CGFloat = isLandscape ? 36 : 40
-        let statusOffsetBelowTopGuideBaseline: CGFloat = 5
+        let statusHeight: CGFloat = isLandscape ? 30 : 32
+        let statusOffsetBelowTopGuideBaseline: CGFloat = 4
         let statusGap: CGFloat = 5 - statusOffsetBelowTopGuideBaseline
         let preferredStatusY = referenceActiveFrame.minY - statusHeight - statusGap
         let statusY = referenceActiveFrame.minY > statusHeight + statusGap

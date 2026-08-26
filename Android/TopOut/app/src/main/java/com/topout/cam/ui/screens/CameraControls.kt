@@ -192,11 +192,11 @@ private fun CameraTipBanner(text: String) {
             .widthIn(max = 560.dp)
             .fillMaxWidth()
             .background(TopOutColors.TipBackground, RoundedCornerShape(10.dp))
-            .padding(horizontal = 8.dp, vertical = 5.dp),
+            .padding(horizontal = 14.dp, vertical = 5.dp),
         color = Color.White,
         autoSize = TextAutoSize.StepBased(
-            minFontSize = 7.5.sp,
-            maxFontSize = 13.sp,
+            minFontSize = 8.5.sp,
+            maxFontSize = 12.sp,
             stepSize = 0.25.sp
         ),
         textAlign = TextAlign.Center,
