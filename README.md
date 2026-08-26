@@ -28,7 +28,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 
 | 항목 | iOS | Android |
 |---|---|---|
-| 버전 | 2.0 (build 16) | 2.0 (versionCode 16) |
+| 버전 | 2.0 (build 17) | 2.0 (versionCode 17) |
 | 최소 OS | iOS 16.0 | Android 8.0 · API 26 |
 | 앱 ID | `com.topout.cam` | `com.topout.cam` |
 | UI | Swift · UIKit | Kotlin · Jetpack Compose · Material 3 |
@@ -41,9 +41,9 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 
 모든 영상 프레임, 관절 좌표, 중간 분석 결과는 기기 안에서 처리하며 외부 분석 서버로 전송하지 않습니다.
 
-양 플랫폼 촬영 화면의 하단 Tip 배너는 간결한 번역과 가로폭 기반 글자 크기 조정을 함께 사용해, 프랑스어·독일어처럼 긴 안내도 좌우 여백을 유지하며 한 줄로 표시합니다.
+양 플랫폼 촬영 화면의 하단 Tip 배너는 가로폭 기반 글자 크기 조정을 사용해 좌우 여백을 유지하며 한 줄로 표시합니다. 한국어는 기존의 자세한 안내를 유지하고, 화면 폭이 긴 언어만 간결한 번역을 사용합니다.
 
-양 플랫폼의 촬영·선택·결과 화면 상단 문구는 간결한 번역을 한 줄로 고정하고 화면 폭에 맞춰 자동 축소합니다. iOS는 Dynamic Island 아래 안전 영역에 한 줄 높이로 배치하며, 가로모드 결과 컨트롤도 노치 안전 영역 안에 둡니다.
+양 플랫폼의 촬영·선택·결과 화면 상단 문구는 한 줄로 고정하고 화면 폭에 맞춰 자동 축소합니다. 한국어는 기존 의미를 보존한 자세한 문구를 사용하고, 다른 언어는 한 줄에 맞는 간결한 번역을 사용합니다. iOS는 Dynamic Island 아래 안전 영역에 한 줄 높이로 배치하며, 가로모드 결과 컨트롤도 노치 안전 영역 안에 둡니다.
 
 ## 제품 흐름
 
@@ -102,8 +102,8 @@ TopOut/
 - [iOS 다국어 목업 앱](iOS-TopOut-Mock/README.md)
 - [Android 현재 문서](Android/TopOut/README.md)
 - [개발 이력과 기술 의사결정](DEVELOPMENT_HISTORY.md)
-- [iOS v2.0 build 16 변경 사항](iOS/TopOut/V2_0_BUILD_16_NOTES.md)
-- [Android v2.0 versionCode 16 변경 사항](Android/TopOut/V2_0_BUILD_16_NOTES.md)
+- [iOS v2.0 build 17 변경 사항](iOS/TopOut/V2_0_BUILD_17_NOTES.md)
+- [Android v2.0 versionCode 17 변경 사항](Android/TopOut/V2_0_BUILD_17_NOTES.md)
 - [제품 포트폴리오](portfolio/index.html)
 - [TopOut 공개 저장소](https://github.com/BIYONGHIYON/TopOut-app)
 

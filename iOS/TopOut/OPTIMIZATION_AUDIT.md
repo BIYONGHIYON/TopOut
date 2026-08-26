@@ -1,6 +1,6 @@
 # iOS optimization audit — v1.4 (build 5)
 
-> 이 문서는 v1.4 build 5 최적화부터 이어진 감사 기록입니다. 현재 릴리스는 [v2.0 build 16](V2_0_BUILD_16_NOTES.md)이며 최신 동작은 [iOS README](README.md)를 기준으로 합니다.
+> 이 문서는 v1.4 build 5 최적화부터 이어진 감사 기록입니다. 현재 릴리스는 [v2.0 build 17](V2_0_BUILD_17_NOTES.md)이며 최신 동작은 [iOS README](README.md)를 기준으로 합니다.
 
 The original optimization pass kept behavior unchanged. Later platform-alignment notes below remain historical context.
 

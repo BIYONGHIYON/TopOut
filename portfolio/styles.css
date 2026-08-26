@@ -352,6 +352,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(-
 .screen-card img { aspect-ratio: 472 / 1024; }
 
 .case-card { grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr); }
+.case-card.text-only { grid-template-columns: 1fr; }
 .case-media { display: grid; justify-content: center; }
 .case-media figure { width: 100%; max-width: 230px; border-radius: 22px; box-shadow: 0 18px 48px rgba(0,0,0,.26); transform: none !important; }
 .case-media img { width: 100%; height: auto; aspect-ratio: 472 / 1024; object-fit: cover; }
@@ -391,6 +392,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(-
 .screenshot-device { width: min(268px, 68vw); border-width: 5px; border-radius: 34px; box-shadow: 0 24px 62px rgba(27,34,44,.28); }
 
 .result-card { grid-template-columns: 300px minmax(0, 1fr); min-height: 420px; }
+.result-card.comparison-card { grid-template-columns: minmax(380px, .95fr) minmax(0, 1.05fr); }
 .result-image { min-height: 0; padding: 28px; display: grid; place-items: center; background: #E7EAF0; }
 .result-image img {
   width: min(230px, 100%);
@@ -399,6 +401,19 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(-
   object-fit: cover;
   border-radius: 20px;
   box-shadow: 0 18px 48px rgba(27,34,44,.18);
+}
+.result-image-pair {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 16px;
+}
+.result-image-pair figure { display: grid; gap: 10px; margin: 0; }
+.result-image-pair img { width: 100%; }
+.result-image-pair figcaption {
+  color: var(--slate-1);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
 }
 .result-copy { padding: 46px; }
 .result-copy h3 { font-size: 32px; }
@@ -409,6 +424,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(-
   .case-card { grid-template-columns: 1fr; }
   .case-media { margin-inline: auto; }
   .result-card { grid-template-columns: 260px 1fr; }
+  .result-card.comparison-card { grid-template-columns: minmax(340px, .9fr) minmax(0, 1.1fr); }
 }
 
 @media (max-width: 700px) {
@@ -420,8 +436,10 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(-
   .single-screen { width: min(210px, 100%); }
   .parity-strip { display: grid; gap: 10px; }
   .result-card { grid-template-columns: 1fr; }
+  .result-card.comparison-card { grid-template-columns: 1fr; }
   .result-image { padding: 24px; }
   .result-image img { width: min(210px, 70vw); }
+  .result-image-pair img { width: 100%; }
   .result-copy { padding: 30px 26px 36px; }
   .result-copy h3 { font-size: 28px; }
 }

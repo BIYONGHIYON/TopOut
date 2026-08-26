@@ -48,7 +48,7 @@
 </div>
 <dl aria-label="프로젝트 요약" class="hero-meta">
 <div><dt>Product</dt><dd>Climbing Video Automation</dd></div>
-<div><dt>Release</dt><dd>v2.0 · iOS build 16 · Android versionCode 16</dd></div>
+<div><dt>Release</dt><dd>v2.0 · iOS build 17 · Android versionCode 17</dd></div>
 <div><dt>Status</dt><dd>iOS · Android Release</dd></div>
 </dl>
 </div>
@@ -116,7 +116,7 @@
 <div><span>Scope</span><strong>제품 전략 · UX 설계 · iOS/Android 개발 · QA · 배포 운영</strong></div>
 <div><span>iOS</span><strong>Swift · UIKit · AVFoundation · Vision · Core ML</strong></div>
 <div><span>Android</span><strong>Kotlin · Jetpack Compose · CameraX · LiteRT · ONNX Runtime</strong></div>
-<div><span>Release</span><strong>v2.0 · iOS build 16 · Android versionCode 16 · Privacy &amp; License Compliance</strong></div>
+<div><span>Release</span><strong>v2.0 · iOS build 17 · Android versionCode 17 · Privacy &amp; License Compliance</strong></div>
 </div>
 </div>
 </section>
@@ -206,11 +206,11 @@
 </ul>
 </div>
 <div class="case-media dual-screens">
-<figure><img alt="매트 경계선 보정 화면" loading="lazy" src="assets/setup-mat.webp"/><figcaption>MobileSAM 자동 경계 이후 수동 보정</figcaption></figure>
-<figure><img alt="탑홀드와 매트 경계가 설정된 화면" loading="lazy" src="assets/setup-selected.webp"/><figcaption>보정된 경계를 촬영 판단 기준으로 적용</figcaption></figure>
+<figure><img alt="MobileSAM이 제안한 자동 매트 경계 화면" loading="lazy" src="assets/after-sam.webp"/><figcaption>MobileSAM이 제안한 자동 매트 경계</figcaption></figure>
+<figure><img alt="사용자가 매트 경계를 직접 보정한 화면" loading="lazy" src="assets/after-sam-edit.webp"/><figcaption>사용자가 직접 보정한 최종 매트 경계</figcaption></figure>
 </div>
 </article>
-<article class="case-card reveal">
+<article class="case-card text-only reveal">
 <div class="case-copy">
 <p class="case-index">02 · START &amp; FINISH</p>
 <h3>화면 변화는 탐색 신호로 제한하고,<br/>등반 판단은 신체 관절 관계로 검증했습니다</h3>
@@ -225,11 +225,8 @@
 <li>매트 복귀는 종료 확인에 사용하고 실제 결과 후보는 최고점 또는 탑홀드 최접근 시점으로 분리</li>
 </ul>
 </div>
-<div class="case-media single-screen focus-bottom">
-<figure><img alt="주변 사람이 화면을 지나간 장면이 포함된 감지 결과 화면" loading="lazy" src="assets/review-noise.webp"/><figcaption>주변 인물과 배경 노이즈가 존재하는 필드 환경</figcaption></figure>
-</div>
 </article>
-<article class="case-card reveal">
+<article class="case-card text-only reveal">
 <div class="case-copy">
 <p class="case-index">03 · POSE RECOVERY</p>
 <h3>일시적 관절 유실을 종료로 확정하지 않고,<br/>복구 가능한 상태로 모델링했습니다</h3>
@@ -242,10 +239,6 @@
 <li>Android는 최초 움직임 영역과 추적 관절 영역을 각각 1.5배 확장한 정사각형 ROI로 갱신하고, iOS는 활성 촬영 영역을 최대 384px로 축소해 Vision 입력으로 사용</li>
 <li>정상 종료 후 유효 포즈 2회 연속 미검출 시 초기 Motion 탐색으로 복귀</li>
 </ul>
-</div>
-<div class="case-media dual-screens">
-<figure><img alt="두 번째 감지 구간 결과 화면" loading="lazy" src="assets/review-segment2.webp"/><figcaption>복구 정책 적용 후 개별 구간 보존</figcaption></figure>
-<figure><img alt="세 번째 감지 구간 결과 화면" loading="lazy" src="assets/review-segment3.webp"/><figcaption>복구 이후 다음 등반 탐색으로 전환</figcaption></figure>
 </div>
 </article>
 <article class="case-card reveal">
@@ -263,7 +256,7 @@
 </ul>
 </div>
 <div class="case-media single-screen focus-bottom">
-<figure><img alt="감지 구간 확인과 다시 촬영 버튼이 있는 리뷰 화면" loading="lazy" src="assets/review-finish.webp"/><figcaption>구간 검토에서 촬영 재진입까지 연결한 다시 촬영 동선</figcaption></figure>
+<figure><img alt="구간 검토 화면에서 다시 촬영을 선택하는 경고창" loading="lazy" src="assets/after-examine.webp"/><figcaption>구간 검토에서 촬영 재진입까지 연결한 다시 촬영 동선</figcaption></figure>
 </div>
 </article>
 <article class="case-card reveal">
@@ -364,16 +357,19 @@
 </div>
 <div class="result-grid">
 <article class="result-card reveal">
-<figure class="result-image"><img alt="탑홀드 마스크와 감지 구간을 편집하는 결과 화면" loading="lazy" src="assets/review-mask.webp"/></figure>
+<figure class="result-image"><img alt="드래그 속도에 따라 구간을 정밀하게 조정하는 결과 화면" loading="lazy" src="assets/drag-speed.webp"/></figure>
 <div class="result-copy"><span>VELOCITY-SENSITIVE TRIM</span><h3>드래그 속도에 따라 0.1초 정밀 모드로 전환</h3><p>직접 촬영 영상을 편집하면서 종료점을 움직인 뒤 재생 위치가 구간의 마지막으로 이동해, 끝점이 의도대로 조정됐는지 확인하기 불편하다는 점을 발견했습니다. 빠르게 움직일 때는 넓은 범위를 탐색하고 천천히 조작하면 0.1초 단위로 미세 조정하며, 손을 떼면 시작점은 해당 위치부터, 종료점은 3초 전부터 자동 재생해 수정 전후의 맥락을 바로 확인하도록 개선했습니다.</p></div>
 </article>
-<article class="result-card reveal" data-delay="80">
-<figure class="result-image"><img alt="선택된 구간을 2.5배 확대해 편집하는 화면" loading="lazy" src="assets/review-zoom.webp"/></figure>
+<article class="result-card comparison-card reveal" data-delay="80">
+<div class="result-image result-image-pair">
+<figure><img alt="전체 타임라인에서 선택 구간을 확인하는 1배 화면" loading="lazy" src="assets/timeline-zoom1.webp"/><figcaption>1.0× · 전체 구간</figcaption></figure>
+<figure><img alt="선택 구간을 확대한 3.1배 타임라인 화면" loading="lazy" src="assets/timeline-zoom2.webp"/><figcaption>3.1× · 선택 구간 확대</figcaption></figure>
+</div>
 <div class="result-copy"><span>CONTEXTUAL TIMELINE ZOOM</span><h3>긴 세션에서도 선택 구간의 조작 면적을 확보</h3><p>10분 이상의 원본에서 수초 길이의 등반 구간이 지나치게 작아지는 문제를 해결하기 위해 전체 타임라인과 확대 타임라인을 분리했습니다. 작은 배율 손잡이를 정확히 누르지 않아도 트랙의 원하는 위치를 탭하거나 진동 없이 곧바로 드래그할 수 있도록 iOS와 Android의 입력 범위도 통일했습니다.</p></div>
 </article>
 <article class="result-card reveal" data-delay="160">
-<figure class="result-image focus-bottom"><img alt="감지 구간 확인과 다시 촬영 버튼이 있는 결과 화면" loading="lazy" src="assets/review-finish.webp"/></figure>
-<div class="result-copy"><span>STATE-PRESERVING RETAKE</span><h3>실패 원인을 확인한 화면에서 바로 다시 촬영</h3><p>클라이머 피드백을 반영해, 실패 구간을 확인한 뒤 ‘다시 촬영’을 누르면 카메라 구도, 매트 경계, 탑홀드와 촬영 옵션을 유지한 채 다음 시도를 준비하도록 재촬영 경로를 단축했습니다.</p></div>
+<figure class="result-image"><img alt="앱 안에서 갤러리에 저장된 영상을 확인하는 화면" loading="lazy" src="assets/video-check.webp"/></figure>
+<div class="result-copy"><span>VERIFIED GALLERY PLAYBACK</span><h3>피드백을 반영한 앱 내 저장 영상 확인</h3><p>저장이 끝났다는 메시지만으로는 실제 결과를 확신하기 어렵다는 사용자 의견을 반영했습니다. 시스템 갤러리에 생성된 바로 그 영상을 다시 조회해 앱 안에서 재생하고, 탐색 바와 앞뒤 이동으로 필요한 장면을 곧바로 확인할 수 있도록 저장 이후의 흐름까지 연결했습니다.</p></div>
 </article>
 </div>
 </div>
