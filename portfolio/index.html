@@ -6,7 +6,8 @@
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <meta content="TopOut — 온디바이스 비전 파이프라인으로 클라이밍 등반 구간을 자동 탐지하는 iOS·Android 앱 제품 사례 연구" name="description"/>
 <meta content="#1B222C" name="theme-color"/>
-<title>TopOut — Cross-platform Product Case Study</title>
+<title>TopOut — Product Case Study by Byeonghyeon Lee</title>
+<link href="assets/topout-logo.png" rel="icon" type="image/png"/>
 <link href="styles.css" rel="stylesheet"/>
 <script defer="" src="script.js"></script>
 </head>
@@ -19,7 +20,7 @@
 <img alt="" class="brand-icon" src="assets/topout-logo.png"/>
 <span class="brand-copy">
 <strong>TOPOUT</strong>
-<small>Cross-platform Product Case Study</small>
+<small>Byeonghyeon Lee · Product Case Study</small>
 </span>
 </a>
 <button aria-controls="site-nav" aria-expanded="false" class="menu-button" type="button">
@@ -39,36 +40,31 @@
 <section class="hero dark-one">
 <div class="hero-grid shell">
 <div class="hero-copy reveal">
-<p class="eyebrow">Solo Product Case Study · Strategy · UX · iOS/Android Engineering · Release</p>
-<h1>클라이밍 촬영의 반복 작업을,<br/><span>온디바이스 자동화로 줄였습니다.</span></h1>
-<p class="hero-description">TopOut은 연속 촬영 영상에서 등반의 시작과 완등 후보를 자동 추출하고, 검토·정밀 편집·갤러리 저장 확인·재촬영을 하나의 흐름으로 연결한 iOS·Android 앱입니다.</p>
+<p class="eyebrow">Independent Product · 2025—2026 · Seoul</p>
+<p class="hero-slogan">From the First Move to the TopOut</p>
+<h1>등반하는 시간만 남도록,<br/><span>촬영의 나머지를 설계했습니다.</span></h1>
+<p class="hero-description">긴 촬영 영상에서 등반 시작과 완등 순간을 기기 안에서 찾아내고, 검토·편집·저장·재촬영까지 연결한 iOS·Android 클라이밍 카메라입니다.</p>
 <div class="hero-actions">
-<a class="button button-primary" href="#promo">프로모션 영상 보기</a>
-<a class="button button-secondary" href="#overview">프로젝트 살펴보기</a>
+<a class="button button-primary" href="#promo">제품 영상 재생</a>
+<a class="text-link" href="#overview">Case study 읽기 <span aria-hidden="true">↘</span></a>
 </div>
-<dl aria-label="프로젝트 요약" class="hero-meta">
-<div><dt>Product</dt><dd>Climbing Video Automation</dd></div>
-<div><dt>Release</dt><dd>v2.0 · iOS build 17 · Android versionCode 17</dd></div>
-<div><dt>Status</dt><dd>iOS · Android Release</dd></div>
-</dl>
 </div>
 <div class="hero-visual reveal" data-delay="120">
-<div class="signal-card signal-card-top">
-<span>ON-DEVICE AI</span>
-<strong>영상·관절 데이터 외부 전송 없음</strong>
-</div>
-<figure aria-label="TopOut 시작 화면" class="device hero-device">
+<div aria-hidden="true" class="motion-word">TOPOUT</div>
+<figure aria-label="TopOut 시작 화면" class="device hero-device" data-parallax="0.08">
 <div class="device-screen hero-device-screen">
 <img alt="TopOut 앱 시작 화면" height="852" src="assets/hero-launch.webp" width="393"/>
 </div>
 </figure>
-<div class="signal-card signal-card-bottom">
-<span>AUTO SEGMENT</span>
-<strong>시작 · 완등 후보 · 다음 시도 탐지</strong>
-</div>
+<dl aria-label="프로젝트 요약" class="hero-meta">
+<div><dt>Role</dt><dd>Product · UX · iOS · Android</dd></div>
+<div><dt>Release</dt><dd>2.0 / Build 17</dd></div>
+<div><dt>Live</dt><dd>App Store · Google Play</dd></div>
+</dl>
 </div>
 </div>
 </section>
+<div aria-hidden="true" class="slogan-ticker"><div><span>FROM THE FIRST MOVE TO THE TOPOUT</span><span>ON-DEVICE CLIMBING VIDEO</span><span>FROM THE FIRST MOVE TO THE TOPOUT</span><span>ON-DEVICE CLIMBING VIDEO</span></div></div>
 <section class="promo dark-two" id="promo">
 <div class="promo-grid shell">
 <div class="section-heading reveal">
@@ -333,7 +329,7 @@
 <section class="recording accent-section">
 <div class="recording-grid shell">
 <div class="recording-visual reveal">
-<figure class="screenshot-device recording-device">
+<figure class="screenshot-device recording-device" data-parallax="0.045">
 <img alt="실시간 영상 표시를 끈 TopOut 녹화 화면" loading="lazy" src="assets/recording-dark.webp"/>
 </figure>
 </div>
@@ -384,22 +380,28 @@
 <div class="privacy-item reveal"><span>01</span><div><strong>On-device Processing &amp; Data Minimization</strong><p>영상 프레임, 신체 관절 좌표와 중간 분석 결과를 외부 서버로 전송하지 않고 기기 내에서 처리합니다.</p></div></div>
 <div class="privacy-item reveal"><span>02</span><div><strong>Recording Resilience</strong><p>백그라운드 전환, 카메라 중단, 저장공간 부족과 같은 예외에서 현재 파일을 먼저 정상 종료하도록 설계했습니다. build 10에서는 시스템 뒤로가기·플레이어 생명주기·오디오 인터럽션·안전 영역 대응을 보강했습니다. build 11에서는 두 플랫폼 모두 AI 모델 준비를 카메라 진입 이후로 분리했고, build 12에서는 분석 대기를 5초로 제한해 메모리 제약 기기에서도 수동 보정으로 복구할 수 있도록 했습니다. build 13에서는 시작 판정 정렬과 iOS 다중 인물 추적을 보강했습니다. build 14에서는 선택 영상 높이를 기준으로 시작·종료선을 6%·4%로 맞췄습니다. v1.7 build 15에서는 화면 이탈로 몸통·하체가 잘린 Pose의 시작 조건을 강화하고, 취소나 앱 전환 뒤 도착한 오래된 카메라·분석 콜백이 다음 상태를 바꾸지 못하도록 요청 수명을 정리했습니다.</p></div></div>
 <div class="privacy-item reveal"><span>03</span><div><strong>Verified Gallery Delivery</strong><p>iOS PhotoKit과 Android MediaStore에 저장된 실제 항목을 재조회하고 다시 재생합니다. 저장 구간은 첫 영상 프레임부터 디코딩 가능하도록 내보내 export 성공과 사용자가 확인하는 최종 영상 사이의 불확실성을 줄였습니다.</p></div></div>
-<div class="privacy-item reveal"><span>04</span><div><strong>Localization &amp; Release Operations</strong><p>해외 클라이머가 별도 설정 없이 시작할 수 있도록 OS 언어 자동 선택을 기본값으로 두고, 영어·한국어·일본어·중국어 간체·번체·프랑스어·독일어·스페인어·포르투갈어의 기능 문구·오류·권한 안내를 현지화했습니다. 언어 선택 즉시 설정 화면을 미리보기하고, 긴 버튼 번역은 두 줄 정렬과 자동 축소로, Android 촬영 Tip은 한 줄 자동 축소로, 상단 상태 문구는 최대 두 줄로 읽을 수 있게 유지했습니다. iOS 가로모드 결과 화면은 노치 안전 영역까지 반영했습니다. 저장한 언어 선택은 기기 내부에만 남습니다. iOS Archive, Android AAB, 서명 키, 배포 테스트, Privacy Manifest, 개인정보 처리방침과 오픈소스 고지도 함께 관리했습니다.</p></div></div>
+<div class="privacy-item reveal"><span>04</span><div><strong>Localization &amp; Release Operations</strong><p>해외 클라이머가 별도 설정 없이 시작할 수 있도록 OS 언어 자동 선택을 기본값으로 두고, 영어·한국어·일본어·중국어 간체·번체·프랑스어·독일어·스페인어·포르투갈어의 기능 문구·오류·권한 안내를 현지화했습니다. 언어 선택 즉시 설정 화면을 미리보기하고, 긴 버튼은 두 줄 정렬과 자동 축소로, 상단 안내와 촬영 Tip은 화면 폭에 맞춘 한 줄 자동 축소로 가독성을 유지했습니다. iOS 가로모드 결과 화면은 노치 안전 영역까지 반영했습니다. 저장한 언어 선택은 기기 내부에만 남습니다. iOS Archive, Android AAB, 서명 키, 배포 테스트, Privacy Manifest, 개인정보 처리방침과 오픈소스 고지도 함께 관리했습니다.</p></div></div>
 </div>
 </div>
 </section>
 <section class="closing dark-two">
 <div class="closing-inner shell reveal">
 <img alt="TopOut — 등반 시작부터 완등 순간까지" class="closing-brand" src="assets/topout-brand.png"/>
-<p class="eyebrow">TOP OUT · KEEP CLIMBING</p>
+<p class="eyebrow">FROM THE FIRST MOVE TO THE TOPOUT</p>
 <h2>등반을 판별하는 알고리즘을 넘어,<br/>촬영·검토·재시도의 마찰을 줄인 제품</h2>
 <p>TopOut을 통해 문제 정의, 컴퓨터 비전 파이프라인 설계, 크로스플랫폼 구현, 성능 최적화, 필드 테스트와 배포 운영을 하나의 제품 의사결정 과정으로 연결했습니다.</p>
-<div class="closing-links"><a href="#top">Back to top ↑</a><a href="https://github.com/BIYONGHIYON/TopOut-app" target="_blank" rel="noopener noreferrer">GitHub · BIYONGHIYON/TopOut-app</a></div>
+<div class="closing-links">
+<a href="https://apps.apple.com/kr/app/topout/id6790163178" target="_blank" rel="noopener noreferrer">App Store ↗</a>
+<a href="https://play.google.com/store/apps/details?id=com.topout.cam" target="_blank" rel="noopener noreferrer">Google Play ↗</a>
+<a href="https://github.com/BIYONGHIYON/TopOut-app" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+<a href="https://www.instagram.com/topout_app" target="_blank" rel="noopener noreferrer">Instagram ↗</a>
+<a href="#top">Back to top ↑</a>
+</div>
 </div>
 </section>
 </main>
 <footer class="site-footer">
-<div class="shell"><span>© <span id="year">Solo product strategy, design and engineering</span> TopOut Case Study</span><span>Designed &amp; developed as a responsive portfolio</span></div>
+<div class="shell"><span>© <span id="year">2026</span> Byeonghyeon Lee</span><span>TopOut · Product design &amp; engineering</span></div>
 </footer>
 </body>
 </html>
