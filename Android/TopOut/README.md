@@ -1,4 +1,4 @@
-# TopOut Android v2.0 (versionCode 17)
+# TopOut Android v2.1 (versionCode 18)
 
 > 등반 시작부터 완등 순간까지, 자동으로 찾아주는 클라이밍 촬영 앱
 
@@ -29,7 +29,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 - Application ID: `com.topout.cam`
 - Minimum SDK: `26` (Android 8.0)
 - Compile / Target SDK: `36`
-- Version name / code: `2.0` / `16`
+- Version name / code: `2.1` / `18`
 - UI: Kotlin, Jetpack Compose, Material 3
 - Camera / media: CameraX 1.6.1, Media3 1.10.1
 - AI: MobileSAM ONNX Runtime 1.27.0, MoveNet Thunder FP16 LiteRT 1.4.1
@@ -43,8 +43,8 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 - 양 플랫폼 문구는 루트 `localization/topout_strings.json`을 공통 원본으로 사용해 키와 번역 누락을 함께 검증합니다.
 - `res/xml/locales_config.xml`에는 Android가 노출할 9개 언어를 명시합니다.
 - 긴 버튼 문구는 두 줄 가운데 정렬과 자동 글자 크기 조정을 사용하고, 설정 스위치는 설명이 먼저 줄바꿈되어 제어가 화면 밖으로 밀리지 않게 합니다.
-- 촬영 화면의 Tip 배너는 한국어의 기존 의미를 보존하고 다른 언어만 간결한 번역을 사용합니다. 글자 크기 자동 조정을 함께 적용해 좌우 여백을 유지하며 한 줄로 표시합니다.
-- 촬영·선택·결과 화면의 상단 상태 문구는 한 줄로 고정하고 화면 폭에 맞춰 자동 축소합니다. 한국어는 기존의 자세한 문구를 유지하고 다른 언어만 한 줄에 맞게 간결화해 작은 화면에서도 끝부분이 잘리지 않게 합니다.
+- 촬영 화면의 Tip 배너는 `파란 점으로 경계선 보정`, `분석 뒤 벽과 매트 경계 보정`처럼 조작 대상과 결과를 함께 설명합니다. 글자 크기 자동 조정을 적용해 좌우 여백을 유지하며 한 줄로 표시합니다.
+- 촬영·선택·결과 화면의 상단 상태 문구는 한 줄로 고정하고 화면 폭에 맞춰 자동 축소합니다. 9개 언어 모두 `벽과 매트 사이의 경계`, `녹화 시작`, `감지된 시작~완등 구간`처럼 사용자가 확인하거나 조작할 대상을 생략하지 않으면서 작은 화면에서도 끝부분이 잘리지 않게 합니다.
 
 ## 촬영 준비와 매트 경계
 
@@ -183,10 +183,10 @@ app/build/generated/moveNetPoseAssets/models/movenet-thunder-fp16.tflite
 
 ## 문서
 
-- [v2.0 versionCode 17 변경 사항](V2_0_BUILD_17_NOTES.md)
+- [v2.1 versionCode 18 변경 사항](V2_1_BUILD_18_NOTES.md)
 - [전체 개발 이력과 기술 의사결정](../../DEVELOPMENT_HISTORY.md)
 - [Android 호환성](ANDROID_COMPATIBILITY_NOTES.md)
 - [기기 호환성 수정](DEVICE_COMPATIBILITY_FIX_NOTES.md)
 - [MobileSAM ONNX 배치와 진단](docs/ONNX_INTEGRATION.md)
 - [iOS UI/UX 대응표](docs/UI_PARITY.md)
-- 과거 릴리스 기록: [v2.0 versionCode 16](V2_0_BUILD_16_NOTES.md), [v1.7 build 15](V1_7_BUILD_15_NOTES.md), [v1.6 build 14](V1_6_BUILD_14_NOTES.md), [v1.6 build 13](V1_6_BUILD_13_NOTES.md), [v1.6 build 12](V1_6_BUILD_12_NOTES.md), [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)
+- 과거 릴리스 기록: [v2.0 versionCode 17](V2_0_BUILD_17_NOTES.md), [v2.0 versionCode 16](V2_0_BUILD_16_NOTES.md), [v1.7 build 15](V1_7_BUILD_15_NOTES.md), [v1.6 build 14](V1_6_BUILD_14_NOTES.md), [v1.6 build 13](V1_6_BUILD_13_NOTES.md), [v1.6 build 12](V1_6_BUILD_12_NOTES.md), [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)
