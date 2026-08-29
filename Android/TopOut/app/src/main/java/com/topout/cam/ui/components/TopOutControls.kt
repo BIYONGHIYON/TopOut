@@ -53,23 +53,24 @@ fun TopOutCapsuleButton(
             disabledContentColor = Color.White.copy(alpha = 0.55f)
         ),
         contentPadding = if (compact) {
-            androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+            androidx.compose.foundation.layout.PaddingValues(horizontal = 3.dp, vertical = 2.dp)
         } else {
-            androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+            androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
         }
     ) {
         if (icon != null) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(if (compact) 17.dp else 19.dp))
-            Spacer(Modifier.width(5.dp))
+            Icon(icon, contentDescription = null, modifier = Modifier.size(if (compact) 14.dp else 18.dp))
+            Spacer(Modifier.width(if (compact) 2.dp else 4.dp))
         }
         Text(
             text = text,
             autoSize = TextAutoSize.StepBased(
-                minFontSize = if (compact) 8.sp else 10.sp,
+                minFontSize = if (compact) 11.5.sp else 12.sp,
                 maxFontSize = if (compact) 14.sp else 16.sp,
                 stepSize = 0.5.sp
             ),
             fontWeight = FontWeight.SemiBold,
+            lineHeight = if (compact) 15.sp else 18.sp,
             textAlign = TextAlign.Center,
             maxLines = 2,
             softWrap = true,
