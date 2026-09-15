@@ -25,12 +25,81 @@ class MobileSamMatBoundaryDetectorTest {
     }
 
     @Test
-    fun rejectsMaskNarrowerThanFortyPercent() {
-        val narrow = rectangleMask(left = 31, right = 69, top = 60, bottom = 99)
+    fun rejectsMaskWhoseUpperLineSupportsLessThanSixtyPercent() {
+        val narrow = rectangleMask(left = 21, right = 79, top = 60, bottom = 99)
         val line = MobileSamMatBoundaryDetector.select(
             listOf(MobileSamMatBoundaryDetector.PromptResult(0.70f, listOf(narrow)))
         )
         assertNull(line)
+    }
+
+    @Test
+    fun acceptsDisconnectedFragmentsWhoseUpperEdgesSupportSixtyPercent() {
+        val fragmented = fragmentedMask(
+            ranges = listOf(5..24, 40..59, 75..94),
+            top = 64,
+            bottom = 99
+        )
+
+        val line = MobileSamMatBoundaryDetector.select(
+            listOf(MobileSamMatBoundaryDetector.PromptResult(0.70f, listOf(fragmented)))
+        )
+
+        assertNotNull(line)
+        assertEquals(0.646f, line!![0].y, 0.01f)
+        assertEquals(0.646f, line[1].y, 0.01f)
+    }
+
+    @Test
+    fun rejectsDisconnectedFragmentsThatDoNotSupportOneLine() {
+        val values = BooleanArray(100 * 100)
+        listOf(5..24, 75..94).forEach { range ->
+            for (x in range) for (y in 58..99) values[y * 100 + x] = true
+        }
+        for (x in 40..59) for (y in 70..99) values[y * 100 + x] = true
+        val fragmented = MobileSamMatBoundaryDetector.SamBinaryMask(
+            width = 100,
+            height = 100,
+            visibleWidth = 100,
+            visibleHeight = 100,
+            positiveX = 0.50f,
+            values = values
+        )
+
+        val line = MobileSamMatBoundaryDetector.select(
+            listOf(MobileSamMatBoundaryDetector.PromptResult(0.75f, listOf(fragmented)))
+        )
+
+        assertNull(line)
+    }
+
+    @Test
+    fun ignoresUpwardAndDownwardOutliersWhenSelectingUpperLine() {
+        val values = BooleanArray(100 * 100)
+        for (x in 5..94) {
+            val top = when (x) {
+                in 20..24 -> 52
+                in 70..74 -> 78
+                else -> 64
+            }
+            for (y in top..99) values[y * 100 + x] = true
+        }
+        val mask = MobileSamMatBoundaryDetector.SamBinaryMask(
+            width = 100,
+            height = 100,
+            visibleWidth = 100,
+            visibleHeight = 100,
+            positiveX = 0.50f,
+            values = values
+        )
+
+        val line = MobileSamMatBoundaryDetector.select(
+            listOf(MobileSamMatBoundaryDetector.PromptResult(0.70f, listOf(mask)))
+        )
+
+        assertNotNull(line)
+        assertEquals(0.646f, line!![0].y, 0.01f)
+        assertEquals(0.646f, line[1].y, 0.01f)
     }
 
     @Test
@@ -97,6 +166,29 @@ class MobileSamMatBoundaryDetectorTest {
         val values = BooleanArray(width * height)
         for (y in top..bottom) {
             for (x in left..right) values[y * width + x] = true
+        }
+        return MobileSamMatBoundaryDetector.SamBinaryMask(
+            width = width,
+            height = height,
+            visibleWidth = width,
+            visibleHeight = height,
+            positiveX = 0.50f,
+            values = values
+        )
+    }
+
+    private fun fragmentedMask(
+        ranges: List<IntRange>,
+        top: Int,
+        bottom: Int,
+        width: Int = 100,
+        height: Int = 100
+    ): MobileSamMatBoundaryDetector.SamBinaryMask {
+        val values = BooleanArray(width * height)
+        for (range in ranges) {
+            for (x in range) {
+                for (y in top..bottom) values[y * width + x] = true
+            }
         }
         return MobileSamMatBoundaryDetector.SamBinaryMask(
             width = width,

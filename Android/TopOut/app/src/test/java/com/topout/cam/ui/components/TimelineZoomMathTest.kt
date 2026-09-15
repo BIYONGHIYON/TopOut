@@ -6,6 +6,17 @@ import org.junit.Test
 
 class TimelineZoomMathTest {
     @Test
+    fun selectedRangeZoomIsCappedAtThirtyTimes() {
+        val maxZoom = TimelineZoomMath.maximumZoomFactor(
+            durationSeconds = 120.0,
+            lowerSeconds = 60.0,
+            upperSeconds = 60.1,
+            minimumSelectionSeconds = 0.1
+        )
+        assertEquals(30.0, maxZoom, 0.0001)
+    }
+
+    @Test
     fun maximumZoomIgnoresFloatingPointNoiseButPreservesRealOverflow() {
         assertEquals(4.0, TimelineZoomMath.stableMaximumZoomFactor(4.0, 4.00005), 0.000001)
         assertEquals(4.001, TimelineZoomMath.stableMaximumZoomFactor(4.0, 4.001), 0.000001)

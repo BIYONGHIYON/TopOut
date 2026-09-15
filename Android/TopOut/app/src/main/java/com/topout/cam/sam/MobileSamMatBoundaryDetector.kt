@@ -11,14 +11,16 @@ import kotlin.math.max
  *
  * The automatic rule is intentionally small:
  * 1. MobileSAM is prompted at centre y=70%, 80%, 90%, and 95%.
- * 2. Keep the prompt-connected mask only when it spans at least 40% of the image width and its
- *    highest pixel stays in the lower half of the image.
- * 3. Reject a candidate when its fitted upper boundary tilts more than 15 degrees.
- * 4. Pick the valid mask whose upper edge is highest on screen.
- * 5. Convert that upper edge to the editable two-point line. The shared ViewModel then applies the
+ * 2. Use the prompt-connected component as the anchor, then collect upper-edge fragments that
+ *    support the same robust line across at least 60% of the image width. Gaps and vertical
+ *    outliers do not count as support.
+ * 3. Keep the candidate only when its highest supporting pixel stays in the lower half.
+ * 4. Reject a candidate when its fitted upper boundary tilts more than 15 degrees.
+ * 5. Pick the valid mask whose upper edge is highest on screen.
+ * 6. Convert that upper edge to the editable two-point line. The shared ViewModel then applies the
  *    detected boundary directly in the original captured-image coordinate system.
  *
- * No straightness, area, consensus, or multi-prompt scoring rule is used here.
+ * No area, multi-height consensus, or multi-prompt scoring rule is used here.
  */
 internal object MobileSamMatBoundaryDetector {
     data class PromptResult(
@@ -37,7 +39,7 @@ internal object MobileSamMatBoundaryDetector {
 
     private data class Candidate(
         val topY: Float,
-        val horizontalSpan: Float,
+        val lineSupportRatio: Float,
         val line: List<Offset>
     )
 
@@ -51,9 +53,11 @@ internal object MobileSamMatBoundaryDetector {
 
     private data class BoundaryPoint(val x: Float, val y: Float)
 
-    private const val MIN_HORIZONTAL_SPAN = 0.40f
+    private const val MIN_LINE_SUPPORT_RATIO = 0.60f
     private const val MIN_TOP_Y = 0.50f
     private const val MAX_BOUNDARY_ANGLE_DEGREES = 15f
+    private const val BOUNDARY_ALIGNMENT_TOLERANCE_PIXELS = 2f
+    private const val LINE_REFINEMENT_PASSES = 2
     private const val LEFT_X = 0.06f
     private const val RIGHT_X = 0.94f
 
@@ -66,7 +70,7 @@ internal object MobileSamMatBoundaryDetector {
     /** Returns the highest valid upper boundary while consuming prompt results one at a time. */
     fun select(results: Sequence<PromptResult>): List<Offset>? {
         val comparator = compareBy<Candidate> { it.topY }
-            .thenByDescending { it.horizontalSpan }
+            .thenByDescending { it.lineSupportRatio }
         return results
             .asSequence()
             .flatMap { result ->
@@ -109,20 +113,42 @@ internal object MobileSamMatBoundaryDetector {
             seed = seed
         ) ?: return null
 
-        val horizontalSpan = (component.maxX - component.minX + 1).toFloat() / visibleWidth
-        if (horizontalSpan < MIN_HORIZONTAL_SPAN) return null
-
-        val topY = component.minY.toFloat() / visibleHeight
-        if (topY < MIN_TOP_Y) return null
-
-        val boundary = extractUpperBoundary(
+        val anchorBoundary = extractUpperBoundary(
             component = component,
             visibleWidth = visibleWidth,
             visibleHeight = visibleHeight
         )
-        if (boundary.size < 2) return null
+        if (anchorBoundary.isEmpty()) return null
 
-        val fit = fitLine(boundary) ?: return null
+        // The prompted component anchors the candidate, but disconnected mask pieces may support
+        // the same upper-boundary line. Robust fitting prevents isolated upward/downward spikes
+        // from pulling the line, and each image column contributes at most one supporting point,
+        // so outlier and empty columns are never counted toward the 60% requirement.
+        var fit = fitRobustLine(anchorBoundary) ?: (0f to anchorBoundary.first().y)
+        repeat(LINE_REFINEMENT_PASSES) {
+            val aligned = extractAlignedUpperBoundary(
+                source = mask.values,
+                width = width,
+                visibleWidth = visibleWidth,
+                visibleHeight = visibleHeight,
+                fit = fit
+            )
+            fit = fitRobustLine(aligned) ?: return null
+        }
+        val boundary = extractAlignedUpperBoundary(
+            source = mask.values,
+            width = width,
+            visibleWidth = visibleWidth,
+            visibleHeight = visibleHeight,
+            fit = fit
+        )
+        val lineSupportRatio = boundary.size.toFloat() / visibleWidth
+        if (lineSupportRatio < MIN_LINE_SUPPORT_RATIO) return null
+
+        fit = fitRobustLine(boundary) ?: return null
+        val topY = boundary.minOf { it.y }
+        if (topY < MIN_TOP_Y) return null
+
         val pixelSlope = fit.first * visibleHeight.toFloat() / visibleWidth.toFloat()
         val angleDegrees = Math.toDegrees(atan(abs(pixelSlope)).toDouble()).toFloat()
         if (angleDegrees > MAX_BOUNDARY_ANGLE_DEGREES) return null
@@ -132,7 +158,7 @@ internal object MobileSamMatBoundaryDetector {
 
         return Candidate(
             topY = topY,
-            horizontalSpan = horizontalSpan,
+            lineSupportRatio = lineSupportRatio,
             line = listOf(Offset(LEFT_X, leftY), Offset(RIGHT_X, rightY))
         )
     }
@@ -245,19 +271,81 @@ internal object MobileSamMatBoundaryDetector {
         return points
     }
 
-    /** Least-squares line used for the slope validity test and the editable two-point boundary. */
-    private fun fitLine(points: List<BoundaryPoint>): Pair<Float, Float>? {
-        if (points.size < 2) return null
-        val meanX = points.sumOf { it.x.toDouble() }.toFloat() / points.size
-        val meanY = points.sumOf { it.y.toDouble() }.toFloat() / points.size
-        var numerator = 0f
-        var denominator = 0f
-        for (point in points) {
-            val dx = point.x - meanX
-            numerator += dx * (point.y - meanY)
-            denominator += dx * dx
+    /**
+     * Collects one top-edge pixel per column when that pixel lies on the anchored line.
+     * Disconnected fragments can therefore contribute together, while blank columns do not.
+     */
+    private fun extractAlignedUpperBoundary(
+        source: BooleanArray,
+        width: Int,
+        visibleWidth: Int,
+        visibleHeight: Int,
+        fit: Pair<Float, Float>
+    ): List<BoundaryPoint> {
+        val points = ArrayList<BoundaryPoint>(visibleWidth)
+        val heightDenominator = max(1, visibleHeight - 1).toFloat()
+        val widthDenominator = max(1, visibleWidth - 1).toFloat()
+        val normalizedTolerance = BOUNDARY_ALIGNMENT_TOLERANCE_PIXELS / heightDenominator
+
+        for (x in 0 until visibleWidth) {
+            val normalizedX = x / widthDenominator
+            val expectedY = fit.first * normalizedX + fit.second
+            var closestY = -1
+            var closestDistance = Float.POSITIVE_INFINITY
+
+            for (y in 0 until visibleHeight) {
+                val index = y * width + x
+                if (!source[index]) continue
+                val isUpperEdge = y == 0 || !source[(y - 1) * width + x]
+                if (!isUpperEdge) continue
+
+                val normalizedY = y / heightDenominator
+                val distance = abs(normalizedY - expectedY)
+                if (distance <= normalizedTolerance && distance < closestDistance) {
+                    closestY = y
+                    closestDistance = distance
+                }
+            }
+
+            if (closestY >= 0) {
+                points += BoundaryPoint(
+                    x = normalizedX,
+                    y = closestY / heightDenominator
+                )
+            }
         }
-        val slope = if (denominator > 1e-8f) numerator / denominator else 0f
-        return slope to (meanY - slope * meanX)
+        return points
+    }
+
+    /**
+     * Theil-Sen line fit. Median pairwise slope and median intercept keep isolated top-edge spikes
+     * from moving the detected mat boundary before the inlier-support pass removes those columns.
+     */
+    private fun fitRobustLine(points: List<BoundaryPoint>): Pair<Float, Float>? {
+        if (points.size < 2) return null
+        val slopes = ArrayList<Float>(points.size * (points.size - 1) / 2)
+        for (firstIndex in 0 until points.lastIndex) {
+            val first = points[firstIndex]
+            for (secondIndex in (firstIndex + 1) until points.size) {
+                val second = points[secondIndex]
+                val dx = second.x - first.x
+                if (abs(dx) > 1e-8f) slopes += (second.y - first.y) / dx
+            }
+        }
+        if (slopes.isEmpty()) return null
+
+        val slope = median(slopes)
+        val intercept = median(points.map { it.y - slope * it.x })
+        return slope to intercept
+    }
+
+    private fun median(values: List<Float>): Float {
+        val sorted = values.sorted()
+        val middle = sorted.size / 2
+        return if (sorted.size % 2 == 0) {
+            (sorted[middle - 1] + sorted[middle]) / 2f
+        } else {
+            sorted[middle]
+        }
     }
 }

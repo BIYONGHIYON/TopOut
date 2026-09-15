@@ -40,7 +40,9 @@ extension HoldVC {
     }
 
     @objc private func onAppDidEnterBackground() {
+        cancelAutomaticRecordingStart()
         cancelPendingReadyFlow()
+        interruptSelectionAnalysis()
         stopCamera()
         releaseMobileSAMResources()
 
@@ -64,6 +66,7 @@ extension HoldVC {
            mode == .camera || mode == .select || mode == .processing {
             prepareAudioSessionForCameraUse()
             startCamera()
+            scheduleAutomaticRecordingStartIfEligible()
         }
     }
 
@@ -77,6 +80,10 @@ extension HoldVC {
 
         Task { @MainActor [weak self] in
             guard let self else { return }
+
+            if self.recState == .idle, self.mode == .select {
+                self.cancelAutomaticRecordingStart()
+            }
 
             if self.recState == .idle, self.mode == .camera {
                 self.cancelPendingReadyFlow()
@@ -107,6 +114,9 @@ extension HoldVC {
                 self.prepareAudioSessionForCameraUse()
                 self.startCamera()
                 self.refreshReadyButtonAfterSessionRecovery()
+            } else if self.mode == .select, self.recState == .idle {
+                self.startCamera()
+                self.scheduleAutomaticRecordingStartIfEligible()
             }
         }
     }
@@ -215,10 +225,6 @@ extension HoldVC {
         hidePowerSavingRecordingUI()
         videoFrameSink.setRecording(false)
 
-        if let openRange = motionDetector.activeClipRangeForRecordingStop() {
-            appendDetectedClipRange(openRange)
-        }
-        motionDetector.stop()
         stopCamera()
 
         manualStopBtn.isEnabled = false
@@ -227,6 +233,7 @@ extension HoldVC {
         beginRecordingStopBackgroundTask()
 
         guard hadStartedWriting else {
+            motionDetector.stop()
             recorder.deleteAll()
             finishAutomaticStopWithoutRecording(notice: notice)
             return
@@ -235,48 +242,52 @@ extension HoldVC {
         recState = .exporting
         mode = .recording
 
-        recorder.stop { [weak self] result in
-            guard let self else { return }
-            self.setLoading(false)
-            self.isAutomaticStopInProgress = false
-            self.endRecordingStopBackgroundTask()
+        motionDetector.stopAndCaptureOpenRange { [weak self] openRange in
+            guard let self, self.recState == .exporting else { return }
+            if let openRange { self.appendDetectedClipRange(openRange) }
+            self.recorder.stop { [weak self] result in
+                guard let self else { return }
+                self.setLoading(false)
+                self.isAutomaticStopInProgress = false
+                self.endRecordingStopBackgroundTask()
 
-            switch result {
-            case .success(let session):
-                self.pendingAutomaticStopSession = session
-                self.pendingAutomaticStopNotice = notice
-                self.deliverPendingAutomaticStopResultIfPossible()
+                switch result {
+                case .success(let session):
+                    self.pendingAutomaticStopSession = session
+                    self.pendingAutomaticStopNotice = notice
+                    self.deliverPendingAutomaticStopResultIfPossible()
 
-            case .failure(let error):
-                if let recorderError = error as? RecorderError, case .noRecording = recorderError {
+                case .failure(let error):
+                    if let recorderError = error as? RecorderError, case .noRecording = recorderError {
+                        self.recorder.deleteAll()
+                        self.recState = .idle
+                        self.mode = .camera
+                        self.unlockCameraOrientation()
+                        self.showCameraUI()
+                        self.pendingAutomaticStopSession = nil
+                        self.pendingAutomaticStopNotice = RecordingStopNotice(
+                            title: notice.title,
+                            message: "\(notice.message)\n\n\(L("notice.no_video_frames"))"
+                        )
+                        self.restoreIdleCameraAfterAutomaticStopIfActive()
+                        self.deliverPendingAutomaticStopResultIfPossible()
+                        return
+                    }
+
                     self.recorder.deleteAll()
                     self.recState = .idle
                     self.mode = .camera
                     self.unlockCameraOrientation()
                     self.showCameraUI()
+
                     self.pendingAutomaticStopSession = nil
                     self.pendingAutomaticStopNotice = RecordingStopNotice(
                         title: notice.title,
-                        message: "\(notice.message)\n\n\(L("notice.no_video_frames"))"
+                        message: "\(notice.message)\n\n\(L("error.recording_finish"))"
                     )
                     self.restoreIdleCameraAfterAutomaticStopIfActive()
                     self.deliverPendingAutomaticStopResultIfPossible()
-                    return
                 }
-
-                self.recorder.deleteAll()
-                self.recState = .idle
-                self.mode = .camera
-                self.unlockCameraOrientation()
-                self.showCameraUI()
-
-                self.pendingAutomaticStopSession = nil
-                self.pendingAutomaticStopNotice = RecordingStopNotice(
-                    title: notice.title,
-                    message: "\(notice.message)\n\n\(L("error.recording_finish"))"
-                )
-                self.restoreIdleCameraAfterAutomaticStopIfActive()
-                self.deliverPendingAutomaticStopResultIfPossible()
             }
         }
     }

@@ -11,6 +11,7 @@ extension HoldVC {
 
     @objc func onRecordStart() {
         guard recState == .idle, let referenceImage = frameImage else { return }
+        cancelAutomaticRecordingStart()
         lockCurrentCameraOrientation()
 
         let selectedMatLine = matLinePoints
@@ -65,6 +66,7 @@ extension HoldVC {
 
         let viewPoint = gesture.location(in: imgView)
         guard imgView.bounds.contains(viewPoint) else { return }
+        cancelAutomaticRecordingStart()
         let normalizedTap = CGPoint(
             x: max(0, min(1, viewPoint.x / imgView.bounds.width)),
             y: max(0, min(1, viewPoint.y / imgView.bounds.height))
@@ -105,18 +107,28 @@ extension HoldVC {
                 y: normalizedTap.y * image.size.height
             )
             self.frameImage = image
-            self.pixels = PixelMap(image: image)
-            self.emb = nil
+            let pixels = PixelMap(image: image)
+            self.topHoldAnalysisToken?.cancel()
+            let cancellationToken = AnalysisCancellationToken()
+            self.topHoldAnalysisToken = cancellationToken
             self.scheduleTopHoldAnalysisTimeout(
                 at: imagePoint,
                 image: image,
-                requestID: requestID
+                requestID: requestID,
+                cancellationToken: cancellationToken
             )
 
             self.workQ.async { [weak self] in
                 autoreleasepool {
                     // 촬영 배율이 이미지에 반영되어 있으므로 보정 좌표는 이미지 1배 기준을 사용한다.
-                    self?.runSAM(at: imagePoint, image: image, zoom: 1, requestID: requestID)
+                    self?.runSAM(
+                        at: imagePoint,
+                        image: image,
+                        pixels: pixels,
+                        zoom: 1,
+                        requestID: requestID,
+                        cancellationToken: cancellationToken
+                    )
                 }
             }
         }
@@ -130,10 +142,6 @@ extension HoldVC {
         stopRecordingStorageMonitor()
         hidePowerSavingRecordingUI()
         videoFrameSink.setRecording(false)
-        if let openRange = motionDetector.activeClipRangeForRecordingStop() {
-            appendDetectedClipRange(openRange)
-        }
-        motionDetector.stop()
         recState = .exporting
         mode = .recording
         setRecordingStatusText(L("camera.processing_video"))
@@ -141,25 +149,25 @@ extension HoldVC {
         setLoading(true)
         beginRecordingStopBackgroundTask()
 
-        recorder.stop { [weak self] result in
-            guard let self else { return }
-            self.setLoading(false)
-            self.endRecordingStopBackgroundTask()
-
-            switch result {
-            case .success(let session):
-                self.showReview(session: session)
-            case .failure:
-                self.recorder.deleteAll()
-                self.recState = .idle
-                self.mode = .camera
-                self.unlockCameraOrientation()
-                self.showCameraUI()
-                self.pendingAutomaticStopNotice = RecordingStopNotice(
-                    title: L("error.recording_finish"),
-                    message: L("error.recording_finish")
-                )
-                self.deliverPendingAutomaticStopResultIfPossible()
+        motionDetector.stopAndCaptureOpenRange { [weak self] openRange in
+            guard let self, self.recState == .exporting else { return }
+            if let openRange { self.appendDetectedClipRange(openRange) }
+            self.recorder.stop { [weak self] result in
+                guard let self else { return }
+                self.setLoading(false)
+                self.endRecordingStopBackgroundTask()
+                switch result {
+                case .success(let session):
+                    self.showReview(session: session)
+                case .failure:
+                    self.recorder.deleteAll()
+                    self.recState = .idle
+                    self.mode = .camera
+                    self.unlockCameraOrientation()
+                    self.showCameraUI()
+                    self.pendingAutomaticStopNotice = RecordingStopNotice(title: L("error.recording_finish"), message: L("error.recording_finish"))
+                    self.deliverPendingAutomaticStopResultIfPossible()
+                }
             }
         }
     }

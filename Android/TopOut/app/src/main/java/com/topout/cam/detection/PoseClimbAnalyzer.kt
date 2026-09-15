@@ -180,6 +180,18 @@ class PoseClimbAnalyzer(
     }
 
     override fun analyze(image: ImageProxy) {
+        try {
+            analyzeFrame(image)
+        } catch (_: Exception) {
+            // A malformed frame must not terminate CameraX's analysis callback.
+            // Keep the recording state; the next valid frame can resume detection.
+        } finally {
+            // CameraX must receive every frame back even when geometry or buffer conversion fails.
+            image.close()
+        }
+    }
+
+    private fun analyzeFrame(image: ImageProxy) {
         var cachedGeometry: FrameGeometry? = null
         fun geometryForFrame(): FrameGeometry = cachedGeometry ?: frameGeometry(image).also {
             cachedGeometry = it
@@ -214,7 +226,6 @@ class PoseClimbAnalyzer(
             }
             stateGeneration
         } ?: run {
-            image.close()
             return
         }
 
@@ -235,14 +246,12 @@ class PoseClimbAnalyzer(
             }
         }
         if (!shouldAnalyze) {
-            image.close()
             return
         }
 
         val geometry = geometryForFrame()
         val currentFrame = makeSmallFrame(image, geometry)
         if (currentFrame == null) {
-            image.close()
             return
         }
         val previousFrame = synchronized(this) { previousMotionFrame }
@@ -271,7 +280,6 @@ class PoseClimbAnalyzer(
                     nextLumaScratchIndex = (nextLumaScratchIndex + 1) % lumaScratchFrames.size
                 }
             }
-            image.close()
         }
     }
 

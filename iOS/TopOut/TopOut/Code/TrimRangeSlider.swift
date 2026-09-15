@@ -75,7 +75,7 @@ final class TrimRangeSlider: UIControl {
     private let fineAdjustmentEnterSpeed: CGFloat = 35
     private let fineAdjustmentExitSpeed: CGFloat = 55
     private let fineAdjustmentActivationDuration: TimeInterval = 0.14
-    private let maximumZoomFactor: Double = 12
+    private let maximumZoomFactor: Double = 30
     private let minimumZoomWindowSeconds: TimeInterval = 2
     // 손잡이는 작게 표시하고 터치 영역은 넉넉하게 유지한다.
     private let thumbRadius: CGFloat = 13

@@ -1,4 +1,4 @@
-# TopOut Android v2.1 (versionCode 18)
+# TopOut Android v2.2 (versionCode 19)
 
 > 등반 시작부터 완등 순간까지, 자동으로 찾아주는 클라이밍 촬영 앱
 
@@ -29,7 +29,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 - Application ID: `com.topout.cam`
 - Minimum SDK: `26` (Android 8.0)
 - Compile / Target SDK: `36`
-- Version name / code: `2.1` / `18`
+- Version name / code: `2.2` / `19`
 - UI: Kotlin, Jetpack Compose, Material 3
 - Camera / media: CameraX 1.6.1, Media3 1.10.1
 - AI: MobileSAM ONNX Runtime 1.27.0, MoveNet Thunder FP16 LiteRT 1.4.1
@@ -52,10 +52,11 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 - CameraX Preview, VideoCapture, ImageAnalysis는 동일한 `ViewPort` 좌표계를 사용합니다.
 - `준비 완료`는 CameraX가 실제 `STREAMING` 상태이고 선택한 줌이 적용된 뒤에만 활성화됩니다.
 - 자동 매트 분석은 Ready 이후 새 ImageAnalysis 프레임 6장을 건너뛴 안정 프레임을 사용합니다. 분석용 비트맵은 화면에 표시하지 않고 선택 화면은 라이브 프리뷰를 유지합니다.
-- MobileSAM은 화면 중앙의 y=`70%`, `80%`, `90%`, `95%` 프롬프트를 사용하며 후보가 없으면 y=`75%` 기본선을 제안합니다.
+- MobileSAM은 화면 중앙의 y=`70%`, `80%`, `90%`, `95%` 프롬프트를 사용합니다. 프롬프트 연결 성분을 기준으로 분리된 상단 조각까지 강건 직선에 맞는 열을 합산하고, 빈 열과 위·아래 이상치를 제외한 지지 비율이 화면 너비의 `60%` 이상일 때 경계로 사용합니다. 후보가 없으면 y=`75%` 기본선을 제안합니다.
 - ONNX 매트 분석이 5초 안에 끝나지 않으면 대기를 끝내고 y=`75%` 기본선을 표시해 사용자가 직접 보정할 수 있습니다. 이후 도착한 분석 결과는 현재 선택 상태를 덮어쓰지 않습니다.
 - 탑홀드 분석은 매트 분석과 별도로 5초를 제한합니다. 시간 초과·모델 오류·빈 결과에는 탭 위치의 기본 원형 마스크로 선택을 완료하고, 늦게 끝난 ONNX 결과는 현재 선택을 덮어쓰지 않습니다.
 - Ready 이후 렌즈·줌·회전 기준을 고정합니다. 탑홀드는 탭할 때마다 새 프레임과 새 임베딩으로 계산합니다.
+- 자동 구간 탐지에서는 매트 경계 분석 완료 후, 탑홀드 마스킹에서는 탑홀드 선택 완료 후 1분 동안 `녹화 시작`을 누르지 않으면 현재 선택을 유지한 채 기존 3초 카운트다운을 자동으로 시작합니다. 대기 중에는 기존 선택 안내를 유지하고 마지막 5초 동안만 자동 시작 안내를 표시합니다. 재선택·재촬영·백그라운드 전환 시 예약을 취소하고 필요한 선택이 다시 준비되면 1분을 새로 계산합니다.
 - 기기의 논리 멀티 카메라와 독립 물리 렌즈 구성을 함께 탐색해 실제로 사용할 줌 경로를 결정합니다. 물리 카메라의 기본 native zoom은 1.0x입니다.
 - 60fps는 Preview, VideoCapture, ImageAnalysis가 함께 바인딩된 실제 세션에서 CameraX가 정확한 60fps를 보장할 때만 사용하고, 그렇지 않으면 30fps로 폴백합니다.
 
@@ -103,8 +104,8 @@ Thunder의 추가 연산량은 전체 화면 변환을 제거하고 Motion 변�
 ## 결과 편집과 갤러리 검증
 
 - 녹화 중 감지된 모든 원본 구간을 보존하고, 2초 미만의 짧은 구간만 인접 구간과의 간격이 3초 이내일 때 병합합니다.
-- 최종 후보에는 앞뒤 3초 편집 여백을 적용합니다.
-- 결과 화면에서 구간 확대, 0.1초 미세 조정, 중복 구간 방지, 같은 촬영 상태를 유지한 재촬영을 지원합니다. 확대 배율 슬라이더는 손잡이뿐 아니라 트랙 전체를 탭하거나 진동 없이 바로 드래그해 조절할 수 있습니다. 다시 촬영 확인창은 경고 본문만 13sp로 낮추고 버튼 크기는 유지합니다. 시작점 수정 후에는 새 시작점부터, 끝점 수정 후에는 새 끝점의 3초 전부터 자동 재생합니다.
+- 최종 후보에는 시작 전 5초·종료 후 3초 편집 여백을 적용하며, 원본 영상의 시작과 끝 범위 안으로 제한합니다.
+- 결과 화면에서 최대 30배 구간 확대, 0.1초 미세 조정, 중복 구간 방지, 같은 촬영 상태를 유지한 재촬영을 지원합니다. 확대 배율 슬라이더는 손잡이뿐 아니라 트랙 전체를 탭하거나 진동 없이 바로 드래그해 조절할 수 있습니다. 다시 촬영 확인창은 경고 본문만 13sp로 낮추고 버튼 크기는 유지합니다. 시작점 수정 후에는 새 시작점부터, 끝점 수정 후에는 새 끝점의 3초 전부터 자동 재생합니다.
 - Media3 Transformer는 선택 구간 시작이 키프레임 사이에 있으면 해당 구간을 재인코딩합니다. 또한 첫 영상 프레임보다 앞선 오디오 샘플을 결과에서 제외해 OEM 갤러리에서도 저장 영상이 영상 프레임부터 시작하도록 정렬합니다.
 - 내보낸 영상은 MediaStore에 게시한 뒤 같은 content URI를 다시 조회하고 파일 디스크립터·입력 스트림·메타데이터를 열어 실제 저장 결과를 검증합니다.
 - 검증된 구간은 임시 export 파일이 아니라 같은 MediaStore URI로 재생합니다.
@@ -123,13 +124,17 @@ Thunder의 추가 연산량은 전체 화면 변환을 제거하고 Motion 변�
 - 결과 화면에서는 화면 켜짐 강제를 해제해 시스템 자동 잠금 시간을 따릅니다.
 - 결과 영상과 실제 갤러리 저장본은 앱이 백그라운드로 이동하면 자동 일시정지하며, 재생 위치 확인은 영상이 실제 재생 중일 때만 동작합니다.
 - 화면 재생성 시 ViewModel이 이전 Activity와 PreviewView를 유지하지 않도록 약한 참조 사용
+- 모든 CameraX 분석 프레임은 전처리·좌표 변환·추론 예외와 관계없이 `finally` 한 곳에서 `ImageProxy.close()`를 호출하며, 화면 종료 시 분석 executor가 비워진 뒤 네이티브 pose detector를 닫음
+- 전처리의 복구 가능한 예외도 프레임 단위로 처리해 분석 콜백 밖으로 전파하지 않으며, 모델 준비·전처리·인코더 반환 및 첫 decoder 앞에서 취소를 확인해 timeout 후 추가 추론을 제한
 - MobileSAM의 네 프롬프트 결과를 순차 평가하고 embedding·decoder 입력을 direct buffer로 재사용해 분석 순간의 peak heap과 복사를 줄임
 - 2fps·4fps Motion/Pose 분석은 두 개의 luma 버퍼를 순환해 장시간 촬영 중 반복 할당과 GC 부하를 줄임
 - 초기 Motion 분석은 매트 영역의 전체 변화율과 셀 점수를 한 번의 luma 순회에서 계산하고, 매트선의 열별 범위를 캐시하며, 같은 프레임의 실패 복구에서 이미 계산한 ROI를 재사용함
 - MoveNet 출력의 신뢰 관절 경계는 한 번의 순회로 계산하고, 연속 Pose 추적 중 이미 갱신된 ROI를 다시 계산하지 않음
 - 분석 상태 세대를 프레임마다 확인해 중지·재설정 뒤 늦게 끝난 추론이 이전 luma 프레임, ROI 또는 감지 이벤트를 다음 촬영에 기록하지 않도록 차단
-- 프레임 캡처나 매트 분석이 제한 시간을 넘기면 해당 요청을 취소하고 늦게 완성된 Bitmap을 회수해 선택 화면 이탈 뒤 메모리에 남지 않도록 처리
+- 프레임 캡처나 매트·탑홀드 분석이 제한 시간을 넘기면 해당 요청을 취소하고 늦게 완성된 Bitmap을 회수하며, 보정 반복 사이의 취소 확인으로 추가 ONNX decoder 호출을 중단
 - 녹화 진입 시 MobileSAM 임베딩 캐시에 세대를 부여해 제한 시간을 넘긴 인코더 결과가 큰 버퍼를 다시 남기지 않게 하며, 앱 종료 시 세션 해제는 진행 중인 ONNX 호출과 같은 mutex 뒤에서 백그라운드로 직렬화해 메인 스레드를 막거나 사용 중인 네이티브 세션을 동시에 닫지 않도록 보호
+- 녹화 종료 메타데이터는 예외를 안전하게 폴백하고 한 번만 읽으며, 원본 임시 영상은 ViewModel이 명시적으로 소유해 결과 닫기·재촬영·화면 종료에서 정리
+- MediaStore 복사·재조회·파일 열기·메타데이터 검증은 IO dispatcher에서 수행하고, 취소·실패 시 임시 export와 pending MediaStore 항목을 함께 삭제. 저장 시작 전 결과 재생도 일시정지
 - 카운트다운 취소·백그라운드 전환·카메라 세션 교체 시 대기 중인 줌 확인 콜백과 1.5초 fallback을 함께 무효화하고, 이미 Recorder가 만들어졌지만 Start 이벤트 전 취소된 경우 결과 파일을 폐기해 녹화가 뒤늦게 되살아나지 않도록 보호. 화면·수명주기 재생성으로 시작이 무효화되거나 폐기 Recorder의 Finalize 전에 재시도하면 UI도 즉시 촬영 대기 상태로 복구
 - OEM CameraControl의 줌 future가 완료되지 않거나 실패하면 최대 1.5초까지만 기다린 뒤 현재 바인딩된 세션으로 녹화를 한 번만 시작해 STARTING 무한 대기를 방지
 
@@ -183,10 +188,10 @@ app/build/generated/moveNetPoseAssets/models/movenet-thunder-fp16.tflite
 
 ## 문서
 
-- [v2.1 versionCode 18 변경 사항](V2_1_BUILD_18_NOTES.md)
+- [v2.2 versionCode 19 변경 사항](V2_2_BUILD_19_NOTES.md)
 - [전체 개발 이력과 기술 의사결정](../../DEVELOPMENT_HISTORY.md)
 - [Android 호환성](ANDROID_COMPATIBILITY_NOTES.md)
 - [기기 호환성 수정](DEVICE_COMPATIBILITY_FIX_NOTES.md)
 - [MobileSAM ONNX 배치와 진단](docs/ONNX_INTEGRATION.md)
 - [iOS UI/UX 대응표](docs/UI_PARITY.md)
-- 과거 릴리스 기록: [v2.0 versionCode 17](V2_0_BUILD_17_NOTES.md), [v2.0 versionCode 16](V2_0_BUILD_16_NOTES.md), [v1.7 build 15](V1_7_BUILD_15_NOTES.md), [v1.6 build 14](V1_6_BUILD_14_NOTES.md), [v1.6 build 13](V1_6_BUILD_13_NOTES.md), [v1.6 build 12](V1_6_BUILD_12_NOTES.md), [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)
+- 과거 릴리스 기록: [v2.1 versionCode 18](V2_1_BUILD_18_NOTES.md), [v2.0 versionCode 17](V2_0_BUILD_17_NOTES.md), [v2.0 versionCode 16](V2_0_BUILD_16_NOTES.md), [v1.7 build 15](V1_7_BUILD_15_NOTES.md), [v1.6 build 14](V1_6_BUILD_14_NOTES.md), [v1.6 build 13](V1_6_BUILD_13_NOTES.md), [v1.6 build 12](V1_6_BUILD_12_NOTES.md), [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)

@@ -38,7 +38,7 @@ internal object TimelineZoomMath {
         lowerSeconds: Double,
         upperSeconds: Double,
         minimumSelectionSeconds: Double,
-        maximumZoomFactor: Double = 12.0,
+        maximumZoomFactor: Double = 30.0,
         minimumWindowSeconds: Double = 2.0,
         handleMarginSeconds: Double = 0.35,
         handleMarginRatio: Double = 0.16

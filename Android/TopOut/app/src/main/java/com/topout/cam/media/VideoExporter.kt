@@ -26,10 +26,20 @@ import com.topout.cam.localization.tr
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 
 /** Media3 counterpart of ContinuousRecorder's fixed-size writer and review export. */
 @OptIn(UnstableApi::class)
 class VideoExporter(private val context: Context) {
+    data class VideoMetadata(
+        val durationSeconds: Double?,
+        val displayedWidth: Int?,
+        val displayedHeight: Int?
+    )
 
 
     suspend fun exportToGallery(
@@ -38,64 +48,65 @@ class VideoExporter(private val context: Context) {
         endSeconds: Double,
         overlayBitmap: Bitmap?,
         includeOverlay: Boolean,
-        onProgress: (Int) -> Unit = {},
         onSavingToGallery: () -> Unit = {}
     ): Uri {
         require(endSeconds > startSeconds) { tr("error.invalid_clip_range") }
         val temp = File(context.cacheDir, "topout_export_${System.currentTimeMillis()}.mp4")
         temp.delete()
 
-        val clipping = MediaItem.ClippingConfiguration.Builder()
-            .setStartPositionMs((startSeconds * 1000).toLong())
-            .setEndPositionMs((endSeconds * 1000).toLong())
-            .build()
-        val mediaItem = MediaItem.Builder()
-            .setUri(inputUri)
-            .setClippingConfiguration(clipping)
-            .build()
-
-        val effects = mutableListOf<Effect>()
-        // 촬영 화면비는 이미 적용되어 있으므로 내보내기에서는 자르기와 마스크만 처리한다.
-        if (includeOverlay && overlayBitmap != null) {
-            effects += OverlayEffect(listOf(BitmapOverlay.createStaticBitmapOverlay(overlayBitmap)))
-        }
-
-        val edited = EditedMediaItem.Builder(mediaItem)
-            .setEffects(Effects(emptyList(), effects))
-            .build()
-
-        onProgress(0)
-        transform(edited, temp)
-        onSavingToGallery()
         return try {
-            copyToMediaStore(temp)
+            val clipping = MediaItem.ClippingConfiguration.Builder()
+                .setStartPositionMs((startSeconds * 1000).toLong())
+                .setEndPositionMs((endSeconds * 1000).toLong())
+                .build()
+            val mediaItem = MediaItem.Builder()
+                .setUri(inputUri)
+                .setClippingConfiguration(clipping)
+                .build()
+
+            val effects = mutableListOf<Effect>()
+            // 촬영 화면비는 이미 적용되어 있으므로 내보내기에서는 자르기와 마스크만 처리한다.
+            if (includeOverlay && overlayBitmap != null) {
+                effects += OverlayEffect(listOf(BitmapOverlay.createStaticBitmapOverlay(overlayBitmap)))
+            }
+
+            val edited = EditedMediaItem.Builder(mediaItem)
+                .setEffects(Effects(emptyList(), effects))
+                .build()
+
+            transform(edited, temp)
+            onSavingToGallery()
+            withContext(Dispatchers.IO) { copyToMediaStore(temp) }
         } finally {
             temp.delete()
         }
     }
 
-    /** Returns the displayed width/height after applying the file rotation metadata. */
-    fun videoDimensions(file: File): Pair<Int, Int>? {
+    /** Reads all review metadata in one IO-bound pass. A malformed partial recording is non-fatal. */
+    suspend fun inspectVideo(file: File): VideoMetadata? = withContext(Dispatchers.IO) {
         val retriever = MediaMetadataRetriever()
-        return try {
+        try {
             retriever.setDataSource(file.absolutePath)
+            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull()
+                ?.takeIf { it > 0L }
+                ?.div(1000.0)
             val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-                ?.toIntOrNull() ?: return null
+                ?.toIntOrNull()
+                ?.takeIf { it > 0 }
             val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-                ?.toIntOrNull() ?: return null
+                ?.toIntOrNull()
+                ?.takeIf { it > 0 }
             val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
                 ?.toIntOrNull() ?: 0
-            if (rotation % 180 == 0) width to height else height to width
-        } finally {
-            retriever.release()
-        }
-    }
-
-    fun durationSeconds(file: File): Double {
-        val retriever = MediaMetadataRetriever()
-        return try {
-            retriever.setDataSource(file.absolutePath)
-            (retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L) / 1000.0
+            val displayedSize = if (width != null && height != null) {
+                if (rotation % 180 == 0) width to height else height to width
+            } else null
+            VideoMetadata(duration, displayedSize?.first, displayedSize?.second)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
         } finally {
             retriever.release()
         }
@@ -128,7 +139,7 @@ class VideoExporter(private val context: Context) {
         transformer.start(item, output.absolutePath)
     }
 
-    private fun copyToMediaStore(source: File): Uri {
+    private suspend fun copyToMediaStore(source: File): Uri {
         val resolver = context.contentResolver
         val name = "TopOut_${System.currentTimeMillis()}.mp4"
         val values = ContentValues().apply {
@@ -145,7 +156,15 @@ class VideoExporter(private val context: Context) {
         val uri = resolver.insert(collection, values) ?: error(tr("error.photo_destination"))
         try {
             resolver.openOutputStream(uri, "w")?.use { output ->
-                FileInputStream(source).use { input -> input.copyTo(output) }
+                FileInputStream(source).use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                    }
+                }
             } ?: error(tr("error.open_saved_file"))
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 resolver.update(uri, ContentValues().apply {

@@ -40,7 +40,6 @@ import com.topout.cam.util.StorageMonitor
 import com.topout.cam.util.createHoldOverlayBitmap
 import java.io.File
 import java.lang.ref.WeakReference
-import kotlin.math.max
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -69,6 +68,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private var matBoundaryTimeoutJob: Job? = null
     private var topHoldAnalysisTimeoutJob: Job? = null
     private var selectionAnalysisJob: Job? = null
+    private var automaticRecordingStartJob: Job? = null
     // 화면 재생성 뒤 이전 UI가 남지 않도록 생명주기 객체는 약한 참조로 보관한다.
     private var latestLifecycleOwner = WeakReference<LifecycleOwner>(null)
     private var latestPreviewView = WeakReference<PreviewView>(null)
@@ -80,6 +80,9 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private var activeRecordingTargetRotation = 0
     private var recordingAnalysisAvailable = true
     private var selectionRequestId = 0L
+    private var ownedRecordingFile: File? = null
+    private var appInForeground = false
+    private var automaticRecordingWarningVisible = false
 
     init {
         cameraEngine.onRecordingStarted = {
@@ -103,6 +106,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             _uiState.update { it.copy(recordingElapsedSeconds = seconds) }
         }
         cameraEngine.onRecordingFinalized = { result ->
+            result.getOrNull()?.file?.let(::adoptRecordingFile)
             viewModelScope.launch { finishRecording(result) }
         }
         cameraEngine.onZoomCorrected = { correctedZoom ->
@@ -285,6 +289,8 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 if (pendingRetakeRecording) {
                     pendingRetakeRecording = false
                     startRecording()
+                } else {
+                    scheduleAutomaticRecordingStartIfEligible()
                 }
             }.onFailure { error ->
                 // 재연결에 따른 이전 작업 취소는 오류로 표시하지 않는다.
@@ -428,6 +434,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun beginSelectionRequest(): Long {
+        cancelAutomaticRecordingStart()
         invalidateSelectionRequest()
         return selectionRequestId
     }
@@ -475,6 +482,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 statusText = selectionGuidance(state.settings)
             )
         }
+        scheduleAutomaticRecordingStartIfEligible()
     }
 
     fun onHoldTapped(normalizedPoint: Offset) {
@@ -545,7 +553,68 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 errorMessage = null
             )
         }
+        scheduleAutomaticRecordingStartIfEligible()
     }
+
+    private fun isAutomaticRecordingStartEligible(state: TopOutUiState): Boolean {
+        if (state.stage != CameraStage.SELECT ||
+            state.recordingState != RecordingState.IDLE ||
+            state.isBusy ||
+            !state.cameraReady ||
+            !appInForeground
+        ) return false
+
+        val settings = state.settings
+        val hasRequiredBoundary = !settings.autoClipDetectionEnabled || state.matLine.size >= 2
+        val hasRequiredTopHold = !settings.requiresTopHoldSelection || state.holdMask != null
+        return (settings.autoClipDetectionEnabled || settings.requiresTopHoldSelection) &&
+            hasRequiredBoundary && hasRequiredTopHold
+    }
+
+    private fun scheduleAutomaticRecordingStartIfEligible() {
+        if (!isAutomaticRecordingStartEligible(_uiState.value)) return
+        if (automaticRecordingStartJob?.isActive == true) return
+
+        automaticRecordingWarningVisible = false
+        _uiState.update { state ->
+            if (isAutomaticRecordingStartEligible(state)) {
+                state.copy(statusText = completedSelectionGuidance(state))
+            } else state
+        }
+        automaticRecordingStartJob = viewModelScope.launch {
+            delay(
+                TopOutConfig.AutomaticRecordingStartDelayMillis -
+                    TopOutConfig.AutomaticRecordingWarningLeadMillis
+            )
+            if (!isAutomaticRecordingStartEligible(_uiState.value)) {
+                automaticRecordingStartJob = null
+                return@launch
+            }
+            automaticRecordingWarningVisible = true
+            _uiState.update { state ->
+                if (isAutomaticRecordingStartEligible(state)) {
+                    state.copy(statusText = tr("camera.auto_recording_soon"))
+                } else state
+            }
+            delay(TopOutConfig.AutomaticRecordingWarningLeadMillis)
+            automaticRecordingWarningVisible = false
+            automaticRecordingStartJob = null
+            if (isAutomaticRecordingStartEligible(_uiState.value)) startRecording()
+        }
+    }
+
+    private fun cancelAutomaticRecordingStart() {
+        automaticRecordingStartJob?.cancel()
+        automaticRecordingStartJob = null
+        automaticRecordingWarningVisible = false
+    }
+
+    private fun completedSelectionGuidance(state: TopOutUiState): String =
+        if (state.settings.requiresTopHoldSelection && state.holdMask != null) {
+            tr("camera.selection_complete")
+        } else {
+            selectionGuidance(state.settings)
+        }
 
     fun updateMatPoint(index: Int, point: Offset) {
         _uiState.update { state ->
@@ -588,6 +657,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun retakeSelection() {
+        cancelAutomaticRecordingStart()
         invalidateSelectionRequest()
         cameraEngine.setPreviewRenderingEnabled(true)
         _uiState.update { state ->
@@ -605,6 +675,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         val state = _uiState.value
         val settings = state.settings
         if (state.recordingState != RecordingState.IDLE || state.isBusy) return
+        cancelAutomaticRecordingStart()
         invalidateSelectionRequest()
         if (settings.requiresTopHoldSelection && state.holdMask == null) {
             setError(tr("error.select_hold_first"))
@@ -614,6 +685,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
             setError(tr("error.check_mat_boundary"))
             return
         }
+        deleteCurrentRecording()
 
         countdownJob?.cancel()
         completedRanges.clear()
@@ -726,9 +798,16 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun onAppBackgrounded() {
+        appInForeground = false
+        cancelAutomaticRecordingStart()
         if (_uiState.value.recordingState in setOf(RecordingState.STARTING, RecordingState.RECORDING)) {
             stopRecording(RecordingStopNotice.Background)
         }
+    }
+
+    fun onAppForegrounded() {
+        appInForeground = true
+        scheduleAutomaticRecordingStartIfEligible()
     }
 
     /** Stops or resumes CameraX's preview stream while recording and analysis continue. */
@@ -756,7 +835,11 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { state ->
             val localizedStatus = when (state.stage) {
                 CameraStage.PREVIEW -> previewGuidance(state.settings)
-                CameraStage.SELECT -> selectionGuidance(state.settings)
+                CameraStage.SELECT -> if (automaticRecordingWarningVisible) {
+                    tr("camera.auto_recording_soon")
+                } else {
+                    completedSelectionGuidance(state)
+                }
                 CameraStage.RECORDING -> activeRecordingStatusText(state.settings)
                 CameraStage.REVIEW -> if (state.detectedRanges.isEmpty()) {
                     tr("review.manual_prompt")
@@ -813,8 +896,8 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         }
         viewModelScope.launch {
             var savingToGallery = false
-            runCatching {
-                videoExporter.exportToGallery(
+            try {
+                val savedUri = videoExporter.exportToGallery(
                     inputUri = video.uri,
                     startSeconds = startSeconds,
                     endSeconds = endSeconds,
@@ -830,7 +913,6 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                         }
                     }
                 )
-            }.onSuccess { savedUri ->
                 _uiState.update { state ->
                     val saved = SavedGalleryVideo(
                         uri = savedUri,
@@ -846,7 +928,9 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                             .filterNot { it.selection.matches(selection) } + saved
                     )
                 }
-            }.onFailure {
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
                 val prefix = if (savingToGallery) tr("error.save_verify") else tr("error.save_clip")
                 _uiState.update {
                     it.copy(
@@ -934,22 +1018,18 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         cameraEngine.setPreviewRenderingEnabled(true)
         cameraEngine.unbind()
 
-        result.onFailure {
-            _uiState.update { state ->
-                state.copy(
-                    stage = if (state.settings.requiresTopHoldSelection && state.holdMask != null) CameraStage.SELECT else CameraStage.PREVIEW,
-                    recordingState = RecordingState.IDLE,
-                    errorMessage = tr("error.recording_finish"),
-                    statusText = if (state.holdMask != null) {
-                        tr("camera.selection_complete")
-                    } else previewGuidance(state.settings)
-                )
-            }
-            rebindLatestCamera()
-        }.onSuccess { finalized ->
+        val finalized = result.getOrElse {
+            recoverAfterRecordingFinalizationFailure()
+            return
+        }
+
+        try {
             val settings = activeRecordingSettings ?: _uiState.value.settings
             val readyFile = finalized.file
-            val duration = max(0.1, videoExporter.durationSeconds(readyFile))
+            val metadata = videoExporter.inspectVideo(readyFile)
+            val duration = metadata?.durationSeconds
+                ?: finalized.durationSeconds.takeIf { it.isFinite() && it > 0.0 }
+                ?: throw IllegalStateException(tr("error.saved_video_metadata"))
             val ranges = normalizeDetectedClipRanges(
                 input = completedRanges.snapshot().mapNotNull { range ->
                     val startSeconds = range.startSeconds.coerceIn(0.0, duration)
@@ -962,13 +1042,12 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 recordingDurationSeconds = duration
             )
             val defaultRange = ranges.lastOrNull() ?: ClipRange(0.0, duration)
-            val encodedSize = videoExporter.videoDimensions(readyFile)
             val fallbackSize = settings.aspectRatio.outputSize(
                 settings.resolution,
                 activeRecordingLandscape
             )
-            val overlayWidth = encodedSize?.first ?: fallbackSize.width
-            val overlayHeight = encodedSize?.second ?: fallbackSize.height
+            val overlayWidth = metadata?.displayedWidth ?: fallbackSize.width
+            val overlayHeight = metadata?.displayedHeight ?: fallbackSize.height
             val overlay = if (settings.topHoldMaskingEnabled) {
                 createHoldOverlayBitmap(overlayWidth, overlayHeight, _uiState.value.holdMask)
             } else null
@@ -1001,7 +1080,31 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 )
             }
 
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            recoverAfterRecordingFinalizationFailure()
         }
+    }
+
+    private fun recoverAfterRecordingFinalizationFailure() {
+        _uiState.update { state ->
+            state.copy(
+                stage = if (state.settings.requiresTopHoldSelection && state.holdMask != null) {
+                    CameraStage.SELECT
+                } else {
+                    CameraStage.PREVIEW
+                },
+                recordingState = RecordingState.IDLE,
+                errorMessage = tr("error.recording_finish"),
+                statusText = if (state.holdMask != null) {
+                    tr("camera.selection_complete")
+                } else {
+                    previewGuidance(state.settings)
+                }
+            )
+        }
+        rebindLatestCamera()
     }
 
     private fun handleMotionEvent(event: MotionEvent) {
@@ -1121,7 +1224,17 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun deleteCurrentRecording() {
-        _uiState.value.recordedVideo?.uri?.path?.let { File(it).delete() }
+        val files = buildSet {
+            ownedRecordingFile?.let(::add)
+            _uiState.value.recordedVideo?.uri?.path?.let { add(File(it)) }
+        }
+        ownedRecordingFile = null
+        files.forEach { it.delete() }
+    }
+
+    private fun adoptRecordingFile(file: File) {
+        ownedRecordingFile?.takeIf { it != file }?.delete()
+        ownedRecordingFile = file
     }
 
     private fun setError(message: String) = _uiState.update { it.copy(errorMessage = message) }
@@ -1134,9 +1247,10 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         matBoundaryTimeoutJob?.cancel()
         topHoldAnalysisTimeoutJob?.cancel()
         selectionAnalysisJob?.cancel()
+        automaticRecordingStartJob?.cancel()
+        deleteCurrentRecording()
         poseAnalyzer.stop()
-        poseAnalyzer.close()
-        cameraEngine.release()
+        cameraEngine.release(onAnalysisDrained = poseAnalyzer::close)
         mobileSam.close()
         latestLifecycleOwner.clear()
         latestPreviewView.clear()

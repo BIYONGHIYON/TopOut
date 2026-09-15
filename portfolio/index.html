@@ -121,6 +121,7 @@
 <div class="section-heading max-copy reveal">
 <p class="eyebrow">APP FLOW</p>
 <h2 id="journey-title">촬영 조건 확인부터 매트 경계 보정,<br/>탑홀드 선택까지 순서대로 준비합니다</h2>
+<p>필요한 선택이 끝난 뒤 1분간 조작이 없으면 현재 경계와 탑홀드를 유지한 채 녹화 카운트다운을 자동으로 시작해, 혼자 촬영할 때 휴대폰으로 다시 돌아오는 동작을 줄였습니다.</p>
 </div>
 <div class="phone-gallery">
 <figure class="screen-card reveal">
@@ -322,7 +323,7 @@
 <span>Android</span><h3>MoveNet Thunder + Motion-seeded ROI</h3><p>CameraX YUV 프레임에서 필요한 정사각형 ROI만 256×256 RGB 텐서로 직접 샘플링해 전체 화면 변환 비용을 제거했습니다.</p>
 <ul><li>LiteRT FP16 · XNNPACK</li><li>어깨·골반·팔꿈치·무릎 4개 그룹 중 3개 이상 신뢰 관절 검증</li><li>선택 영상 높이 기준 시작선 6% · 종료선 4%</li></ul>
 </article>
-</div><div class="parity-strip reveal"><span>CROSS-PLATFORM POLICY</span><strong>초기 탐색·안정 등반 2fps</strong><strong>시작 전·종료 후·복구 4fps</strong><strong>포즈 유실 허용 6초</strong><strong>리뷰 여백 앞뒤 3초</strong></div>
+</div><div class="parity-strip reveal"><span>CROSS-PLATFORM POLICY</span><strong>초기 탐색·안정 등반 2fps</strong><strong>시작 전·종료 후·복구 4fps</strong><strong>포즈 유실 허용 6초</strong><strong>리뷰 여백 iOS 앞뒤 3초 · Android 시작 전 5초·종료 후 3초</strong></div>
 <div class="parity-strip reveal"><span>ANDROID CAMERA UX</span><strong>논리 멀티카메라 연속 줌</strong><strong>혼합형 외부 망원 경로 유지</strong><strong>핀치를 따르는 정지 프레임 전환</strong><strong>전환 ID 기반 복구 상태 머신</strong></div>
 </div>
 </section>
@@ -361,7 +362,7 @@
 <figure><img alt="전체 타임라인에서 선택 구간을 확인하는 1배 화면" loading="lazy" src="assets/timeline-zoom1.webp"/><figcaption>1.0× · 전체 구간</figcaption></figure>
 <figure><img alt="선택 구간을 확대한 3.1배 타임라인 화면" loading="lazy" src="assets/timeline-zoom2.webp"/><figcaption>3.1× · 선택 구간 확대</figcaption></figure>
 </div>
-<div class="result-copy"><span>CONTEXTUAL TIMELINE ZOOM</span><h3>긴 세션에서도 선택 구간의 조작 면적을 확보</h3><p>10분 이상의 원본에서 수초 길이의 등반 구간이 지나치게 작아지는 문제를 해결하기 위해 전체 타임라인과 확대 타임라인을 분리했습니다. 작은 배율 손잡이를 정확히 누르지 않아도 트랙의 원하는 위치를 탭하거나 진동 없이 곧바로 드래그할 수 있도록 iOS와 Android의 입력 범위도 통일했습니다.</p></div>
+<div class="result-copy"><span>CONTEXTUAL TIMELINE ZOOM</span><h3>긴 세션에서도 선택 구간의 조작 면적을 확보</h3><p>10분 이상의 원본에서 수초 길이의 등반 구간이 지나치게 작아지는 문제를 해결하기 위해 전체 타임라인과 최대 30배 확대 타임라인을 분리했습니다. 작은 배율 손잡이를 정확히 누르지 않아도 트랙의 원하는 위치를 탭하거나 진동 없이 곧바로 드래그할 수 있도록 iOS와 Android의 입력 범위도 통일했습니다.</p></div>
 </article>
 <article class="result-card reveal" data-delay="160">
 <figure class="result-image"><img alt="앱 안에서 갤러리에 저장된 영상을 확인하는 화면" loading="lazy" src="assets/video-check.webp"/></figure>

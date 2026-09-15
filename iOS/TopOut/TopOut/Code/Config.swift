@@ -45,6 +45,8 @@ enum Cfg {
     static let matDefaultY: CGFloat = 0.75
     static let matBoundaryAnalysisTimeout: TimeInterval = 5
     static let topHoldAnalysisTimeout: TimeInterval = 5
+    static let automaticRecordingStartDelay: TimeInterval = 60
+    static let automaticRecordingWarningLead: TimeInterval = 5
 
     // MARK: - 매트 경계 UI
     static let matLineWidth: CGFloat = 3

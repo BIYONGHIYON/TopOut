@@ -2,7 +2,29 @@ import UIKit
 import AVFoundation
 import CoreML
 
+enum AnalysisCancellationError: Error { case cancelled }
+
+final class AnalysisCancellationToken: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+
+    func check() throws {
+        lock.lock()
+        let isCancelled = cancelled
+        lock.unlock()
+        if isCancelled { throw AnalysisCancellationError.cancelled }
+    }
+}
+
 final class HoldVC: UIViewController {
+    let photoVideoSaver = PhotoLibraryVideoSaver()
+
     // MARK: - 카메라 화면
     let camView = UIView()
     var previewLayer: AVCaptureVideoPreviewLayer?
@@ -333,15 +355,16 @@ final class HoldVC: UIViewController {
     // MARK: - 이미지 분할 상태
     var mode: ScreenMode = .camera
     var frameImage: UIImage?
-    var pixels: PixelMap?
-    var emb: MLMultiArray?
     var pendingOverlay: UIImage?
     var pendingTopBox: CGRect?
     var matLinePoints: [CGPoint] = []
     var selectionRequestID = 0
     var matBoundaryAnalysisTimeoutWorkItem: DispatchWorkItem?
     var topHoldAnalysisTimeoutWorkItem: DispatchWorkItem?
-    var samScale: CGFloat = 1
+    var matBoundaryAnalysisToken: AnalysisCancellationToken?
+    var topHoldAnalysisToken: AnalysisCancellationToken?
+    var automaticRecordingStartWorkItem: DispatchWorkItem?
+    var automaticRecordingWarningWorkItem: DispatchWorkItem?
     var isBusy = false
 
     var encoder: MobileSAM_Encoder?
@@ -419,11 +442,7 @@ final class HoldVC: UIViewController {
     }
 
     func refreshSupportedOrientations() {
-        if #available(iOS 16.0, *) {
-            setNeedsUpdateOfSupportedInterfaceOrientations()
-        } else {
-            UIViewController.attemptRotationToDeviceOrientation()
-        }
+        setNeedsUpdateOfSupportedInterfaceOrientations()
     }
 
     // MARK: - 생명주기
@@ -508,6 +527,10 @@ final class HoldVC: UIViewController {
         NotificationCenter.default.removeObserver(self)
         matBoundaryAnalysisTimeoutWorkItem?.cancel()
         topHoldAnalysisTimeoutWorkItem?.cancel()
+        matBoundaryAnalysisToken?.cancel()
+        topHoldAnalysisToken?.cancel()
+        automaticRecordingStartWorkItem?.cancel()
+        automaticRecordingWarningWorkItem?.cancel()
         cancelRecordingCountdown()
         recordingElapsedTimer?.invalidate()
         recordingStorageTimer?.invalidate()

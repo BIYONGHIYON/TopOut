@@ -5,11 +5,9 @@ import CoreML
 extension HoldVC {
     // MARK: - 선택 결과 생성
 
-    func makePick(from mask: MLMultiArray, at point: CGPoint, image: UIImage, tol: Float, origin: CGPoint) throws -> Pick {
-        guard let pixels else { throw AppError.encoderOutputMissing }
-
+    func makePick(from mask: MLMultiArray, at point: CGPoint, image: UIImage, pixels: PixelMap, scale: CGFloat, tol: Float, origin: CGPoint) throws -> Pick {
         let target = pixels.avgRGB(at: point, in: image, radius: Cfg.colorSampleRadius)
-        let valid = validMaskMap(mask, image: image, pixels: pixels, target: target, tol: tol)
+        let valid = validMaskMap(mask, image: image, pixels: pixels, scale: scale, target: target, tol: tol)
         let blob = largestBlob(in: valid, width: Cfg.maskSize, height: Cfg.maskSize)
         let status = classify(blob, image: image)
         let dist = hypot(point.x - origin.x, point.y - origin.y)
@@ -25,7 +23,7 @@ extension HoldVC {
         guard !blob.isEmpty else { return blankOverlay(image: image) }
         guard let path = outlinePath(for: blob, image: image) else { return blankOverlay(image: image) }
 
-        let renderer = UIGraphicsImageRenderer(size: image.size)
+        let renderer = pixelSizedOverlayRenderer(for: image)
         let style = outlineStyle(image: image)
 
         return renderer.image { _ in
@@ -58,7 +56,7 @@ extension HoldVC {
         guard !imageRect.isNull, imageRect.width > 0, imageRect.height > 0 else { return nil }
 
         let path = UIBezierPath(ovalIn: imageRect)
-        let renderer = UIGraphicsImageRenderer(size: image.size)
+        let renderer = pixelSizedOverlayRenderer(for: image)
         let style = outlineStyle(image: image)
         let overlay = renderer.image { _ in
             strokeOutline(path, style: style)
@@ -281,7 +279,7 @@ extension HoldVC {
     }
 
     func blankOverlay(image: UIImage) -> UIImage? {
-        let renderer = UIGraphicsImageRenderer(size: image.size)
+        let renderer = pixelSizedOverlayRenderer(for: image)
         return renderer.image { _ in }
     }
 
@@ -355,7 +353,7 @@ extension HoldVC {
 
     // MARK: - 마스크 필터
 
-    func validMaskMap(_ mask: MLMultiArray, image: UIImage, pixels: PixelMap, target: RGB, tol: Float) -> [Bool] {
+    func validMaskMap(_ mask: MLMultiArray, image: UIImage, pixels: PixelMap, scale: CGFloat, target: RGB, tol: Float) -> [Bool] {
         let size = Cfg.maskSize
         let channel = maskChannel(mask)
         let targetHSV = Self.rgbToHSV(target)
@@ -365,7 +363,7 @@ extension HoldVC {
             for x in 0..<size {
                 guard maskValue(mask, x: x, y: y, channel: channel) > 0 else { continue }
 
-                let point = imagePointFromMask(x: x, y: y, image: image)
+                let point = imagePointFromMask(x: x, y: y, scale: scale)
                 guard image.bounds.contains(point) else { continue }
 
                 let rgb = pixels.rgb(at: point, in: image)
@@ -512,10 +510,17 @@ extension HoldVC {
         return CGPoint(x: x, y: y)
     }
 
-    func imagePointFromMask(x: Int, y: Int, image: UIImage) -> CGPoint {
+    func imagePointFromMask(x: Int, y: Int, scale: CGFloat) -> CGPoint {
         let modelX = (CGFloat(x) + 0.5) * CGFloat(Cfg.samSize) / CGFloat(Cfg.maskSize)
         let modelY = (CGFloat(y) + 0.5) * CGFloat(Cfg.samSize) / CGFloat(Cfg.maskSize)
-        return CGPoint(x: modelX / samScale, y: modelY / samScale)
+        return CGPoint(x: modelX / scale, y: modelY / scale)
+    }
+
+    private func pixelSizedOverlayRenderer(for image: UIImage) -> UIGraphicsImageRenderer {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: image.size, format: format)
     }
 
     // MARK: - 배열 도우미

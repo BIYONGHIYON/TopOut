@@ -18,8 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CheckBox
-import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.AlertDialog
@@ -69,7 +67,6 @@ import com.topout.cam.model.SavedGalleryVideo
 import com.topout.cam.model.TopOutConfig
 import com.topout.cam.localization.tr
 import com.topout.cam.ui.components.PrecisionTrimSlider
-import com.topout.cam.ui.components.TopOutCapsuleButton
 import com.topout.cam.ui.components.TopStatusBanner
 import com.topout.cam.ui.theme.TopOutColors
 import kotlinx.coroutines.delay
@@ -412,91 +409,27 @@ fun ReviewScreen(
                 )
             }
 
-            if (isLandscape) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    PlaybackButton(isPlaying, !saving, togglePlayback, Modifier.size(width = 48.dp, height = 40.dp))
-                    TopOutCapsuleButton(
-                        text = tr("review.top_hold_mask"),
-                        onClick = { includeOverlay = !includeOverlay },
-                        icon = if (includeOverlay) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
-                        enabled = !saving && video.overlayBitmap != null,
-                        primary = includeOverlay,
-                        compact = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    TopOutCapsuleButton(
-                        text = if (saving) {
-                            tr("review.saving")
-                        } else if (savedMatchesCurrentSelection) {
-                            tr("review.view_saved")
-                        } else {
-                            tr("review.save_clip")
-                        },
-                        onClick = {
-                            if (savedMatchesCurrentSelection) {
-                                player.pause()
-                                isPlaying = false
-                                showingSavedGalleryVideo = true
-                            } else {
-                                onSave(selectedStart, selectedEnd, includeOverlay)
-                            }
-                        },
-                        enabled = !saving,
-                        primary = true,
-                        compact = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    TopOutCapsuleButton(tr("camera.retake"), requestRetake, enabled = !saving, compact = true, modifier = Modifier.weight(0.78f))
-                    TopOutCapsuleButton(tr("common.close"), requestClose, enabled = !saving, compact = true, modifier = Modifier.weight(0.62f))
-                }
-            } else {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    PlaybackButton(isPlaying, !saving, togglePlayback, Modifier.size(width = 58.dp, height = 42.dp))
-                    TopOutCapsuleButton(
-                        text = tr("review.top_hold_mask"),
-                        onClick = { includeOverlay = !includeOverlay },
-                        icon = if (includeOverlay) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
-                        enabled = !saving && video.overlayBitmap != null,
-                        primary = includeOverlay,
-                        compact = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    TopOutCapsuleButton(
-                        text = if (saving) {
-                            tr("review.saving")
-                        } else if (savedMatchesCurrentSelection) {
-                            tr("review.view_saved")
-                        } else {
-                            tr("review.save_clip")
-                        },
-                        onClick = {
-                            if (savedMatchesCurrentSelection) {
-                                player.pause()
-                                isPlaying = false
-                                showingSavedGalleryVideo = true
-                            } else {
-                                onSave(selectedStart, selectedEnd, includeOverlay)
-                            }
-                        },
-                        enabled = !saving,
-                        primary = true,
-                        compact = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TopOutCapsuleButton(tr("camera.retake"), requestRetake, enabled = !saving, compact = true, modifier = Modifier.weight(1f))
-                    TopOutCapsuleButton(tr("common.close"), requestClose, enabled = !saving, compact = true, modifier = Modifier.weight(1f))
-                }
-            }
+            ReviewActionControls(
+                isLandscape = isLandscape,
+                isPlaying = isPlaying,
+                saving = saving,
+                includeOverlay = includeOverlay,
+                overlayAvailable = video.overlayBitmap != null,
+                savedMatchesCurrentSelection = savedMatchesCurrentSelection,
+                onTogglePlayback = togglePlayback,
+                onToggleOverlay = { includeOverlay = !includeOverlay },
+                onSaveOrView = {
+                    player.pause()
+                    isPlaying = false
+                    if (savedMatchesCurrentSelection) {
+                        showingSavedGalleryVideo = true
+                    } else {
+                        onSave(selectedStart, selectedEnd, includeOverlay)
+                    }
+                },
+                onRetake = requestRetake,
+                onClose = requestClose
+            )
         }
     }
 

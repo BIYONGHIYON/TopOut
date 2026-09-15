@@ -26,8 +26,8 @@ class DetectedClipRangeStoreTest {
         )
         assertEquals(
             listOf(
-                ClipRange(7.0, 22.0, 10.0, 19.0),
-                ClipRange(37.0, 48.0, 40.0, 45.0)
+                ClipRange(5.0, 22.0, 10.0, 19.0),
+                ClipRange(35.0, 48.0, 40.0, 45.0)
             ),
             result
         )
@@ -48,7 +48,7 @@ class DetectedClipRangeStoreTest {
             input = listOf(ClipRange(10.0, 12.0)),
             recordingDurationSeconds = 30.0
         )
-        assertEquals(listOf(ClipRange(7.0, 15.0, 10.0, 12.0)), result)
+        assertEquals(listOf(ClipRange(5.0, 15.0, 10.0, 12.0)), result)
     }
 
     @Test
@@ -60,7 +60,7 @@ class DetectedClipRangeStoreTest {
             ),
             recordingDurationSeconds = 30.0
         )
-        assertEquals(listOf(ClipRange(7.0, 18.0, 10.0, 15.0)), result)
+        assertEquals(listOf(ClipRange(5.0, 18.0, 10.0, 15.0)), result)
     }
 
     @Test
@@ -74,8 +74,8 @@ class DetectedClipRangeStoreTest {
         )
         assertEquals(
             listOf(
-                ClipRange(7.0, 18.0, 10.0, 15.0),
-                ClipRange(13.0, 24.0, 16.0, 21.0)
+                ClipRange(5.0, 18.0, 10.0, 15.0),
+                ClipRange(11.0, 24.0, 16.0, 21.0)
             ),
             result
         )
@@ -93,9 +93,9 @@ class DetectedClipRangeStoreTest {
         )
         assertEquals(
             listOf(
-                ClipRange(7.0, 18.0, 10.0, 15.0),
-                ClipRange(12.5, 23.0, 15.5, 20.0),
-                ClipRange(18.0, 28.0, 21.0, 25.0)
+                ClipRange(5.0, 18.0, 10.0, 15.0),
+                ClipRange(10.5, 23.0, 15.5, 20.0),
+                ClipRange(16.0, 28.0, 21.0, 25.0)
             ),
             result
         )
@@ -113,7 +113,7 @@ class DetectedClipRangeStoreTest {
         assertEquals(
             listOf(
                 ClipRange(0.0, 6.0, 0.5, 3.0),
-                ClipRange(24.0, 30.0, 27.0, 29.5)
+                ClipRange(22.0, 30.0, 27.0, 29.5)
             ),
             result
         )

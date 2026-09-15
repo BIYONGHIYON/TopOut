@@ -1,15 +1,5 @@
 import UIKit
 import CoreMedia
-import Photos
-
-
-private final class PhotoLibrarySaveCompletionBox: @unchecked Sendable {
-    let completion: (Result<String, Error>) -> Void
-
-    init(_ completion: @escaping (Result<String, Error>) -> Void) {
-        self.completion = completion
-    }
-}
 
 extension HoldVC {
     // MARK: - 녹화
@@ -220,7 +210,8 @@ extension HoldVC {
                 switch result {
                 case .success(let url):
                     vc?.setStatus(L("review.saving_verifying"))
-                    self.saveVideoToPhotoLibrary(url) { saveResult in
+                    self.photoVideoSaver.save(url) { [weak vc, recorder = self.recorder] saveResult in
+                        recorder.releaseExportedClip(at: url)
                         vc?.setSaving(false)
                         switch saveResult {
                         case .success(let localIdentifier):
@@ -246,104 +237,6 @@ extension HoldVC {
         present(vc, animated: true) { [weak self, weak vc] in
             guard let self, let vc, let notice else { return }
             self.presentPersistentRecordingNotice(notice, from: vc)
-        }
-    }
-
-    private func saveVideoToPhotoLibrary(
-        _ url: URL,
-        completion: @escaping (Result<String, Error>) -> Void
-    ) {
-        let completionBox = PhotoLibrarySaveCompletionBox(completion)
-
-        // 저장한 영상을 다시 열어 확인하므로 사진 보관함 읽기와 쓰기 권한을 사용한다.
-        PHPhotoLibrary.requestAuthorization(for: .readWrite) { [weak self] status in
-            guard let self else { return }
-            guard status == .authorized || status == .limited else {
-                let error = NSError(
-                    domain: "TopOut.PhotoLibrary",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: L("error.photo_permission")]
-                )
-                DispatchQueue.main.async { completionBox.completion(.failure(error)) }
-                return
-            }
-
-            var createdLocalIdentifier: String?
-            PHPhotoLibrary.shared().performChanges {
-                let request = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
-                createdLocalIdentifier = request?.placeholderForCreatedAsset?.localIdentifier
-            } completionHandler: { success, error in
-                guard success, let localIdentifier = createdLocalIdentifier else {
-                    let resolvedError = error ?? NSError(
-                        domain: "TopOut.PhotoLibrary",
-                        code: 2,
-                        userInfo: [NSLocalizedDescriptionKey: L("error.photo_destination")]
-                    )
-                    DispatchQueue.main.async { completionBox.completion(.failure(resolvedError)) }
-                    return
-                }
-
-                self.verifySavedPhotoLibraryVideo(localIdentifier: localIdentifier) { result in
-                    DispatchQueue.main.async { completionBox.completion(result) }
-                }
-            }
-        }
-    }
-
-    private func verifySavedPhotoLibraryVideo(
-        localIdentifier: String,
-        attemptsRemaining: Int = 3,
-        completion: @escaping (Result<String, Error>) -> Void
-    ) {
-        let result = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
-        guard let asset = result.firstObject, asset.mediaType == .video, asset.duration > 0 else {
-            if attemptsRemaining > 1 {
-                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.25) { [weak self] in
-                    self?.verifySavedPhotoLibraryVideo(
-                        localIdentifier: localIdentifier,
-                        attemptsRemaining: attemptsRemaining - 1,
-                        completion: completion
-                    )
-                }
-                return
-            }
-            let error = NSError(
-                domain: "TopOut.PhotoLibrary",
-                code: 3,
-                userInfo: [NSLocalizedDescriptionKey: L("error.find_saved_video")]
-            )
-            completion(.failure(error))
-            return
-        }
-
-        let options = PHVideoRequestOptions()
-        options.deliveryMode = .highQualityFormat
-        options.isNetworkAccessAllowed = true
-        PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { [weak self] avAsset, _, info in
-            if let avAsset {
-                _ = avAsset // Reopening the exact Photos asset is the final save-verification step.
-                completion(.success(localIdentifier))
-                return
-            }
-
-            if attemptsRemaining > 1 {
-                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.25) {
-                    self?.verifySavedPhotoLibraryVideo(
-                        localIdentifier: localIdentifier,
-                        attemptsRemaining: attemptsRemaining - 1,
-                        completion: completion
-                    )
-                }
-                return
-            }
-
-            let underlyingError = info?[PHImageErrorKey] as? Error
-            let error = underlyingError ?? NSError(
-                domain: "TopOut.PhotoLibrary",
-                code: 4,
-                userInfo: [NSLocalizedDescriptionKey: L("error.open_saved_file")]
-            )
-            completion(.failure(error))
         }
     }
 

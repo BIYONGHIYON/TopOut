@@ -9,6 +9,7 @@ import java.io.FileNotFoundException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.channels.FileChannel
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -38,6 +39,7 @@ internal class MoveNetThunderPoseDetector(context: Context) : AutoCloseable {
     private var cachedImageWidth = 0
     private var cachedImageHeight = 0
     @Volatile private var closed = false
+    private val trackingResetRequested = AtomicBoolean(false)
 
     /**
      * Converts only the active smart-crop region from CameraX YUV_420_888 directly into the
@@ -59,6 +61,7 @@ internal class MoveNetThunderPoseDetector(context: Context) : AutoCloseable {
             "CameraX YUV 프레임이 올바르지 않습니다."
         }
 
+        if (trackingResetRequested.getAndSet(false)) previousCropRegion = null
         val runtime = ensureInterpreterLocked()
         val crop = previousCropRegion ?: initialCropRegion(sourceWidth, sourceHeight)
         prepareInputFromYuv(
@@ -94,6 +97,7 @@ internal class MoveNetThunderPoseDetector(context: Context) : AutoCloseable {
             !crop.width.isFinite() || !crop.height.isFinite() ||
             crop.width <= 0f || crop.height <= 0f
         ) return
+        trackingResetRequested.set(false)
         previousCropRegion = crop
     }
 
@@ -101,6 +105,7 @@ internal class MoveNetThunderPoseDetector(context: Context) : AutoCloseable {
     @Synchronized
     fun primeTracking(pose: PoseResult, imageWidth: Int, imageHeight: Int) {
         if (closed || imageWidth <= 0 || imageHeight <= 0) return
+        trackingResetRequested.set(false)
         previousCropRegion = MoveNetPoseOutputParser.nextCropRegion(
             pose = pose,
             imageWidth = imageWidth,
@@ -109,15 +114,15 @@ internal class MoveNetThunderPoseDetector(context: Context) : AutoCloseable {
         )
     }
 
-    @Synchronized
     fun resetTracking() {
-        previousCropRegion = null
+        trackingResetRequested.set(true)
     }
 
     @Synchronized
     override fun close() {
         if (closed) return
         closed = true
+        trackingResetRequested.set(true)
         previousCropRegion = null
         cachedInitialCropRegion = null
         runCatching { interpreter?.close() }

@@ -36,21 +36,18 @@ extension HoldVC {
 
     }
 
-    func getEmbedding(for image: UIImage) throws -> MLMultiArray {
-        if let emb { return emb }
-        let embedding = try makeEmbedding(for: image)
-        self.emb = embedding
-        return embedding
-    }
-
-    /// 탑홀드 선택 캐시에 저장하지 않는 매트 분석용 임베딩을 만든다.
-    func makeEmbedding(for image: UIImage) throws -> MLMultiArray {
+    /// Each analysis owns its embedding and scale so a timed-out request cannot poison the next one.
+    func makeEmbedding(for image: UIImage, cancellationToken: AnalysisCancellationToken) throws -> (values: MLMultiArray, scale: CGFloat) {
+        try cancellationToken.check()
         try loadModelsIfNeeded()
+        try cancellationToken.check()
         guard let encoder else { throw AppError.modelNotReady }
 
-        let input = try preprocess(image)
+        let (input, scale) = try preprocess(image)
+        try cancellationToken.check()
         let output = try encoder.prediction(input: MobileSAM_EncoderInput(image: input))
-        return output.var_1415
+        try cancellationToken.check()
+        return (output.var_1415, scale)
     }
 
     /// 추론 큐 순서를 지키며 모델과 임베딩을 안전하게 해제한다.
@@ -59,17 +56,16 @@ extension HoldVC {
         hasStartedMobileSAMPreload = false
         workQ.async { [weak self] in
             guard let self else { return }
-            self.emb = nil
             self.encoder = nil
             self.decoder = nil
         }
     }
 
-    func decode(point: CGPoint, embedding: MLMultiArray) throws -> MLMultiArray {
+    func decode(point: CGPoint, embedding: MLMultiArray, scale: CGFloat) throws -> MLMultiArray {
         guard let decoder else { throw AppError.modelNotReady }
 
-        let x = Float(point.x * samScale)
-        let y = Float(point.y * samScale)
+        let x = Float(point.x * scale)
+        let y = Float(point.y * scale)
 
         let coords = try MLMultiArray(shape: [1, 2, 2], dataType: .float32)
         let labels = try MLMultiArray(shape: [1, 2], dataType: .float32)
@@ -98,10 +94,9 @@ extension HoldVC {
         return output.low_res_masks
     }
 
-    func preprocess(_ image: UIImage) throws -> MLMultiArray {
+    func preprocess(_ image: UIImage) throws -> (MLMultiArray, CGFloat) {
         let size = Cfg.samSize
         let scale = CGFloat(size) / max(image.size.width, image.size.height)
-        samScale = scale
 
         let newW = Int((image.size.width * scale).rounded())
         let newH = Int((image.size.height * scale).rounded())
@@ -142,7 +137,7 @@ extension HoldVC {
             }
         }
 
-        return arr
+        return (arr, scale)
     }
 
     func makePaddedImage(_ image: UIImage, width: Int, height: Int, canvas: Int) -> UIImage {

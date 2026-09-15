@@ -2,7 +2,12 @@ import UIKit
 import CoreML
 
 extension HoldVC {
-    func scheduleTopHoldAnalysisTimeout(at point: CGPoint, image: UIImage, requestID: Int) {
+    func scheduleTopHoldAnalysisTimeout(
+        at point: CGPoint,
+        image: UIImage,
+        requestID: Int,
+        cancellationToken: AnalysisCancellationToken
+    ) {
         topHoldAnalysisTimeoutWorkItem?.cancel()
 
         let timeoutWorkItem = DispatchWorkItem { [weak self] in
@@ -11,6 +16,7 @@ extension HoldVC {
                   self.mode == .processing else { return }
 
             self.topHoldAnalysisTimeoutWorkItem = nil
+            cancellationToken.cancel()
             self.selectionRequestID += 1
 
             if let fallback = self.makeDefaultTouchOverlay(at: point, image: image) {
@@ -24,12 +30,14 @@ extension HoldVC {
                 self.selectHint.text = L("camera.selection_failed")
             }
 
-            self.pixels = nil
-            self.emb = nil
+            self.topHoldAnalysisToken = nil
             self.isBusy = false
             self.mode = .select
             self.retakeBtn.isEnabled = true
             self.setLoading(false)
+            if self.pendingOverlay != nil {
+                self.scheduleAutomaticRecordingStartIfEligible()
+            }
         }
 
         topHoldAnalysisTimeoutWorkItem = timeoutWorkItem
@@ -39,21 +47,36 @@ extension HoldVC {
         )
     }
 
-    func runSAM(at point: CGPoint, image: UIImage, zoom: CGFloat, requestID: Int) {
+    func runSAM(
+        at point: CGPoint,
+        image: UIImage,
+        pixels: PixelMap?,
+        zoom: CGFloat,
+        requestID: Int,
+        cancellationToken: AnalysisCancellationToken
+    ) {
         do {
-            let emb = try getEmbedding(for: image)
+            try cancellationToken.check()
+            guard let pixels else { throw AppError.encoderOutputMissing }
+            let embedding = try makeEmbedding(for: image, cancellationToken: cancellationToken)
+            try cancellationToken.check()
 
-            let firstMask = try decode(point: point, embedding: emb)
-            let first = try makePick(from: firstMask, at: point, image: image, tol: Cfg.hsvTol, origin: point)
+            let firstMask = try decode(point: point, embedding: embedding.values, scale: embedding.scale)
+            try cancellationToken.check()
+            let first = try makePick(from: firstMask, at: point, image: image, pixels: pixels, scale: embedding.scale, tol: Cfg.hsvTol, origin: point)
 
             let chosen = try chooseBestPick(
                 first,
                 firstMask: firstMask,
                 image: image,
-                embedding: emb,
+                pixels: pixels,
+                embedding: embedding.values,
+                scale: embedding.scale,
                 origin: point,
-                zoom: zoom
+                zoom: zoom,
+                cancellationToken: cancellationToken
             )
+            try cancellationToken.check()
 
             let blob = blobForRender(chosen)
             let selection: (overlay: UIImage, box: CGRect, usedFallback: Bool)
@@ -76,17 +99,17 @@ extension HoldVC {
 
                 self.topHoldAnalysisTimeoutWorkItem?.cancel()
                 self.topHoldAnalysisTimeoutWorkItem = nil
+                self.topHoldAnalysisToken = nil
                 self.pendingOverlay = selection.overlay
                 self.pendingTopBox = selection.box
                 self.selectOverlayView.image = selection.overlay
                 // 선택 뒤 픽셀과 임베딩만 비우고 재촬영을 위해 모델은 유지한다.
-                self.pixels = nil
-                self.emb = nil
                 self.mode = .select
                 self.isBusy = false
                 self.retakeBtn.isEnabled = true
                 self.recordBtn.isEnabled = true
                 self.selectHint.text = L("camera.selection_complete")
+                self.scheduleAutomaticRecordingStartIfEligible()
                 self.setLoading(false)
             }
         } catch {
@@ -95,6 +118,7 @@ extension HoldVC {
 
                 self.topHoldAnalysisTimeoutWorkItem?.cancel()
                 self.topHoldAnalysisTimeoutWorkItem = nil
+                self.topHoldAnalysisToken = nil
                 if let fallback = self.makeDefaultTouchOverlay(at: point, image: image) {
                     self.pendingOverlay = fallback.overlay
                     self.pendingTopBox = fallback.maskBox
@@ -106,12 +130,13 @@ extension HoldVC {
                     self.selectHint.text = L("camera.selection_failed")
                 }
 
-                self.pixels = nil
-                self.emb = nil
                 self.isBusy = false
                 self.mode = .select
                 self.retakeBtn.isEnabled = true
                 self.setLoading(false)
+                if self.pendingOverlay != nil {
+                    self.scheduleAutomaticRecordingStartIfEligible()
+                }
             }
         }
     }

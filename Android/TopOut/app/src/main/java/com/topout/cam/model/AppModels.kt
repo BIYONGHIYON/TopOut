@@ -311,6 +311,8 @@ object TopOutConfig {
 
     const val MatDefaultY = 0.75f
     const val MatBoundaryAnalysisTimeoutMillis = 5_000L
+    const val AutomaticRecordingStartDelayMillis = 60_000L
+    const val AutomaticRecordingWarningLeadMillis = 5_000L
     const val ReviewEndPreviewLeadSeconds = 3.0
     /** The lowest reliable joint must clear the mat line by 6% of the selected video height. */
     const val PoseStartAboveMatVideoHeightRatio = 0.06f
@@ -342,7 +344,8 @@ object TopOutConfig {
     const val MotionSeedRelativeCellThreshold = 0.45f
     const val MotionSeedMinimumCellChangedRatio = 0.02f
     const val ClimbingPoseMissingTimeoutSeconds = 6.0
-    const val ClipBoundaryPaddingSeconds = 3.0
+    const val ClipStartPaddingSeconds = 5.0
+    const val ClipEndPaddingSeconds = 3.0
     /** Minimum MoveNet confidence for a joint to participate in human validation and climb logic. */
     const val PoseConfidence = 0.25f
     const val PoseMinimumShoulders = 1

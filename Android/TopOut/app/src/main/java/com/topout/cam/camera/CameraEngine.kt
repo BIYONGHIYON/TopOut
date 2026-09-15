@@ -83,7 +83,6 @@ class CameraEngine(private val context: Context) {
     private var activeRecordingGeneration: Long? = null
     private var startedRecordingGeneration: Long? = null
     private var discardedRecordingGeneration: Long? = null
-    private var activeOutputFile: File? = null
     private var requestedStopNotice: RecordingStopNotice? = null
     private var requestedZoom = TopOutConfig.MinZoom
 
@@ -1485,7 +1484,6 @@ class CameraEngine(private val context: Context) {
         if (activeRecording != null || videoCapture !== capture) return
         requestedStopNotice = null
         val output = File(context.cacheDir, "topout_raw_${System.currentTimeMillis()}.mp4")
-        activeOutputFile = output
         activeRecordingGeneration = startGeneration
         activeRecording = runCatching {
             val basePending = capture.output.prepareRecording(
@@ -1525,7 +1523,6 @@ class CameraEngine(private val context: Context) {
             }
         }.getOrElse { error ->
             output.delete()
-            activeOutputFile = null
             activeRecordingGeneration = null
             startedRecordingGeneration = null
             onRecordingFinalized?.invoke(Result.failure(error))
@@ -1551,7 +1548,6 @@ class CameraEngine(private val context: Context) {
             activeRecording = null
             activeRecordingGeneration = null
             if (startedRecordingGeneration == startGeneration) startedRecordingGeneration = null
-            if (activeOutputFile === output) activeOutputFile = null
         }
         if (discardedRecordingGeneration == startGeneration) {
             discardedRecordingGeneration = null
@@ -1731,8 +1727,13 @@ class CameraEngine(private val context: Context) {
         }
     }
 
-    fun release() {
+    fun release(onAnalysisDrained: () -> Unit = {}) {
+        activeRecordingGeneration?.let { generation ->
+            discardedRecordingGeneration = generation
+        }
         unbind()
+        runCatching { analysisExecutor.execute(onAnalysisDrained) }
+            .onFailure { onAnalysisDrained() }
         analysisExecutor.shutdown()
     }
 }

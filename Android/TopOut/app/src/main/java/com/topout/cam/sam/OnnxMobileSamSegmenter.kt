@@ -28,9 +28,11 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -76,16 +78,18 @@ class OnnxMobileSamSegmenter(
      * Automatic mat segmentation used by TopOut's selection screen.
      *
      * A single cached image embedding is decoded at centre y=70%, 80%, 90%, and 95%. The
-     * detector keeps masks that span at least 40% of the visible width, whose highest pixel
-     * stays below the 50% image-height line, and whose upper boundary tilts no more than 15 degrees.
+     * detector uses the prompt-connected component to anchor a robust upper-boundary line. It
+     * keeps masks when non-outlier upper-edge columns support that line across at least 60% of the
+     * visible width, the highest supporting pixel stays below the 50% image-height line, and the
+     * boundary tilts no more than 15 degrees. Disconnected fragments may support the same line.
      * It then selects the highest remaining upper boundary.
      */
     suspend fun detectMatBoundary(bitmap: Bitmap): Result<List<Offset>> = withContext(Dispatchers.Default) {
-        runCatching {
+        try {
             require(!bitmap.isRecycled) { "매트 경계를 찾을 카메라 이미지가 이미 해제되었습니다." }
             require(bitmap.width > 0 && bitmap.height > 0) { "매트 경계 이미지 크기가 올바르지 않습니다." }
 
-            sessionMutex.withLock {
+            Result.success(sessionMutex.withLock {
                 val sessions = ensureSessionsLocked()
                 val embedding = obtainEmbedding(bitmap, sessions.encoder)
                 val results = MAT_PROMPT_Y_VALUES.asSequence().map { promptY ->
@@ -105,7 +109,11 @@ class OnnxMobileSamSegmenter(
 
                 MobileSamMatBoundaryDetector.select(results)
                     ?: MobileSamMatBoundaryDetector.defaultLine
-            }
+            })
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            Result.failure(error)
         }
     }
 
@@ -116,27 +124,16 @@ class OnnxMobileSamSegmenter(
         cachedEmbedding = null
     }
 
-    override suspend fun warmUp(bitmap: Bitmap): Result<Unit> = withContext(Dispatchers.Default) {
-        runCatching {
-            require(!bitmap.isRecycled) { "선택할 카메라 이미지가 이미 해제되었습니다." }
-            sessionMutex.withLock {
-                val sessions = ensureSessionsLocked()
-                obtainEmbedding(bitmap, sessions.encoder)
-                Unit
-            }
-        }
-    }
-
     override suspend fun segment(
         bitmap: Bitmap,
         normalizedTap: Offset,
         selectionZoom: Float
     ): Result<HoldMask> = withContext(Dispatchers.Default) {
-        runCatching {
+        try {
             require(!bitmap.isRecycled) { "선택할 카메라 이미지가 이미 해제되었습니다." }
             require(bitmap.width > 0 && bitmap.height > 0) { "선택할 이미지 크기가 올바르지 않습니다." }
 
-            sessionMutex.withLock {
+            Result.success(sessionMutex.withLock {
                 val sessions = ensureSessionsLocked()
                 val embedding = obtainEmbedding(bitmap, sessions.encoder)
                 runSelectionPipeline(
@@ -146,7 +143,11 @@ class OnnxMobileSamSegmenter(
                     embedding = embedding,
                     decoder = sessions.decoder
                 )
-            }
+            })
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Throwable) {
+            Result.failure(error)
         }
     }
 
@@ -224,7 +225,9 @@ class OnnxMobileSamSegmenter(
             try {
                 appContext.assets.open(path).use { }
                 selectedPath = path
-                expectedLength = runCatching { appContext.assets.openFd(path).length }
+                expectedLength = runCatching {
+                    appContext.assets.openFd(path).use { descriptor -> descriptor.length }
+                }
                     .getOrNull()
                     ?.takeIf { it > 0L }
                 break
@@ -268,7 +271,8 @@ class OnnxMobileSamSegmenter(
         return target
     }
 
-    private fun obtainEmbedding(bitmap: Bitmap, encoder: OrtSession): CachedEmbedding {
+    private suspend fun obtainEmbedding(bitmap: Bitmap, encoder: OrtSession): CachedEmbedding {
+        currentCoroutineContext().ensureActive()
         val cacheGeneration = embeddingCacheGeneration.get()
         val cacheKey = BitmapCacheKey(
             identity = System.identityHashCode(bitmap),
@@ -282,8 +286,10 @@ class OnnxMobileSamSegmenter(
         val inputInfo = encoder.inputInfo.getValue(inputName).tensorInfo("encoder 입력")
         val preprocessing = preprocessBitmap(bitmap, inputInfo.shape)
 
+        currentCoroutineContext().ensureActive()
         OnnxTensor.createTensor(environment, preprocessing.buffer, preprocessing.shape).use { inputTensor ->
             encoder.run(mapOf(inputName to inputTensor)).use { result ->
+                currentCoroutineContext().ensureActive()
                 val outputName = resolveName(
                     encoder.outputInfo.keys,
                     ENCODER_OUTPUT_ALIASES,
@@ -306,16 +312,19 @@ class OnnxMobileSamSegmenter(
 
     // iOS 파이프라인과 보정 로직
 
-    private fun runSelectionPipeline(
+    private suspend fun runSelectionPipeline(
         bitmap: Bitmap,
         normalizedTap: Offset,
         selectionZoom: Float,
         embedding: CachedEmbedding,
         decoder: OrtSession
     ): HoldMask {
+        currentCoroutineContext().ensureActive()
         val origin = normalizedTap.clamped()
         val pixels = BitmapPixels(bitmap)
+        currentCoroutineContext().ensureActive()
         val firstMask = decodeMask(bitmap, origin, embedding, decoder)
+        currentCoroutineContext().ensureActive()
         val first = makePick(firstMask, origin, bitmap, pixels, TopOutConfig.HsvTolerance, origin)
         val chosen = chooseBestPick(
             first = first,
@@ -335,7 +344,7 @@ class OnnxMobileSamSegmenter(
         }
     }
 
-    private fun chooseBestPick(
+    private suspend fun chooseBestPick(
         first: Pick,
         firstMask: BinaryMask,
         bitmap: Bitmap,
@@ -363,7 +372,7 @@ class OnnxMobileSamSegmenter(
         ) ?: first
     }
 
-    private fun correctedPick(
+    private suspend fun correctedPick(
         first: Pick,
         firstMask: BinaryMask,
         reason: FixReason,
@@ -378,6 +387,7 @@ class OnnxMobileSamSegmenter(
             val samePoint = uniqueTolerances(TopOutConfig.LooseHsvTolerances.asList())
                 .filter { abs(it - first.tolerance) > 0.0001f }
                 .map { tolerance ->
+                    currentCoroutineContext().ensureActive()
                     makePick(firstMask, first.point, bitmap, pixels, tolerance, origin)
                 }
                 .filter { isUsable(it, first, reason) }
@@ -393,12 +403,15 @@ class OnnxMobileSamSegmenter(
         )
         var decodeCount = 0
         for (ring in nearbyPointRings(origin, bitmap, selectionZoom)) {
+            currentCoroutineContext().ensureActive()
             val candidates = mutableListOf<Pick>()
             for (point in ring) {
                 if (decodeCount >= TopOutConfig.MaxCorrectionDecodes) break
+                currentCoroutineContext().ensureActive()
                 val mask = decodeMask(bitmap, point, embedding, decoder)
                 decodeCount += 1
                 for (tolerance in tolerances) {
+                    currentCoroutineContext().ensureActive()
                     val pick = makePick(mask, point, bitmap, pixels, tolerance, origin)
                     if (isUsable(pick, first, reason)) candidates += pick
                 }

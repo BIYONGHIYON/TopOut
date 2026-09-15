@@ -7,9 +7,12 @@ extension HoldVC {
         _ first: Pick,
         firstMask: MLMultiArray,
         image: UIImage,
+        pixels: PixelMap,
         embedding: MLMultiArray,
+        scale: CGFloat,
         origin: CGPoint,
-        zoom: CGFloat
+        zoom: CGFloat,
+        cancellationToken: AnalysisCancellationToken
     ) throws -> Pick {
         switch first.status {
         case .good:
@@ -20,9 +23,12 @@ extension HoldVC {
                 firstMask: firstMask,
                 reason: .wall,
                 image: image,
+                pixels: pixels,
                 embedding: embedding,
+                scale: scale,
                 origin: origin,
-                zoom: zoom
+                zoom: zoom,
+                cancellationToken: cancellationToken
             ) ?? first
         case .tiny, .empty:
             return try correctedPick(
@@ -30,9 +36,12 @@ extension HoldVC {
                 firstMask: firstMask,
                 reason: .tiny,
                 image: image,
+                pixels: pixels,
                 embedding: embedding,
+                scale: scale,
                 origin: origin,
-                zoom: zoom
+                zoom: zoom,
+                cancellationToken: cancellationToken
             ) ?? first
         }
     }
@@ -42,15 +51,19 @@ extension HoldVC {
         firstMask: MLMultiArray,
         reason: FixReason,
         image: UIImage,
+        pixels: PixelMap,
         embedding: MLMultiArray,
+        scale: CGFloat,
         origin: CGPoint,
-        zoom: CGFloat
+        zoom: CGFloat,
+        cancellationToken: AnalysisCancellationToken
     ) throws -> Pick? {
         if case .tiny = reason {
             var samePoint = [Pick]()
 
             for tol in uniqueTolerances(Cfg.looseHsvTols) where abs(tol - first.tol) > 0.0001 {
-                let retry = try makePick(from: firstMask, at: first.point, image: image, tol: tol, origin: origin)
+                try cancellationToken.check()
+                let retry = try makePick(from: firstMask, at: first.point, image: image, pixels: pixels, scale: scale, tol: tol, origin: origin)
                 if isUsable(retry, comparedTo: first, reason: reason, image: image) {
                     samePoint.append(retry)
                 }
@@ -66,16 +79,19 @@ extension HoldVC {
         var decodeCount = 0
 
         for ring in rings {
+            try cancellationToken.check()
             var candidates = [Pick]()
 
             for point in ring {
                 guard decodeCount < Cfg.maxCorrectionDecodes else { break }
 
-                let mask = try decode(point: point, embedding: embedding)
+                try cancellationToken.check()
+                let mask = try decode(point: point, embedding: embedding, scale: scale)
                 decodeCount += 1
 
                 for tol in tpls {
-                    let pick = try makePick(from: mask, at: point, image: image, tol: tol, origin: origin)
+                    try cancellationToken.check()
+                    let pick = try makePick(from: mask, at: point, image: image, pixels: pixels, scale: scale, tol: tol, origin: origin)
                     if isUsable(pick, comparedTo: first, reason: reason, image: image) {
                         candidates.append(pick)
                     }

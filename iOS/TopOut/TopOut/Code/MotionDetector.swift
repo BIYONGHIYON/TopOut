@@ -175,13 +175,6 @@ final class MotionDetector {
         }
     }
 
-    func activeClipRangeForRecordingStop() -> ClipRange? {
-        q.sync { [weak self] in
-            guard let self else { return nil }
-            return self.openClipRangeLocked()
-        }
-    }
-
     func stop() {
         let generation = invalidateFrameUpdatesAndDiscardPending()
         q.async { [weak self] in
@@ -189,6 +182,21 @@ final class MotionDetector {
             self.isActive = false
             self.resetStateLocked(keepConfig: true)
             self.setFrameUpdatesEnabled(false, for: generation)
+        }
+    }
+
+    func stopAndCaptureOpenRange(completion: @escaping (ClipRange?) -> Void) {
+        let generation = invalidateFrameUpdatesAndDiscardPending()
+        q.async { [weak self] in
+            guard let self else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            let range = self.openClipRangeLocked()
+            self.isActive = false
+            self.resetStateLocked(keepConfig: true)
+            self.setFrameUpdatesEnabled(false, for: generation)
+            DispatchQueue.main.async { completion(range) }
         }
     }
 

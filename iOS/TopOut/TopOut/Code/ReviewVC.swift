@@ -28,6 +28,7 @@ final class ReviewVC: UIViewController {
     private var sliderTimeBubbleHideWorkItem: DispatchWorkItem?
     private var sliderTimeBubbleHideGeneration = 0
     private var verifiedSavedAssets: [VerifiedSavedSelection: String] = [:]
+    private let galleryVideoRequest = PhotoVideoRequest()
 
     private var player: AVPlayer?
     private var playerLayer: AVPlayerLayer?
@@ -422,6 +423,11 @@ final class ReviewVC: UIViewController {
     @objc private func onAppDidEnterBackground() {
         pausePlayback()
         (presentedViewController as? AVPlayerViewController)?.player?.pause()
+        let wasLoadingSavedVideo = galleryVideoRequest.isLoading
+        cancelGalleryAssetRequest()
+        if wasLoadingSavedVideo {
+            setStatus(L("review.gallery_verified"))
+        }
     }
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
@@ -984,38 +990,41 @@ final class ReviewVC: UIViewController {
             presentVerifiedSavedVideo(localIdentifier: localIdentifier)
             return
         }
+        pausePlayback()
         onSaveTrim?(selectedStart, selectedEnd, includeTopHoldOverlay)
     }
 
     private func presentVerifiedSavedVideo(localIdentifier: String) {
         pausePlayback()
         setStatus(L("review.loading_gallery"))
-
-        let result = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
-        guard let asset = result.firstObject, asset.mediaType == .video else {
-            setStatus(L("error.find_saved_video"))
-            return
-        }
-
-        let options = PHVideoRequestOptions()
-        options.deliveryMode = .highQualityFormat
-        options.isNetworkAccessAllowed = true
-        PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { [weak self] avAsset, _, info in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                guard let avAsset else {
-                    self.setStatus(L("error.verify_saved_video"))
-                    return
-                }
-
-                let playerController = AVPlayerViewController()
-                playerController.player = AVPlayer(playerItem: AVPlayerItem(asset: avAsset))
-                self.setStatus(L("review.gallery_playing"))
-                self.present(playerController, animated: true) {
-                    playerController.player?.play()
-                }
+        galleryVideoRequest.load(localIdentifier: localIdentifier) { [weak self] result in
+            guard let self else { return }
+            guard UIApplication.shared.applicationState == .active,
+                  self.viewIfLoaded?.window != nil,
+                  !self.isBeingDismissed,
+                  self.presentedViewController == nil else {
+                self.setStatus(L("review.gallery_verified"))
+                return
+            }
+            guard case .success(let asset) = result else {
+                self.setStatus(L("error.verify_saved_video"))
+                return
+            }
+            let playerController = AVPlayerViewController()
+            playerController.player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+            self.setStatus(L("review.gallery_playing"))
+            self.present(playerController, animated: true) { [weak self, weak playerController] in
+                guard let self, let playerController,
+                      UIApplication.shared.applicationState == .active,
+                      self.presentedViewController === playerController,
+                      playerController.viewIfLoaded?.window != nil else { return }
+                playerController.player?.play()
             }
         }
+    }
+
+    private func cancelGalleryAssetRequest() {
+        galleryVideoRequest.cancel()
     }
 
     @objc private func onTapRetake() {
@@ -1070,12 +1079,14 @@ final class ReviewVC: UIViewController {
     }
 
     private func dismissForRetake() {
+        cancelGalleryAssetRequest()
         dismiss(animated: true) { [weak self] in
             self?.onRetake?()
         }
     }
 
     private func dismissForClose() {
+        cancelGalleryAssetRequest()
         dismiss(animated: true) { [weak self] in
             self?.onClose?()
         }
@@ -1348,6 +1359,7 @@ final class ReviewVC: UIViewController {
     }
 
     deinit {
+        cancelGalleryAssetRequest()
         sliderTimeBubbleHideWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
         playerItemStatusObservation?.invalidate()

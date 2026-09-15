@@ -46,14 +46,15 @@ internal class DetectedClipRangeStore {
  * 1) keep raw start/end times while recording;
  * 2) remove or merge raw ranges shorter than two seconds using raw gaps of at most three seconds;
  * 3) keep every remaining detected climb as a separate range, regardless of the gap to the next climb;
- * 4) after cleanup is complete, add three seconds of review padding to both sides.
+ * 4) after cleanup is complete, add five seconds before and three seconds after on Android.
  */
 internal object ClipRangeNormalizer {
     fun normalize(
         input: List<ClipRange>,
         recordingDurationSeconds: Double? = null,
         minimumDetectionDurationSeconds: Double = TopOutConfig.ShortClipMinimumDetectionSeconds,
-        boundaryPaddingSeconds: Double = TopOutConfig.ClipBoundaryPaddingSeconds,
+        startPaddingSeconds: Double = TopOutConfig.ClipStartPaddingSeconds,
+        endPaddingSeconds: Double = TopOutConfig.ClipEndPaddingSeconds,
         shortRangeMergeGapSeconds: Double = TopOutConfig.ShortClipMergeGapSeconds
     ): List<ClipRange> {
         val durationLimit = recordingDurationSeconds?.coerceAtLeast(0.0)
@@ -117,8 +118,8 @@ internal object ClipRangeNormalizer {
         }
 
         return working.mapNotNull { raw ->
-            val paddedStart = max(0.0, raw.startSeconds - boundaryPaddingSeconds)
-            val paddedEndUnclamped = raw.endSeconds + boundaryPaddingSeconds
+            val paddedStart = max(0.0, raw.startSeconds - startPaddingSeconds)
+            val paddedEndUnclamped = raw.endSeconds + endPaddingSeconds
             val paddedEnd = durationLimit?.let { min(it, paddedEndUnclamped) } ?: paddedEndUnclamped
             if (paddedEnd > paddedStart) {
                 ClipRange(

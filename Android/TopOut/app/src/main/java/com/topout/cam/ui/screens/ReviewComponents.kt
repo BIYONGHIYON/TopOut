@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -16,6 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.CheckBox
+import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -60,6 +64,69 @@ import com.topout.cam.ui.theme.TopOutColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.time.Duration.Companion.milliseconds
+
+@Composable
+internal fun ReviewActionControls(
+    isLandscape: Boolean,
+    isPlaying: Boolean,
+    saving: Boolean,
+    includeOverlay: Boolean,
+    overlayAvailable: Boolean,
+    savedMatchesCurrentSelection: Boolean,
+    onTogglePlayback: () -> Unit,
+    onToggleOverlay: () -> Unit,
+    onSaveOrView: () -> Unit,
+    onRetake: () -> Unit,
+    onClose: () -> Unit
+) {
+    val spacing = if (isLandscape) 6.dp else 8.dp
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(spacing),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        PlaybackButton(
+            isPlaying = isPlaying,
+            enabled = !saving,
+            onClick = onTogglePlayback,
+            modifier = Modifier.size(
+                width = if (isLandscape) 48.dp else 58.dp,
+                height = if (isLandscape) 40.dp else 42.dp
+            )
+        )
+        TopOutCapsuleButton(
+            text = tr("review.top_hold_mask"),
+            onClick = onToggleOverlay,
+            icon = if (includeOverlay) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
+            enabled = !saving && overlayAvailable,
+            primary = includeOverlay,
+            compact = true,
+            modifier = Modifier.weight(1f)
+        )
+        TopOutCapsuleButton(
+            text = when {
+                saving -> tr("review.saving")
+                savedMatchesCurrentSelection -> tr("review.view_saved")
+                else -> tr("review.save_clip")
+            },
+            onClick = onSaveOrView,
+            enabled = !saving,
+            primary = true,
+            compact = true,
+            modifier = Modifier.weight(1f)
+        )
+        if (isLandscape) {
+            TopOutCapsuleButton(tr("camera.retake"), onRetake, enabled = !saving, compact = true, modifier = Modifier.weight(0.78f))
+            TopOutCapsuleButton(tr("common.close"), onClose, enabled = !saving, compact = true, modifier = Modifier.weight(0.62f))
+        }
+    }
+    if (!isLandscape) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TopOutCapsuleButton(tr("camera.retake"), onRetake, enabled = !saving, compact = true, modifier = Modifier.weight(1f))
+            TopOutCapsuleButton(tr("common.close"), onClose, enabled = !saving, compact = true, modifier = Modifier.weight(1f))
+        }
+    }
+}
 
 @Composable
 internal fun PlaybackButton(

@@ -38,6 +38,8 @@ final class ContinuousRecorder: @unchecked Sendable {
     private var recordingStartPTS: CMTime?
     private var recordingEndPTS: CMTime?
     private var recordingError: Error?
+    private var exportTasks: [UUID: Task<Void, Never>] = [:]
+    private var exportedURLs: Set<URL> = []
     private var outputResolution: RecordingResolution = .fhd
     private var outputFrameRate: RecordingFrameRate = .fps60
     private var outputAspectRatio: RecordingAspectRatio = .story916
@@ -128,7 +130,11 @@ final class ContinuousRecorder: @unchecked Sendable {
     /// 사용자가 직접 녹화 종료를 눌렀을 때만 호출합니다.
     /// 원본 전체 녹화 파일을 닫고, 결과 화면에서 잘라낼 수 있도록 RecordingSession을 반환합니다.
     func stop(completion: @escaping (Result<RecordingSession, Error>) -> Void) {
-        q.async {
+        q.async { [weak self] in
+            guard let self else {
+                DispatchQueue.main.async { completion(.failure(CancellationError())) }
+                return
+            }
             guard self.isRunning || self.writer != nil else {
                 DispatchQueue.main.async { completion(.failure(RecorderError.noRecording)) }
                 return
@@ -142,7 +148,7 @@ final class ContinuousRecorder: @unchecked Sendable {
                   let url = self.currentURL,
                   let start = self.recordingStartPTS else {
                 let error = self.recordingError ?? RecorderError.noRecording
-                self.resetLocked(deleteFiles: false)
+                self.resetLocked(deleteFiles: true)
                 DispatchQueue.main.async { completion(.failure(error)) }
                 return
             }
@@ -202,7 +208,11 @@ final class ContinuousRecorder: @unchecked Sendable {
         topHoldOverlayImage: UIImage? = nil,
         completion: @escaping (Result<URL, Error>) -> Void
     ) {
-        q.async {
+        q.async { [weak self] in
+            guard let self else {
+                DispatchQueue.main.async { completion(.failure(CancellationError())) }
+                return
+            }
             guard let sourceURL = self.currentURL else {
                 DispatchQueue.main.async { completion(.failure(RecorderError.noRecording)) }
                 return
@@ -219,9 +229,11 @@ final class ContinuousRecorder: @unchecked Sendable {
             try? self.fm.removeItem(at: outURL)
 
             let completionBox = URLCompletionBox(completion)
+            let exportID = UUID()
 
-            Task.detached(priority: .userInitiated) { [sourceURL, outURL, start, end, topHoldOverlayImage, completionBox] in
+            let task = Task.detached(priority: .userInitiated) { [weak self, sourceURL, outURL, start, end, topHoldOverlayImage, completionBox] in
                 do {
+                    try Task.checkCancellation()
                     let trimmedURL = try await Self.renderTrimmedClip(
                         sourceURL: sourceURL,
                         outURL: outURL,
@@ -229,15 +241,37 @@ final class ContinuousRecorder: @unchecked Sendable {
                         endSeconds: end,
                         topHoldOverlayImage: topHoldOverlayImage
                     )
-                    DispatchQueue.main.async {
-                        completionBox.completion(.success(trimmedURL))
+                    try Task.checkCancellation()
+                    guard let self else {
+                        try? FileManager.default.removeItem(at: trimmedURL)
+                        return
+                    }
+                    self.q.async {
+                        guard self.exportTasks.removeValue(forKey: exportID) != nil,
+                              self.fm.fileExists(atPath: trimmedURL.path) else {
+                            try? self.fm.removeItem(at: trimmedURL)
+                            DispatchQueue.main.async { completionBox.completion(.failure(CancellationError())) }
+                            return
+                        }
+                        self.exportedURLs.insert(trimmedURL)
+                        DispatchQueue.main.async { completionBox.completion(.success(trimmedURL)) }
                     }
                 } catch {
-                    DispatchQueue.main.async {
-                        completionBox.completion(.failure(error))
+                    try? FileManager.default.removeItem(at: outURL)
+                    self?.q.async {
+                        self?.exportTasks[exportID] = nil
+                        DispatchQueue.main.async { completionBox.completion(.failure(error)) }
                     }
                 }
             }
+            self.exportTasks[exportID] = task
+        }
+    }
+
+    func releaseExportedClip(at url: URL) {
+        q.async {
+            guard self.exportedURLs.remove(url) != nil else { return }
+            try? self.fm.removeItem(at: url)
         }
     }
 
@@ -543,7 +577,7 @@ final class ContinuousRecorder: @unchecked Sendable {
 
     private func makeOutputURL(prefix: String) -> URL {
         let folder = folder ?? fm.temporaryDirectory
-        let name = "\(prefix)_\(Int(Date().timeIntervalSince1970)).mov"
+        let name = "\(prefix)_\(UUID().uuidString).mov"
         return folder.appendingPathComponent(name)
     }
 
@@ -553,8 +587,11 @@ final class ContinuousRecorder: @unchecked Sendable {
             input.markAsFinished()
         }
 
-        if deleteFiles, let folder {
-            try? fm.removeItem(at: folder)
+        if deleteFiles {
+            exportTasks.values.forEach { $0.cancel() }
+            exportTasks.removeAll()
+            exportedURLs.removeAll()
+            if let folder { try? fm.removeItem(at: folder) }
         }
 
         folder = nil

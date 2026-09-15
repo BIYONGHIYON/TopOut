@@ -381,9 +381,6 @@ extension HoldVC {
         selectOverlayView.image = nil
 
         // 탑홀드는 탭한 순간의 새 프레임으로 색상 정보와 임베딩을 만든다.
-        pixels = nil
-        emb = nil
-
         let boundaryRequestID = selectionRequestID
         if isAutoClipDetectionEnabled, let image {
             // 추론 전 75% 기본선을 먼저 표시하면 완료 시 선이 순간 이동해 보입니다.
@@ -399,6 +396,8 @@ extension HoldVC {
 
             isBusy = true
             var didFinishBoundaryAnalysis = false
+            let cancellationToken = AnalysisCancellationToken()
+            matBoundaryAnalysisToken = cancellationToken
             let finishBoundaryAnalysis: ([CGPoint]) -> Void = { [weak self] detectedLine in
                 guard let self,
                       !didFinishBoundaryAnalysis,
@@ -409,6 +408,7 @@ extension HoldVC {
                 didFinishBoundaryAnalysis = true
                 self.matBoundaryAnalysisTimeoutWorkItem?.cancel()
                 self.matBoundaryAnalysisTimeoutWorkItem = nil
+                self.matBoundaryAnalysisToken = nil
                 self.isBusy = false
                 self.matLinePoints = detectedLine
                 self.matLineView.setPoints(detectedLine)
@@ -420,16 +420,17 @@ extension HoldVC {
                     self.selectTipLabel.text = ""
                     self.selectTipLabel.isHidden = true
                     // 준비 완료 임베딩은 저장하지 않고 탑홀드 탭마다 새 프레임을 사용한다.
-                    self.emb = nil
                 } else {
                     self.selectHint.text = L("camera.selection_mat")
                     self.selectTipLabel.text = L("camera.tip_adjust_line")
                     self.selectTipLabel.isHidden = !self.isHelpEnabled
                     self.recordBtn.isEnabled = detectedLine.count >= 2
+                    self.scheduleAutomaticRecordingStartIfEligible()
                 }
             }
 
             let timeoutWorkItem = DispatchWorkItem {
+                cancellationToken.cancel()
                 finishBoundaryAnalysis(Self.samMatDefaultLine)
             }
             matBoundaryAnalysisTimeoutWorkItem = timeoutWorkItem
@@ -437,7 +438,7 @@ extension HoldVC {
                 deadline: .now() + Cfg.matBoundaryAnalysisTimeout,
                 execute: timeoutWorkItem
             )
-            detectMatBoundaryWithMobileSAM(in: image, completion: finishBoundaryAnalysis)
+            detectMatBoundaryWithMobileSAM(in: image, cancellationToken: cancellationToken, completion: finishBoundaryAnalysis)
         } else {
             matLinePoints = []
             matLineView.clear()
@@ -488,11 +489,8 @@ extension HoldVC {
 
     // MARK: - 선택 캐시
     func clearSelectionCache(clearPending: Bool) {
-        matBoundaryAnalysisTimeoutWorkItem?.cancel()
-        matBoundaryAnalysisTimeoutWorkItem = nil
-        topHoldAnalysisTimeoutWorkItem?.cancel()
-        topHoldAnalysisTimeoutWorkItem = nil
-        selectionRequestID += 1
+        cancelAutomaticRecordingStart()
+        cancelSelectionAnalysis()
 
         if clearPending {
             pendingOverlay = nil
@@ -500,8 +498,6 @@ extension HoldVC {
         }
 
         frameImage = nil
-        pixels = nil
-        emb = nil
         isBusy = false
 
         imgView.image = nil
