@@ -371,8 +371,11 @@ final class ReviewVC: UIViewController {
         player.actionAtItemEnd = .pause
         player.automaticallyWaitsToMinimizeStalling = false
         // 카메라 캡처가 끝난 뒤 재생용 오디오 세션으로 전환합니다.
-        // 전환에 실패하더라도 영상 타임라인은 진행하도록 음소거로 폴백합니다.
-        player.isMuted = !prepareReviewAudioPlaybackIfPossible()
+        // 전환은 주 스레드를 막지 않도록 오디오 세션 큐에서 진행하고,
+        // 실패하더라도 영상 타임라인은 진행하도록 음소거로 폴백합니다.
+        AudioSessionQueue.activateForPlayback { [weak player] activated in
+            player?.isMuted = !activated
+        }
 
         let layer = AVPlayerLayer(player: player)
         layer.videoGravity = .resizeAspect

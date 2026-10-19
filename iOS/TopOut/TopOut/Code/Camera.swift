@@ -28,18 +28,11 @@ extension HoldVC {
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
         switch status {
         case .authorized:
-            // 권한만 확인하지 않고 오디오 세션을 실제로 활성화할 수 있는지도 확인합니다.
-            // 통화 중에는 setActive가 실패할 수 있으며, 이때는 영상 전용으로 구성합니다.
-            isAudioCaptureEnabled = configureAudioSessionForRecording()
-            recorder.setAudioCaptureEnabled(isAudioCaptureEnabled)
-            setupCamera()
+            configureAudioSessionThenSetupCamera(microphoneGranted: true)
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
                 DispatchQueue.main.async {
-                    guard let self else { return }
-                    self.isAudioCaptureEnabled = granted && self.configureAudioSessionForRecording()
-                    self.recorder.setAudioCaptureEnabled(self.isAudioCaptureEnabled)
-                    self.setupCamera()
+                    self?.configureAudioSessionThenSetupCamera(microphoneGranted: granted)
                 }
             }
         default:
@@ -50,33 +43,36 @@ extension HoldVC {
         }
     }
 
-    @discardableResult
-    private func configureAudioSessionForRecording() -> Bool {
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(
-                .playAndRecord,
-                mode: .videoRecording,
-                options: [.defaultToSpeaker, .allowBluetoothHFP]
-            )
-            try audioSession.setActive(true)
-            return true
-        } catch {
-            // 통화 등으로 오디오 세션 우선권을 얻지 못하면 마이크 없이 진행합니다.
-            return false
+    /// 권한만 확인하지 않고 오디오 세션을 실제로 활성화할 수 있는지도 확인합니다.
+    /// 통화 중에는 setActive가 실패할 수 있으며, 이때는 영상 전용으로 구성합니다.
+    /// 오디오 세션 활성화는 주 스레드를 막지 않도록 촬영 세션 큐에서 진행합니다.
+    private func configureAudioSessionThenSetupCamera(microphoneGranted: Bool) {
+        sessionQ.async { [weak self] in
+            let audioActivated = microphoneGranted && AudioSessionQueue.activateForRecording()
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isAudioCaptureEnabled = audioActivated
+                self.recorder.setAudioCaptureEnabled(audioActivated)
+                self.setupCamera()
+            }
         }
     }
 
     func prepareAudioSessionForCameraUse() {
-        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
-              configureAudioSessionForRecording() else {
+        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
             disableAudioCaptureForCurrentSession()
             return
         }
 
         // 오디오 중단 뒤 영상 연결은 유지하고 다음 녹화 전에 마이크 연결만 복구한다.
+        // 세션 큐에서 오디오 세션을 활성화해 앞선 마이크 해제·비활성화 뒤에 순서대로 실행한다.
         sessionQ.async { [weak self] in
             guard let self else { return }
+
+            guard AudioSessionQueue.activateForRecording() else {
+                DispatchQueue.main.async { self.disableAudioCaptureForCurrentSession() }
+                return
+            }
 
             guard self.isCameraReady else {
                 self.recorder.setAudioCaptureEnabled(true)
@@ -288,14 +284,7 @@ extension HoldVC {
                 self.session.startRunning()
             }
 
-            do {
-                try AVAudioSession.sharedInstance().setActive(
-                    false,
-                    options: .notifyOthersOnDeactivation
-                )
-            } catch {
-                // 이미 다른 오디오 클라이언트가 세션을 소유한 경우 무시합니다.
-            }
+            AudioSessionQueue.deactivateNotifyingOthers()
         }
     }
 

@@ -6,23 +6,6 @@ import Photos
 extension ReviewVC {
     // MARK: - 결과 재생
 
-    func prepareReviewAudioPlaybackIfPossible() -> Bool {
-        do {
-            let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(
-                .playback,
-                mode: .moviePlayback,
-                options: [.mixWithOthers]
-            )
-            try audioSession.setActive(true)
-            return true
-        } catch {
-            // 통화 등으로 오디오 장치를 점유한 상태에서는 소리만 포기하고
-            // 영상 타임라인은 정상적으로 진행한다.
-            return false
-        }
-    }
-
     func handlePlayerItemStatus(_ item: AVPlayerItem) {
         switch item.status {
         case .readyToPlay:
