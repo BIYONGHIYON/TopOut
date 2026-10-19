@@ -1,4 +1,4 @@
-# TopOut Android v2.3 (versionCode 20)
+# TopOut Android v2.3 (versionCode 21)
 
 > 등반 시작부터 완등 순간까지, 자동으로 찾아주는 클라이밍 촬영 앱
 
@@ -194,7 +194,7 @@ app/build/generated/moveNetPoseAssets/models/movenet-thunder-fp16.tflite
 
 ## 문서
 
-- [v2.3 versionCode 20 변경 사항](V2_3_BUILD_20_NOTES.md)
+- [v2.3 versionCode 21 변경 사항](V2_3_BUILD_21_NOTES.md)
 - [전체 개발 이력과 기술 의사결정](../../DEVELOPMENT_HISTORY.md)
 - [Android 호환성](ANDROID_COMPATIBILITY_NOTES.md)
 - [기기 호환성 수정](DEVICE_COMPATIBILITY_FIX_NOTES.md)

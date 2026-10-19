@@ -1,10 +1,11 @@
-# TopOut iOS v2.3 (build 20)
+# TopOut iOS v2.3 (build 21)
 
 ## 릴리스 기준
 
 - Marketing Version: `2.3`
-- Current Project Version: `20`
+- Current Project Version: `21`
 - Deployment Target: iOS `16.0` 유지
+- build 20은 App Store Connect에 이미 업로드되어 재업로드가 ITMS-90189로 거절되어, 코드 변경 없이 빌드 번호만 21로 올림
 
 ## 주요 변경 사항
 
@@ -21,4 +22,4 @@
 - 녹화 영상에 소리가 정상 기록되는지, 통화 중 촬영에서는 영상만 계속 기록되는지 확인
 - 결과 화면 재생 소리와 사진 앱 저장본 재생 확인
 - 녹화 중 앱 강제 종료 후 재실행 시 앱 컨테이너 `tmp/TopOutContinuous`의 이전 폴더가 정리되는지 확인
-- App Store 업로드 전 Marketing Version `2.3`, Current Project Version `20` 확인
+- App Store 업로드 전 Marketing Version `2.3`, Current Project Version `21` 확인

@@ -1,10 +1,11 @@
-# TopOut Android v2.3 (versionCode 20)
+# TopOut Android v2.3 (versionCode 21)
 
 ## 릴리스 기준
 
 - Version name: `2.3`
-- Google Play versionCode: `20`
+- Google Play versionCode: `21`
 - Minimum SDK `26`, Compile / Target SDK `36` 유지
+- iOS와 빌드 번호를 맞추기 위해 코드 변경 없이 versionCode를 21로 올림
 
 ## 주요 변경 사항
 
@@ -20,4 +21,4 @@
 - 녹화 중 앱 강제 종료 후 재실행 시 `adb shell run-as com.topout.cam ls cache`에서 이전 임시 영상이 정리되는지 확인
 - 렌즈 배율 전환, 4K·60fps 지원 표시, 결과 저장 확인
 - `./check_models.command`로 MoveNet SHA-256 확인
-- Google Play 업로드 전 versionName `2.3`, versionCode `20` 확인
+- Google Play 업로드 전 versionName `2.3`, versionCode `21` 확인

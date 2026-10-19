@@ -1,4 +1,4 @@
-# TopOut iOS v2.3 (build 20)
+# TopOut iOS v2.3 (build 21)
 
 > 등반 시작부터 완등 순간까지, 자동으로 찾아주는 클라이밍 촬영 앱
 
@@ -171,7 +171,7 @@ xcodebuild -project TopOut.xcodeproj -scheme TopOut -configuration Debug \
 
 ## 문서
 
-- [v2.3 build 20 변경 사항](V2_3_BUILD_20_NOTES.md)
+- [v2.3 build 21 변경 사항](V2_3_BUILD_21_NOTES.md)
 - [전체 개발 이력과 기술 의사결정](../../DEVELOPMENT_HISTORY.md)
 - [MobileSAM 매트 경계](MOBILESAM_MAT_DETECTOR_NOTES.md)
 - [시작과 프레임 처리](STARTUP_OPTIMIZATION_NOTES.md)
