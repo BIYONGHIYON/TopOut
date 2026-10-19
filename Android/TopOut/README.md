@@ -29,7 +29,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 - Application ID: `com.topout.cam`
 - Minimum SDK: `26` (Android 8.0)
 - Compile / Target SDK: `36`
-- Version name / code: `2.3` / `20`
+- Version name / code: `2.3` / `21`
 - UI: Kotlin, Jetpack Compose, Material 3
 - Camera / media: CameraX 1.6.1, Media3 1.10.1
 - AI: MobileSAM ONNX Runtime 1.27.0, MoveNet Thunder FP16 LiteRT 1.4.1

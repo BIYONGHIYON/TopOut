@@ -28,7 +28,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 
 - Bundle ID: `com.topout.cam`
 - Deployment Target: iOS 16.0
-- Marketing / Current Project Version: `2.3` / `20`
+- Marketing / Current Project Version: `2.3` / `21`
 - UI: Swift, UIKit
 - Camera / media: AVFoundation, AVAssetWriter, AVPlayer, PhotoKit
 - AI: MobileSAM Core ML, Apple Vision Human Body Pose
