@@ -2,6 +2,8 @@ import java.io.File
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
+import java.util.zip.GZIPInputStream
 
 plugins {
     id("com.android.application")
@@ -14,8 +16,12 @@ val moveNetPoseAssetsDirectory = layout.buildDirectory.dir("generated/moveNetPos
 val moveNetPoseModelFile = moveNetPoseAssetsDirectory.map {
     it.file("models/movenet-thunder-fp16.tflite")
 }
+// tfhub.dev 직접 링크는 404로 종료되어 같은 파일을 제공하는 Kaggle Models 아카이브를 사용한다.
 val moveNetPoseModelUrl =
-    "https://tfhub.dev/google/lite-model/movenet/singlepose/thunder/tflite/float16/4?lite-format=tflite"
+    "https://www.kaggle.com/api/v1/models/google/movenet/tfLite/singlepose-thunder-tflite-float16/1/download"
+val moveNetPoseArchiveEntry = "4.tflite"
+// MoveNet SinglePose Thunder FP16 v4 원본(12,584,128 bytes)의 SHA-256.
+val moveNetPoseModelSha256 = "41641538679ec79b07d4101e591dda47d098c09af29607674b2a40b8a3798dd3"
 
 val moveNetPoseModelCacheFile = File(
     gradle.gradleUserHomeDir,
@@ -83,44 +89,95 @@ kotlin {
 
 val downloadMoveNetPoseModel by tasks.registering {
     group = "topout models"
-    description = "Downloads and validates the official MoveNet SinglePose Thunder FP16 TFLite model."
+    description = "Downloads the official MoveNet SinglePose Thunder FP16 TFLite model and verifies its SHA-256."
     inputs.property("modelUrl", moveNetPoseModelUrl)
+    inputs.property("modelSha256", moveNetPoseModelSha256)
     outputs.file(moveNetPoseModelFile)
 
     doLast {
-        fun isValidTflite(file: File): Boolean {
-            if (!file.isFile || file.length() < 1_000_000L) return false
-            val header = ByteArray(8)
-            file.inputStream().use { input ->
-                if (input.read(header) != header.size) return false
+        fun sha256(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().buffered().use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
             }
-            return String(header, 4, 4, Charsets.US_ASCII) == "TFL3"
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+
+        fun isVerifiedModel(file: File): Boolean =
+            file.isFile && sha256(file) == moveNetPoseModelSha256
+
+        // tar.gz에서 모델 항목 하나만 꺼낸다. 다른 항목은 건너뛴다.
+        fun extractTarGzEntry(archive: File, entryName: String, destination: File): Boolean {
+            GZIPInputStream(archive.inputStream().buffered()).use { input ->
+                val header = ByteArray(512)
+                while (true) {
+                    if (input.readNBytes(header, 0, header.size) < header.size) return false
+                    val name = String(header, 0, 100, Charsets.US_ASCII)
+                        .substringBefore('\u0000')
+                        .removePrefix("./")
+                    if (name.isEmpty()) return false
+                    val size = String(header, 124, 12, Charsets.US_ASCII)
+                        .trim('\u0000', ' ')
+                        .toLong(8)
+                    if (name != entryName) {
+                        input.skipNBytes((size + 511) / 512 * 512)
+                        continue
+                    }
+                    destination.outputStream().buffered().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var remaining = size
+                        while (remaining > 0) {
+                            val count = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                            if (count < 0) return false
+                            output.write(buffer, 0, count)
+                            remaining -= count
+                        }
+                    }
+                    return true
+                }
+            }
         }
 
         val output = moveNetPoseModelFile.get().asFile
-        if (isValidTflite(output)) return@doLast
+        if (isVerifiedModel(output)) return@doLast
 
         val cache = moveNetPoseModelCacheFile
-        if (!isValidTflite(cache)) {
+        if (!isVerifiedModel(cache)) {
             cache.parentFile.mkdirs()
+            val archive = File(cache.parentFile, "${cache.name}.tar.gz.download")
             val temporary = File(cache.parentFile, "${cache.name}.download")
+            archive.delete()
             temporary.delete()
-            val connection = URI(moveNetPoseModelUrl).toURL().openConnection().apply {
-                connectTimeout = 30_000
-                readTimeout = 120_000
-                setRequestProperty("User-Agent", "TopOut-Android-Gradle")
+            try {
+                val connection = URI(moveNetPoseModelUrl).toURL().openConnection().apply {
+                    connectTimeout = 30_000
+                    readTimeout = 120_000
+                    setRequestProperty("User-Agent", "TopOut-Android-Gradle")
+                }
+                connection.getInputStream().buffered().use { input ->
+                    archive.outputStream().buffered().use { outputStream -> input.copyTo(outputStream) }
+                }
+                require(extractTarGzEntry(archive, moveNetPoseArchiveEntry, temporary)) {
+                    "MoveNet 아카이브에 $moveNetPoseArchiveEntry 항목이 없습니다."
+                }
+                val actual = sha256(temporary)
+                require(actual == moveNetPoseModelSha256) {
+                    "MoveNet Thunder FP16 SHA-256 불일치: expected=$moveNetPoseModelSha256 actual=$actual"
+                }
+                Files.move(
+                    temporary.toPath(),
+                    cache.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+                )
+            } finally {
+                archive.delete()
+                temporary.delete()
             }
-            connection.getInputStream().buffered().use { input ->
-                temporary.outputStream().buffered().use { outputStream -> input.copyTo(outputStream) }
-            }
-            require(isValidTflite(temporary)) {
-                "MoveNet Thunder FP16 다운로드 결과가 유효한 TFLite FlatBuffer가 아닙니다."
-            }
-            Files.move(
-                temporary.toPath(),
-                cache.toPath(),
-                StandardCopyOption.REPLACE_EXISTING
-            )
         }
 
         output.parentFile.mkdirs()
@@ -129,8 +186,8 @@ val downloadMoveNetPoseModel by tasks.registering {
             output.toPath(),
             StandardCopyOption.REPLACE_EXISTING
         )
-        require(isValidTflite(output)) {
-            "MoveNet Thunder FP16 캐시 복사 결과가 유효하지 않습니다."
+        require(isVerifiedModel(output)) {
+            "MoveNet Thunder FP16 캐시 복사 결과의 SHA-256이 일치하지 않습니다."
         }
     }
 }

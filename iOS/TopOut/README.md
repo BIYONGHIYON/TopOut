@@ -118,6 +118,7 @@ Vision은 한 프레임에서 여러 observation을 반환하므로 사람마다
 - 백그라운드 자동 종료가 실제 영상 프레임 없이 끝난 경우에도 앱이 이미 활성 상태라면 카메라 프리뷰를 즉시 복구합니다.
 - 선택 분석 중 백그라운드로 이동하면 요청을 취소합니다. 매트 분석이 미완료이면 기본 경계를 직접 보정할 수 있고, 탑홀드는 다시 선택할 수 있습니다. 저장본 플레이어는 표시 애니메이션 완료 시에도 활성 화면인지 확인한 뒤 재생합니다.
 - 녹화 writer 준비 실패 시 세션 폴더를 삭제한 뒤 참조를 초기화해 부분 파일의 정리 경로를 유지합니다.
+- 앱 시작 시 이전 실행이 강제 종료되며 남긴 `TopOutContinuous` 세션 폴더 목록을 고정한 뒤 백그라운드에서 삭제해, 이번 실행의 녹화 폴더는 건드리지 않습니다.
 - 시뮬레이터 빌드는 실제 iPhone의 peak RSS·Neural Engine 할당·프레임 드롭·발열을 측정하지 않으므로, 4K·60fps와 iPhone 12 mini급 기기는 별도 실기기 검증이 필요합니다.
 
 ## 코드 구조
@@ -140,7 +141,11 @@ Code/
 ├── Recorder.swift              원본 기록과 선택 구간 저장
 ├── PhotoLibraryVideoSaver.swift 사진 보관함 쓰기와 검증 연결
 ├── PhotoVideoRequest.swift     검증·재생 공통 조회의 시간 제한과 취소
-├── ReviewVC.swift              결과 화면 상태와 재생 흐름
+├── ReviewVC.swift              결과 화면 상태·화면 요소·생명주기
+├── ReviewVC+Layout.swift       세로·가로 결과 조작부 배치
+├── ReviewVC+Editing.swift      구간 편집·확대·저장 상태 표시
+├── ReviewVC+Actions.swift      재생·저장·재촬영·닫기 버튼 동작
+├── ReviewVC+Playback.swift     AVPlayer 재생과 재생 위치 동기화
 ├── TrimRangeSlider.swift       시작·끝·재생 위치 편집
 └── ReviewControls.swift        결과 화면의 작은 공통 조작부
 ```

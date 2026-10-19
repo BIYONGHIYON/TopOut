@@ -3,14 +3,11 @@ package com.topout.cam.camera
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
-import android.media.MediaRecorder
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Range
-import android.util.Rational
 import android.util.Size
 import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2CameraInfo
@@ -18,7 +15,6 @@ import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
-import androidx.camera.core.DynamicRange
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.core.SessionConfig
@@ -53,7 +49,6 @@ import kotlin.coroutines.resumeWithException
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.round
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -105,24 +100,6 @@ class CameraEngine(private val context: Context) {
 
     private var sessionConfig: CameraSessionConfig? = null
 
-    /**
-     * A display zoom anchor is backed by one actual rear camera. For example, an ultra-wide
-     * camera is exposed as the 0.5x anchor, the normal camera as 1.0x, and a tele camera as 3.0x.
-     * Zoom inside a section is digital zoom on that camera; crossing an anchor rebinds the matching
-     * camera, then the active gesture resumes from that anchor.
-     */
-    private data class RearLensProfile(
-        val cameraId: String,
-        val selector: CameraSelector,
-        val physicalCameraId: String? = null,
-        val anchorRatio: Float,
-        val nativeMinZoom: Float,
-        val nativeMaxZoom: Float,
-        val equivalentFocalLength: Float,
-        val isLogicalMultiCamera: Boolean,
-        val logicalPhysicalCameraIds: Set<String> = emptySet()
-    )
-
     private data class LensSwitchRequest(
         val id: Long,
         val targetProfile: RearLensProfile,
@@ -173,49 +150,6 @@ class CameraEngine(private val context: Context) {
     var onZoomCorrected: ((Float) -> Unit)? = null
     internal var onLensTransition: ((LensTransitionEvent) -> Unit)? = null
 
-    /**
-     * Requests an analysis stream whose displayed dimensions already match the selected frame.
-     * CameraX may choose a nearby supported size, while the shared ViewPort still guarantees the
-     * exact crop. Avoiding a fixed 16:9 request reduces OEM-specific custom-ratio artifacts.
-     */
-    private fun analysisTargetSize(
-        aspectRatio: RecordingAspectRatio,
-        isLandscape: Boolean,
-        longSide: Int = 1280
-    ): Size {
-        val safeLongSide = max(320, longSide)
-        val ratio = aspectRatio.widthOverHeight(isLandscape).coerceAtLeast(0.01f)
-        fun even(value: Int): Int {
-            val clamped = max(2, value)
-            return clamped - (clamped and 1)
-        }
-        return if (ratio >= 1f) {
-            Size(even(safeLongSide), even(round(safeLongSide / ratio).toInt()))
-        } else {
-            Size(even(round(safeLongSide * ratio).toInt()), even(safeLongSide))
-        }
-    }
-
-    /** One source of truth for the frame visible in Preview, Analysis, and VideoCapture. */
-    private fun selectedFrameViewPort(
-        aspectRatio: RecordingAspectRatio,
-        isLandscape: Boolean,
-        targetRotation: Int
-    ): ViewPort {
-        val ratio = aspectRatio.viewPortRatio(isLandscape)
-        return ViewPort.Builder(Rational(ratio.width, ratio.height), targetRotation)
-            .setScaleType(ViewPort.FILL_CENTER)
-            .build()
-    }
-
-    /** Prefer CPU analysis streams with the same orientation and ratio as the selected frame. */
-    private fun recordingAnalysisTargetSizes(
-        aspectRatio: RecordingAspectRatio,
-        isLandscape: Boolean
-    ): List<Size> = listOf(960, 640, 1280, 480, 320)
-        .map { longSide -> analysisTargetSize(aspectRatio, isLandscape, longSide) }
-        .distinct()
-
     /** Recomputes the public zoom range and only exposes anchors that actually switch cameras. */
     private fun updateEffectiveZoomRange() {
         if (rearLensProfiles.isEmpty()) {
@@ -240,27 +174,6 @@ class CameraEngine(private val context: Context) {
             TopOutConfig.CameraMaxZoom,
             lastLens.anchorRatio * lastLens.nativeMaxZoom
         ).coerceAtLeast(effectiveMinZoom)
-    }
-
-    /**
-     * Use PreviewView's measured ViewPort while its display rotation matches the capture session.
-     * On an Android 16 large-screen retake the window may have rotated in Review even though we
-     * intentionally restore the previous take's targetRotation; in that case PreviewView.viewPort
-     * belongs to the new window rotation, so rebuild the same aspect crop with the frozen rotation.
-     */
-    private fun previewViewPort(
-        previewView: PreviewView,
-        aspectRatio: RecordingAspectRatio,
-        isLandscape: Boolean,
-        targetRotation: Int
-    ): ViewPort {
-        val displayRotation = previewView.display?.rotation
-        return if (displayRotation == null || displayRotation == targetRotation) {
-            previewView.viewPort
-                ?: selectedFrameViewPort(aspectRatio, isLandscape, targetRotation)
-        } else {
-            selectedFrameViewPort(aspectRatio, isLandscape, targetRotation)
-        }
     }
 
     /**
@@ -525,7 +438,7 @@ class CameraEngine(private val context: Context) {
             }
             val probe = probeResult ?: throw (lastError
                 ?: IllegalStateException(tr("error.rear_camera")))
-            queryCapabilities(probe, selectedProfile).also {
+            queryCameraCapabilities(context, probe, selectedProfile).also {
                 cachedCapabilitiesByLens[selectedProfile.cameraId] = it
                 cameraProvider.unbindAll()
             }
@@ -584,7 +497,7 @@ class CameraEngine(private val context: Context) {
         sessionConfig = config.copy(frameRate = boundSession.frameRate)
 
         // 연결된 렌즈의 기본 기능과 현재 세션의 60fps 지원 여부를 분리해 관리한다.
-        val baseCapabilities = queryCapabilities(boundSession.camera, selectedProfile)
+        val baseCapabilities = queryCameraCapabilities(context, boundSession.camera, selectedProfile)
         cachedCapabilitiesByLens[selectedProfile.cameraId] = baseCapabilities
 
         val exact60Key = ExactFpsSessionKey(
@@ -1128,256 +1041,12 @@ class CameraEngine(private val context: Context) {
         config.previewView.postDelayed(startRebind, LENS_SWITCH_REBIND_FALLBACK_MS)
     }
 
-    /**
-     * Discovers every public rear camera, computes its 35-mm-equivalent focal length, and maps it
-     * to display anchors such as 0.5x, 1.0x, 3.0x, and 5.0x. Unlike the previous implementation,
-     * this does not require one logical camera to advertise a sub-1x CameraX zoom range.
-     */
-    private fun discoverRearLensProfiles(
-        cameraProvider: ProcessCameraProvider,
-        manager: CameraManager
-    ): List<RearLensProfile> {
-        data class Candidate(
-            val cameraId: String,
-            val selector: CameraSelector,
-            val physicalCameraId: String?,
-            val equivalentFocalLength: Float,
-            val nativeMinZoom: Float,
-            val nativeMaxZoom: Float,
-            val isLogicalMultiCamera: Boolean,
-            val logicalPhysicalCameraIds: Set<String> = emptySet()
-        )
-
-        fun equivalentFocalLength(characteristics: CameraCharacteristics): Float? {
-            val sensorWidth = characteristics
-                .get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
-                ?.width
-                ?.takeIf { it > 0f }
-                ?: return null
-            return characteristics
-                .get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
-                ?.asSequence()
-                ?.filter { it > 0f }
-                ?.map { it * FULL_FRAME_SENSOR_WIDTH_MM / sensorWidth }
-                ?.minByOrNull { abs(it - EXPECTED_WIDE_EQUIVALENT_MM) }
-        }
-        val candidates = mutableListOf<Candidate>()
-        cameraProvider.availableCameraInfos.forEach publicLoop@ { info ->
-            val camera2Info = runCatching { Camera2CameraInfo.from(info) }.getOrNull()
-                ?: return@publicLoop
-            val publicCameraId = runCatching { camera2Info.cameraId }.getOrNull()
-                ?: return@publicLoop
-            val characteristics = runCatching {
-                manager.getCameraCharacteristics(publicCameraId)
-            }.getOrNull() ?: return@publicLoop
-            if (
-                characteristics.get(CameraCharacteristics.LENS_FACING) !=
-                CameraCharacteristics.LENS_FACING_BACK
-            ) return@publicLoop
-
-            val selector = exactCameraSelector(publicCameraId)
-            if (!runCatching { cameraProvider.hasCamera(selector) }.getOrDefault(false)) {
-                return@publicLoop
-            }
-            val availableCapabilities = characteristics
-                .get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)
-                ?: intArrayOf()
-            val logical = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                availableCapabilities.contains(
-                    CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA
-                )
-            } else {
-                false
-            }
-            val logicalPhysicalCameraIds = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && logical) {
-                runCatching { characteristics.physicalCameraIds.toSet() }.getOrDefault(emptySet())
-            } else {
-                emptySet()
-            }
-            val zoomState = info.zoomState.value
-            val camera2Max = characteristics
-                .get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM)
-                ?: TopOutConfig.CameraMaxZoom
-            // 연결 전에는 Camera2의 정적 배율 범위를 우선해 초광각 지원을 판단한다.
-            val camera2ZoomRatioRange = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                // CameraX가 보정한 Camera2 특성 조회 경로를 사용한다.
-                runCatching {
-                    camera2Info.getCameraCharacteristic(
-                        CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE
-                    )
-                }.getOrNull()
-            } else {
-                null
-            }
-            val publicMinZoom = camera2ZoomRatioRange?.lower
-                ?.takeIf { it.isFinite() && it > 0f }
-                ?: zoomState?.minZoomRatio?.takeIf { it.isFinite() && it > 0f }
-                ?: 1f
-            val publicMaxZoom = camera2ZoomRatioRange?.upper
-                ?.takeIf { it.isFinite() && it >= publicMinZoom }
-                ?: zoomState?.maxZoomRatio?.takeIf { it.isFinite() && it >= publicMinZoom }
-                ?: camera2Max.takeIf { it.isFinite() && it >= publicMinZoom }
-                ?: TopOutConfig.CameraMaxZoom
-            equivalentFocalLength(characteristics)?.let { equivalent ->
-                candidates += Candidate(
-                    cameraId = publicCameraId,
-                    selector = selector,
-                    physicalCameraId = null,
-                    equivalentFocalLength = equivalent,
-                    nativeMinZoom = publicMinZoom
-                        .coerceAtLeast(TopOutConfig.MinZoom),
-                    nativeMaxZoom = min(
-                        TopOutConfig.CameraMaxZoom,
-                        publicMaxZoom
-                    ).coerceAtLeast(1f),
-                    isLogicalMultiCamera = logical,
-                    logicalPhysicalCameraIds = logicalPhysicalCameraIds
-                )
-            }
-
-            // 논리 카메라의 물리 구성원으로만 노출된 렌즈도 직접 고정해 사용한다.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && logical) {
-                logicalPhysicalCameraIds.forEach physicalLoop@ { physicalId ->
-                    val physicalCharacteristics = runCatching {
-                        manager.getCameraCharacteristics(physicalId)
-                    }.getOrNull() ?: return@physicalLoop
-                    val equivalent = equivalentFocalLength(physicalCharacteristics)
-                        ?: return@physicalLoop
-                    val physicalMax = physicalCharacteristics
-                        .get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM)
-                        ?: TopOutConfig.CameraMaxZoom
-                    candidates += Candidate(
-                        cameraId = "$publicCameraId/$physicalId",
-                        selector = selector,
-                        physicalCameraId = physicalId,
-                        equivalentFocalLength = equivalent,
-                        nativeMinZoom = 1f,
-                        nativeMaxZoom = min(TopOutConfig.CameraMaxZoom, physicalMax)
-                            .coerceAtLeast(1f),
-                        isLogicalMultiCamera = false
-                    )
-                }
-            }
-        }
-
-        if (candidates.isEmpty()) return emptyList()
-        val reference = candidates
-            .minByOrNull { abs(it.equivalentFocalLength - EXPECTED_WIDE_EQUIVALENT_MM) }
-            ?: return emptyList()
-        val referenceFocal = reference.equivalentFocalLength
-
-        val profiles = candidates
-            .map { candidate ->
-                val rawAnchor = candidate.equivalentFocalLength / referenceFocal
-                RearLensProfile(
-                    cameraId = candidate.cameraId,
-                    selector = candidate.selector,
-                    physicalCameraId = candidate.physicalCameraId,
-                    anchorRatio = snapPhysicalLensAnchor(rawAnchor),
-                    nativeMinZoom = candidate.nativeMinZoom,
-                    nativeMaxZoom = candidate.nativeMaxZoom,
-                    equivalentFocalLength = candidate.equivalentFocalLength,
-                    isLogicalMultiCamera = candidate.isLogicalMultiCamera,
-                    logicalPhysicalCameraIds = candidate.logicalPhysicalCameraIds
-                )
-            }
-            .filter { it.anchorRatio in TopOutConfig.MinZoom..TopOutConfig.CameraMaxZoom }
-
-        // 논리 그룹 밖의 망원 렌즈는 별도 전환 대상으로 유지한다.
-        selectHybridRearLensCandidates(
-            candidates = profiles.map { profile ->
-                HybridRearLensCandidate(
-                    value = profile,
-                    cameraId = profile.cameraId,
-                    physicalCameraId = profile.physicalCameraId,
-                    anchorRatio = profile.anchorRatio,
-                    nativeMinZoom = profile.nativeMinZoom,
-                    nativeMaxZoom = profile.nativeMaxZoom,
-                    equivalentFocalLength = profile.equivalentFocalLength,
-                    isLogicalMultiCamera = profile.isLogicalMultiCamera,
-                    logicalPhysicalCameraIds = profile.logicalPhysicalCameraIds
-                )
-            },
-            referenceFocalLength = referenceFocal,
-            expectedWideEquivalent = EXPECTED_WIDE_EQUIVALENT_MM,
-            boundaryEpsilon = LENS_BOUNDARY_EPSILON,
-            transitionGap = LENS_SWITCH_GAP,
-            maximumGapFraction = LENS_SWITCH_MAX_GAP_FRACTION
-        )?.let { hybridProfiles ->
-            return hybridProfiles.map { it.value }
-        }
-
-        return profiles
-            .groupBy { it.anchorRatio }
-            .mapNotNull { (_, sameAnchor) ->
-                sameAnchor.minWithOrNull(
-                    compareBy<RearLensProfile> {
-                        abs(it.equivalentFocalLength / referenceFocal - it.anchorRatio)
-                    }.thenBy { profile ->
-                        when {
-                            profile.anchorRatio == 1f &&
-                                profile.isLogicalMultiCamera &&
-                                profile.physicalCameraId == null -> 0
-                            profile.anchorRatio != 1f &&
-                                !profile.isLogicalMultiCamera -> 0
-                            else -> 1
-                        }
-                    }.thenByDescending { it.nativeMaxZoom }
-                )
-            }
-            .sortedBy { it.anchorRatio }
-            .let { profiles ->
-                val hasWide = profiles.any { abs(it.anchorRatio - 1f) <= LENS_BOUNDARY_EPSILON }
-                if (hasWide) profiles else {
-                    profiles + RearLensProfile(
-                        cameraId = reference.cameraId,
-                        selector = reference.selector,
-                        physicalCameraId = reference.physicalCameraId,
-                        anchorRatio = 1f,
-                        nativeMinZoom = reference.nativeMinZoom,
-                        nativeMaxZoom = reference.nativeMaxZoom,
-                        equivalentFocalLength = reference.equivalentFocalLength,
-                        isLogicalMultiCamera = reference.isLogicalMultiCamera,
-                        logicalPhysicalCameraIds = reference.logicalPhysicalCameraIds
-                    )
-                }
-            }
-            .distinctBy { it.anchorRatio }
-            .sortedBy { it.anchorRatio }
-    }
-
-    private fun snapPhysicalLensAnchor(rawRatio: Float): Float {
-        if (rawRatio < 0.8f) {
-            // 12~14mm 초광각은 일반 카메라 표기와 같이 0.5배로 표시한다.
-            return TopOutConfig.MinZoom
-        }
-        if (abs(rawRatio - 1f) <= 0.25f) return 1f
-        val nearestInteger = round(rawRatio)
-        if (abs(rawRatio - nearestInteger) <= 0.18f) return nearestInteger
-        return round(rawRatio * 10f) / 10f
-    }
-
-    private fun exactCameraSelector(cameraId: String): CameraSelector =
-        CameraSelector.Builder()
-            .addCameraFilter { cameraInfos ->
-                cameraInfos.filter { info ->
-                    runCatching { Camera2CameraInfo.from(info).cameraId == cameraId }
-                        .getOrDefault(false)
-                }
-            }
-            .build()
-
     private companion object {
         const val ZOOM_SUBMIT_EPSILON = 0.0005f
-        const val LENS_BOUNDARY_EPSILON = 0.001f
-        const val LENS_SWITCH_GAP = 0.1f
-        const val LENS_SWITCH_MAX_GAP_FRACTION = 0.25f
         const val LENS_SWITCH_REBIND_FALLBACK_MS = 100L
         const val LENS_SWITCH_READY_TIMEOUT_MS = 2_500L
         const val PREVIEW_STREAM_READY_TIMEOUT_MS = 3_000L
         const val ZOOM_APPLY_TIMEOUT_MS = 1_500L
-        const val FULL_FRAME_SENSOR_WIDTH_MM = 36f
-        const val EXPECTED_WIDE_EQUIVALENT_MM = 26f
     }
 
     fun startRecording(includeAudio: Boolean = true) {
@@ -1608,72 +1277,6 @@ class CameraEngine(private val context: Context) {
                     requestedNotice
                 )
             )
-        )
-    }
-
-    private fun queryCapabilities(
-        camera: Camera,
-        profile: RearLensProfile
-    ): CameraCapabilities {
-        val qualities = Recorder.getVideoCapabilities(camera.cameraInfo).getSupportedQualities(DynamicRange.SDR)
-        val manager = context.getSystemService(CameraManager::class.java)
-        // CameraX가 선택한 실제 카메라의 기능을 조회한다.
-        val cameraId = profile.physicalCameraId ?: runCatching {
-            Camera2CameraInfo.from(camera.cameraInfo).cameraId
-        }.getOrElse {
-                manager.cameraIdList.firstOrNull { id ->
-                    manager.getCameraCharacteristics(id)
-                        .get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
-                } ?: manager.cameraIdList.first()
-            }
-        val characteristics = manager.getCameraCharacteristics(cameraId)
-        val streamMap = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-        val aeRanges = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES).orEmpty()
-
-        fun matchesSize(candidate: Size, target: Size): Boolean =
-            (candidate.width == target.width && candidate.height == target.height) ||
-                (candidate.width == target.height && candidate.height == target.width)
-
-        val recorderSizes = streamMap?.getOutputSizes(MediaRecorder::class.java).orEmpty()
-        fun supportsRecordingSize(size: Size): Boolean = recorderSizes.any { matchesSize(it, size) }
-
-        fun supports60(size: Size): Boolean {
-            val hasRange = aeRanges.any { it.lower <= 60 && it.upper >= 60 }
-            if (!hasRange || streamMap == null || !supportsRecordingSize(size)) return false
-            val actualSize = recorderSizes.firstOrNull { matchesSize(it, size) } ?: size
-            val regularDuration = runCatching {
-                streamMap.getOutputMinFrameDuration(MediaRecorder::class.java, actualSize)
-            }.getOrDefault(0L)
-            val regular60 = regularDuration in 1L..17_500_000L
-            val highSpeed60 = runCatching {
-                streamMap.highSpeedVideoSizes.any { candidate ->
-                    matchesSize(candidate, size) && streamMap.getHighSpeedVideoFpsRangesFor(candidate)
-                        .any { it.lower <= 60 && it.upper >= 60 }
-                }
-            }.getOrDefault(false)
-            return regular60 || highSpeed60
-        }
-
-        val map = buildMap {
-            if (Quality.FHD in qualities && supportsRecordingSize(Size(1920, 1080))) {
-                put(
-                    RecordingResolution.FHD,
-                    if (supports60(Size(1920, 1080))) setOf(RecordingFrameRate.FPS30, RecordingFrameRate.FPS60)
-                    else setOf(RecordingFrameRate.FPS30)
-                )
-            }
-            if (Quality.UHD in qualities && supportsRecordingSize(Size(3840, 2160))) {
-                put(
-                    RecordingResolution.UHD,
-                    if (supports60(Size(3840, 2160))) setOf(RecordingFrameRate.FPS30, RecordingFrameRate.FPS60)
-                    else setOf(RecordingFrameRate.FPS30)
-                )
-            }
-        }
-        return CameraCapabilities(
-            supportedFrameRates = map.ifEmpty {
-                mapOf(RecordingResolution.FHD to setOf(RecordingFrameRate.FPS30))
-            }
         )
     }
 

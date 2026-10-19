@@ -37,10 +37,12 @@ import com.topout.cam.model.TopOutUiState
 import com.topout.cam.sam.HoldSegmenter
 import com.topout.cam.sam.OnnxMobileSamSegmenter
 import com.topout.cam.util.StorageMonitor
+import com.topout.cam.util.TemporaryVideoCleaner
 import com.topout.cam.util.createHoldOverlayBitmap
 import java.io.File
 import java.lang.ref.WeakReference
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -85,6 +87,11 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private var automaticRecordingWarningVisible = false
 
     init {
+        val createdAtMillis = System.currentTimeMillis()
+        viewModelScope.launch(Dispatchers.IO) {
+            TemporaryVideoCleaner.purgeStale(application, createdAtMillis)
+        }
+
         cameraEngine.onRecordingStarted = {
             val settings = activeRecordingSettings ?: _uiState.value.settings
             val canAnalyze = settings.autoClipDetectionEnabled && recordingAnalysisAvailable
@@ -129,12 +136,6 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     state.copy(settings = normalized, statusText = status)
                 }
             }
-        }
-
-        // 앱 진입을 막지 않고 카메라 준비 뒤 MobileSAM을 예열한다.
-        viewModelScope.launch {
-            delay(IN_APP_LAUNCH_DELAY_MILLIS)
-            _uiState.update { it.copy(launchVisible = false) }
         }
     }
 
@@ -275,6 +276,8 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                         settings = normalized,
                         zoomFactor = zoom,
                         cameraReady = true,
+                        // iOS와 같이 카메라 세션 구성이 끝난 뒤 시작 화면을 닫는다.
+                        launchVisible = false,
                         errorMessage = null
                     )
                 }
@@ -310,6 +313,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                     state.copy(
                         stage = recoveryStage,
                         cameraReady = false,
+                        launchVisible = false,
                         errorMessage = tr("error.camera_start")
                     )
                 }
@@ -1261,4 +1265,3 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
 private fun Float.validFrameScale(): Float =
     takeIf { it.isFinite() && it >= 1f } ?: 1f
 
-private const val IN_APP_LAUNCH_DELAY_MILLIS = 550L

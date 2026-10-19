@@ -14,10 +14,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.WindowInsets
@@ -31,12 +29,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -48,10 +43,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.topout.cam.ui.components.TopOutCapsuleButton
+import com.topout.cam.ui.screens.LaunchOverlay
 import com.topout.cam.ui.screens.TopOutApp
 import com.topout.cam.ui.theme.TopOutTheme
 import com.topout.cam.localization.tr
-import kotlinx.coroutines.delay
 
 class MainActivity : AppCompatActivity() {
     private val viewModel: TopOutViewModel by viewModels()
@@ -74,22 +69,12 @@ class MainActivity : AppCompatActivity() {
 
         setContent {
             TopOutTheme {
-                var showBrandLaunch by remember { mutableStateOf(true) }
-
-                LaunchedEffect(Unit) {
-                    delay(BRAND_LAUNCH_DURATION_MILLIS)
-                    showBrandLaunch = false
-                }
-
-                if (showBrandLaunch) {
-                    TopOutBrandLaunchScreen()
-                } else {
-                    PermissionGate(
-                        permissionsGranted = ::hasPermissions,
-                        openSettings = ::openAppSettings
-                    ) {
-                        TopOutApp(startupViewModel)
-                    }
+                // iOS와 같이 고정 시간 없이 권한 요청과 카메라 준비가 끝날 때까지 시작 화면을 유지한다.
+                PermissionGate(
+                    permissionsGranted = ::hasPermissions,
+                    openSettings = ::openAppSettings
+                ) {
+                    TopOutApp(startupViewModel)
                 }
             }
         }
@@ -117,34 +102,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        private const val BRAND_LAUNCH_DURATION_MILLIS = 1_000L
-
         fun requiredPermissions(): Array<String> = buildList {
             add(Manifest.permission.CAMERA)
             add(Manifest.permission.RECORD_AUDIO)
             if (android.os.Build.VERSION.SDK_INT <= 28) add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }.toTypedArray()
-    }
-}
-
-@Composable
-private fun TopOutBrandLaunchScreen() {
-    val isDark = isSystemInDarkTheme()
-    val background = if (isDark) Color(0xFF1D242C) else Color(0xFFF4F6F8)
-    val image = if (isDark) R.drawable.launch_dark else R.drawable.launch_light
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(background),
-        contentAlignment = Alignment.Center
-    ) {
-        Image(
-            painter = painterResource(image),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Fit
-        )
     }
 }
 
@@ -178,6 +140,9 @@ private fun PermissionGate(
 
     if (granted) {
         content()
+    } else if (!requested) {
+        // 권한 응답 전에는 시작 화면 위에 시스템 권한 요청을 표시한다.
+        LaunchOverlay()
     } else {
         Column(
             modifier = Modifier

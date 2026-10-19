@@ -141,7 +141,8 @@ fun TopOutApp(viewModel: TopOutViewModel) {
         )
     } else {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
-            if (!state.launchVisible) {
+            // 시작 화면 아래에서 카메라를 먼저 연결하고, 연결 결과가 나오면 시작 화면을 닫는다.
+            run {
                 val activeRatio = state.settings.aspectRatio.widthOverHeight(cameraIsLandscape)
                 AspectFrame(widthOverHeight = activeRatio, modifier = Modifier.fillMaxSize()) {
                     Box(Modifier.fillMaxSize()) {

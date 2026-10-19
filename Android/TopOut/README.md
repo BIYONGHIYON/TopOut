@@ -48,6 +48,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 
 ## 촬영 준비와 매트 경계
 
+- 시작 화면은 iOS와 같이 고정 시간 없이 표시합니다. 권한 요청 중에는 시작 화면 위에 시스템 권한 창을 띄우고, 권한이 거부되면 권한 안내로, 허용되면 시작 화면 아래에서 카메라를 연결한 뒤 연결 성공 또는 실패 시점에 닫습니다.
 - 앱과 카메라 진입은 MobileSAM ONNX 세션 준비를 기다리지 않습니다. CameraX 프리뷰가 실제로 준비된 뒤 모델을 백그라운드에서 한 번만 준비해 메모리 제약 기기의 시작 부하를 줄입니다.
 - CameraX Preview, VideoCapture, ImageAnalysis는 동일한 `ViewPort` 좌표계를 사용합니다.
 - `준비 완료`는 CameraX가 실제 `STREAMING` 상태이고 선택한 줌이 적용된 뒤에만 활성화됩니다.
@@ -119,6 +120,7 @@ Thunder의 추가 연산량은 전체 화면 변환을 제거하고 Motion 변�
 - Fold 계열의 짧고 넓은 화면에서 저장 영상 슬라이더와 하단 복귀 버튼이 겹치지 않는 레이아웃
 - Android 9(API 28) 이하 저장 권한 흐름
 - 앱 백그라운드, 카메라 중단, 저장공간 부족 시 원본 파일을 먼저 안전하게 종료
+- 프로세스 강제 종료로 cache에 남은 `topout_raw_*`·`topout_export_*` 임시 영상은 다음 실행의 ViewModel 생성 시 IO dispatcher에서 삭제하고, 생성 이후 파일은 유지
 - 선택 화면의 시스템 뒤로가기는 프리뷰로 복귀하고, 카운트다운·녹화 중에는 안전한 종료 경로를 실행
 - 영상 정리·갤러리 저장 중에는 시스템 뒤로가기로 Activity가 종료되지 않도록 보호
 - 결과 화면에서는 화면 켜짐 강제를 해제해 시스템 자동 잠금 시간을 따릅니다.
@@ -144,6 +146,10 @@ Thunder의 추가 연산량은 전체 화면 변환을 제거하고 Motion 변�
 com.topout.cam/
 ├── TopOutViewModel.kt          화면 상태와 기능 흐름 조정
 ├── camera/                     CameraX 세션, 렌즈 경로, 전환 상태
+│   ├── CameraEngine.kt         세션 연결·줌·렌즈 전환·녹화
+│   ├── RearLensProfiles.kt     후면 렌즈 탐색과 표시 배율 기준점
+│   ├── CameraCapabilitiesQuery.kt 렌즈별 해상도·60fps 지원 조회
+│   └── CameraSessionGeometry.kt 분석 크기와 화면비 ViewPort 계산
 ├── detection/                  Motion 격자, MoveNet, 등반 상태 판정
 ├── sam/                        MobileSAM 매트·탑홀드 분석
 ├── media/                      선택 구간 저장
@@ -172,7 +178,7 @@ app/src/main/assets/models/mobile_sam_encoder.onnx
 app/src/main/assets/models/mobile_sam_decoder.onnx
 ```
 
-MoveNet 모델은 `downloadMoveNetPoseModel` 태스크가 공식 파일을 내려받아 TFLite FlatBuffer를 검증하고 Gradle 캐시에 보관한 뒤 다음 generated assets 경로로 복사합니다.
+MoveNet 모델은 `downloadMoveNetPoseModel` 태스크가 Kaggle Models의 공식 MoveNet SinglePose Thunder FP16 아카이브(tfhub.dev v4와 동일 파일)를 내려받아 `4.tflite`를 꺼내고, 고정 SHA-256 `41641538…3798dd3`과 일치할 때만 Gradle 캐시에 보관한 뒤 다음 generated assets 경로로 복사합니다. 캐시나 generated 파일의 해시가 다르면 다시 내려받으며, `check_models.command`도 같은 해시를 확인합니다.
 
 ```text
 app/build/generated/moveNetPoseAssets/models/movenet-thunder-fp16.tflite

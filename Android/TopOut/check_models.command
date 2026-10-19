@@ -18,13 +18,15 @@ for file in "$ENCODER" "$DECODER"; do
   fi
 done
 
+# app/build.gradle.kts의 moveNetPoseModelSha256과 같은 값을 유지한다.
+MOVENET_SHA256="41641538679ec79b07d4101e591dda47d098c09af29607674b2a40b8a3798dd3"
 if [[ -f "$MOVENET" && -s "$MOVENET" ]]; then
-  signature=$(dd if="$MOVENET" bs=1 skip=4 count=4 2>/dev/null || true)
-  if [[ "$signature" == "TFL3" ]]; then
+  checksum=$(shasum -a 256 "$MOVENET" | awk '{print $1}')
+  if [[ "$checksum" == "$MOVENET_SHA256" ]]; then
     size=$(du -h "$MOVENET" | awk '{print $1}')
-    echo "✓ $(basename "$MOVENET") ($size, TFLite FlatBuffer 확인)"
+    echo "✓ $(basename "$MOVENET") ($size, SHA-256 확인)"
   else
-    echo "✗ MoveNet 파일이 유효한 TFLite FlatBuffer가 아닙니다."
+    echo "✗ MoveNet 파일의 SHA-256이 일치하지 않습니다: $checksum"
     missing=1
   fi
 else

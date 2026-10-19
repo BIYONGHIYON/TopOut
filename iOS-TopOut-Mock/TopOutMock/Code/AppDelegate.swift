@@ -7,7 +7,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-        true
+        ContinuousRecorder.purgeStaleSessionFolders()
+        return true
     }
 
     func application(

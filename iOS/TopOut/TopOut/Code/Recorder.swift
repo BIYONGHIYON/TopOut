@@ -568,9 +568,25 @@ final class ContinuousRecorder: @unchecked Sendable {
         ]
     }
 
+    private static func sessionBaseFolder(_ fm: FileManager) -> URL {
+        fm.temporaryDirectory.appendingPathComponent("TopOutContinuous", isDirectory: true)
+    }
+
+    /// 이전 실행이 강제 종료되며 남긴 원본·내보내기 폴더를 앱 시작 시 정리합니다.
+    static func purgeStaleSessionFolders() {
+        let fm = FileManager.default
+        // 이번 실행의 녹화 폴더가 생기기 전에 목록을 고정하고, 대용량 삭제는 백그라운드에서 진행합니다.
+        guard let staleFolders = try? fm.contentsOfDirectory(
+            at: sessionBaseFolder(fm),
+            includingPropertiesForKeys: nil
+        ), !staleFolders.isEmpty else { return }
+        DispatchQueue.global(qos: .utility).async {
+            staleFolders.forEach { try? FileManager.default.removeItem(at: $0) }
+        }
+    }
+
     private func makeSessionFolder() -> URL {
-        let base = fm.temporaryDirectory.appendingPathComponent("TopOutContinuous", isDirectory: true)
-        let folder = base.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let folder = Self.sessionBaseFolder(fm).appendingPathComponent(UUID().uuidString, isDirectory: true)
         try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
     }
