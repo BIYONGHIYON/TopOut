@@ -1,4 +1,4 @@
-# TopOut iOS v2.2 (build 19)
+# TopOut iOS v2.3 (build 20)
 
 > 등반 시작부터 완등 순간까지, 자동으로 찾아주는 클라이밍 촬영 앱
 
@@ -28,7 +28,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 
 - Bundle ID: `com.topout.cam`
 - Deployment Target: iOS 16.0
-- Marketing / Current Project Version: `2.2` / `19`
+- Marketing / Current Project Version: `2.3` / `20`
 - UI: Swift, UIKit
 - Camera / media: AVFoundation, AVAssetWriter, AVPlayer, PhotoKit
 - AI: MobileSAM Core ML, Apple Vision Human Body Pose
@@ -171,9 +171,9 @@ xcodebuild -project TopOut.xcodeproj -scheme TopOut -configuration Debug \
 
 ## 문서
 
-- [v2.2 build 19 변경 사항](V2_2_BUILD_19_NOTES.md)
+- [v2.3 build 20 변경 사항](V2_3_BUILD_20_NOTES.md)
 - [전체 개발 이력과 기술 의사결정](../../DEVELOPMENT_HISTORY.md)
 - [MobileSAM 매트 경계](MOBILESAM_MAT_DETECTOR_NOTES.md)
 - [시작과 프레임 처리](STARTUP_OPTIMIZATION_NOTES.md)
 - [Pose 로직](POSE_LOGIC_ROLLBACK_NOTES.md)
-- 과거 릴리스 기록: [v2.1 build 18](V2_1_BUILD_18_NOTES.md), [v2.0 build 17](V2_0_BUILD_17_NOTES.md), [v2.0 build 16](V2_0_BUILD_16_NOTES.md), [v1.7 build 15](V1_7_BUILD_15_NOTES.md), [v1.6 build 14](V1_6_BUILD_14_NOTES.md), [v1.6 build 13](V1_6_BUILD_13_NOTES.md), [v1.6 build 12](V1_6_BUILD_12_NOTES.md), [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)
+- 과거 릴리스 기록: [v2.2 build 19](V2_2_BUILD_19_NOTES.md), [v2.1 build 18](V2_1_BUILD_18_NOTES.md), [v2.0 build 17](V2_0_BUILD_17_NOTES.md), [v2.0 build 16](V2_0_BUILD_16_NOTES.md), [v1.7 build 15](V1_7_BUILD_15_NOTES.md), [v1.6 build 14](V1_6_BUILD_14_NOTES.md), [v1.6 build 13](V1_6_BUILD_13_NOTES.md), [v1.6 build 12](V1_6_BUILD_12_NOTES.md), [v1.5 build 11](V1_5_BUILD_11_NOTES.md), [v1.5 build 10](V1_5_BUILD_10_NOTES.md), [v1.5 build 9](V1_5_BUILD_9_NOTES.md), [v1.5 build 8](V1_5_BUILD_8_NOTES.md), [v1.5 build 7](V1_5_BUILD_7_NOTES.md), [v1.4 build 5](V1_4_BUILD_5_NOTES.md)

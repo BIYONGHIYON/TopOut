@@ -28,7 +28,7 @@ TopOut이 사용자의 움직임을 분석해 등반 시작부터 완등 순간�
 
 | 항목 | iOS | Android |
 |---|---|---|
-| 버전 | 2.2 (build 19) | 2.2 (versionCode 19) |
+| 버전 | 2.3 (build 20) | 2.2 (versionCode 19) |
 | 최소 OS | iOS 16.0 | Android 8.0 · API 26 |
 | 앱 ID | `com.topout.cam` | `com.topout.cam` |
 | UI | Swift · UIKit | Kotlin · Jetpack Compose · Material 3 |
@@ -71,6 +71,7 @@ TopOut/
 │   └── topout_strings.json
 ├── iOS/TopOut/
 │   ├── README.md
+│   ├── V2_3_BUILD_20_NOTES.md
 │   ├── V2_2_BUILD_19_NOTES.md
 │   ├── V2_0_BUILD_16_NOTES.md
 │   ├── V1_6_BUILD_14_NOTES.md
@@ -107,12 +108,12 @@ TopOut/
 - [iOS 다국어 목업 앱](iOS-TopOut-Mock/README.md)
 - [Android 현재 문서](Android/TopOut/README.md)
 - [개발 이력과 기술 의사결정](DEVELOPMENT_HISTORY.md)
-- [iOS v2.2 build 19 변경 사항](iOS/TopOut/V2_2_BUILD_19_NOTES.md)
+- [iOS v2.3 build 20 변경 사항](iOS/TopOut/V2_3_BUILD_20_NOTES.md)
 - [Android v2.2 versionCode 19 변경 사항](Android/TopOut/V2_2_BUILD_19_NOTES.md)
 - [제품 포트폴리오](portfolio/index.html)
 - [TopOut 공개 저장소](https://github.com/BIYONGHIYON/TopOut-app)
 
-`V1_4_*`, `V1_5_*`, `V1_6_*`, `V1_7_*`, `V2_0_*`, `V2_1_*`는 당시 동작을 보존하는 과거 릴리스 기록입니다. 현재 동작의 기준은 각 플랫폼 README와 v2.2 릴리스 노트입니다.
+`V1_4_*`, `V1_5_*`, `V1_6_*`, `V1_7_*`, `V2_0_*`, `V2_1_*`와 iOS `V2_2_*`는 당시 동작을 보존하는 과거 릴리스 기록입니다. 현재 동작의 기준은 각 플랫폼 README와 최신 릴리스 노트(iOS v2.3 build 20, Android v2.2 versionCode 19)입니다.
 
 로컬의 `TopOut-app/` 폴더는 별도 Git 이력을 가진 공개 저장소 checkout이므로 이 비공개 저장소의 `.gitignore`에서 제외합니다.
 
@@ -315,7 +316,7 @@ Android 저장 영상 보기에는 앞/뒤 5초 이동, 드래그 즉시 화면�
 3. MobileSAM Core ML 모델과 `PrivacyInfo.xcprivacy`의 Target Membership을 확인합니다.
 4. 실제 iPhone에서 카메라·마이크·사진 보관함 권한과 Archive를 검증합니다.
 
-프로젝트 설정: iOS 16.0, Swift 5, Marketing Version 2.2, Current Project Version 19.
+프로젝트 설정: iOS 16.0, Swift 5, Marketing Version 2.3, Current Project Version 20.
 
 ### Android
 
