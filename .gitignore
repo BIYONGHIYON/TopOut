@@ -14,6 +14,14 @@ local.properties
 **/.xcuserdata/
 **/DerivedData/
 **/build/
+**/.build/
+**/.swiftpm/
+*.xcarchive/
+*.xcresult/
+*.dSYM/
+*.dSYM.zip
+*.ipa
+*.profraw
 .DS_Store
 
 # --- Ignore ---
@@ -36,5 +44,8 @@ keystore/
 *.jks
 *.keystore
 keystore.properties
+*.p12
+*.mobileprovision
 
 *.aab
+*.apks
