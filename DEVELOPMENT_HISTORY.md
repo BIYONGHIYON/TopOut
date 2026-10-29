@@ -10,7 +10,7 @@
 
 | 항목 | iOS | Android |
 |---|---|---|
-| 현재 릴리스 | 2.0 build 16 | 2.0 versionCode 16 |
+| 현재 릴리스 | 2.3 build 21 | 2.3 versionCode 21 |
 | 카메라 | AVFoundation | CameraX 1.6.1 · Camera2 |
 | Pose | Apple Vision Human Body Pose | MoveNet SinglePose Thunder FP16 · LiteRT 1.4.1 |
 | 매트·탑홀드 | MobileSAM Core ML | MobileSAM ONNX Runtime 1.27.0 |
@@ -356,6 +356,6 @@ POST-FINISH TRACKING
 - [루트 README](README.md)
 - [iOS 현재 구현](iOS/TopOut/README.md)
 - [Android 현재 구현](Android/TopOut/README.md)
-- [iOS v2.0 build 16](iOS/TopOut/V2_0_BUILD_16_NOTES.md)
-- [Android v2.0 versionCode 16](Android/TopOut/V2_0_BUILD_16_NOTES.md)
+- [iOS 현재 릴리스 v2.3 build 21](iOS/TopOut/V2_3_BUILD_21_NOTES.md)
+- [Android 현재 릴리스 v2.3 versionCode 21](Android/TopOut/V2_3_BUILD_21_NOTES.md)
 - [제품 포트폴리오](portfolio/index.html)
