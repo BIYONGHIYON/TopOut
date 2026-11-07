@@ -3,6 +3,9 @@ import UIKit
 final class MatLineView: UIView {
     private(set) var points: [CGPoint] = [] // normalized, 0...1
     var onChange: (([CGPoint]) -> Void)?
+    /// 파란 점을 잡고 있는 동안 true. 녹화 중에는 손을 뗄 때 고친 선을 분석에 반영한다.
+    var onDragStateChange: ((Bool) -> Void)?
+    private(set) var isDragging = false
     /// 선택 화면에는 손잡이를, 녹화 화면에는 같은 경계선만 표시한다.
     var showsHandles = true { didSet { isUserInteractionEnabled = showsHandles; setNeedsDisplay() } }
     /// 녹화 영상이 가려지지 않도록 경계선 투명도를 조절한다.
@@ -41,7 +44,7 @@ final class MatLineView: UIView {
 
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
         // 파란 보정점을 잡을 때만 터치를 가로채고,
-        // 그 외 영역은 imgView의 홀드 선택 tap이 받을 수 있게 둡니다.
+        // 그 외 영역은 아래 미리보기의 핀치 줌이 받을 수 있게 둡니다.
         showsHandles && nearestHandle(to: point, maxDist: Cfg.matHitRadius) != nil
     }
 
@@ -98,6 +101,10 @@ final class MatLineView: UIView {
         case .began:
             activeIndex = nearestHandle(to: loc, maxDist: Cfg.matHitRadius)
             setNeedsDisplay()
+            if activeIndex != nil {
+                isDragging = true
+                onDragStateChange?(true)
+            }
 
         case .changed:
             guard let idx = activeIndex, points.indices.contains(idx), bounds.height > 0 else { return }
@@ -111,9 +118,12 @@ final class MatLineView: UIView {
             onChange?(points)
 
         case .ended, .cancelled, .failed:
+            let wasDragging = isDragging
             activeIndex = nil
+            isDragging = false
             setNeedsDisplay()
             onChange?(points)
+            if wasDragging { onDragStateChange?(false) }
 
         default:
             break

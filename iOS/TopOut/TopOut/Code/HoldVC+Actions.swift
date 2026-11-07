@@ -2,49 +2,38 @@ import UIKit
 
 extension HoldVC {
     @objc func onRetake() {
-        guard recState == .idle else { return }
+        guard recState == .idle, mode == .select else { return }
+        cancelMatMeasurement()
+        isBusy = false
         unlockCameraOrientation()
-        clearSelectionCache(clearPending: true)
         showCameraUI()
         startCamera()
     }
 
     @objc func onRecordStart() {
-        guard recState == .idle, let referenceImage = frameImage else { return }
-        cancelAutomaticRecordingStart()
+        guard recState == .idle else { return }
+        if isAutoClipDetectionEnabled {
+            // 자동 구간 탐지는 준비 완료로 측정하고 보정한 경계선이 있어야 녹화를 시작한다.
+            guard mode == .select, !isBusy, matLinePoints.count >= 2 else { return }
+        } else {
+            guard mode == .camera else { return }
+        }
+        cancelMatMeasurement()
+        // 녹화 시작 시점의 화면 방향을 녹화가 끝날 때까지 유지한다.
         lockCurrentCameraOrientation()
 
         let selectedMatLine = matLinePoints
-        let selectedOverlay = pendingOverlay
-        let normalizedTopBox = pendingTopBox.map { normalizedMaskBox($0, image: referenceImage) }
 
-        if requiresTopHoldSelection {
-            guard let selectedOverlay, let normalizedTopBox else { return }
-            overlayView.image = selectedOverlay
-
-            if isAutoClipDetectionEnabled, !selectedMatLine.isEmpty {
-                motionDetector.configure(
-                    matLine: selectedMatLine,
-                    topBox: normalizedTopBox,
-                    finishReference: .closestTopHold,
-                    activeCropRect: activeSourceCropRect
-                )
-            } else {
-                motionDetector.stop()
-            }
+        // 탑홀드는 결과 화면에서만 고르므로 녹화 중에는 가장 높이 올라간 순간을 완등으로 본다.
+        if isAutoClipDetectionEnabled {
+            motionDetector.configure(
+                matLine: selectedMatLine,
+                topBox: nil,
+                finishReference: .highestPosePoint,
+                activeCropRect: activeSourceCropRect
+            )
         } else {
-            overlayView.image = nil
-
-            if isAutoClipDetectionEnabled, !selectedMatLine.isEmpty {
-                motionDetector.configure(
-                    matLine: selectedMatLine,
-                    topBox: nil,
-                    finishReference: .highestPosePoint,
-                    activeCropRect: activeSourceCropRect
-                )
-            } else {
-                motionDetector.stop()
-            }
+            motionDetector.stop()
         }
 
         recorder.configure(
@@ -53,87 +42,13 @@ extension HoldVC {
             aspectRatio: selectedRecordingAspectRatio
         )
 
-        clearSelectionCache(clearPending: true)
+        matLineView.clear()
+        // 녹화 중에는 경계선을 자동으로 다시 재지 않으므로 녹화 메모리를 위해 모델을 내린다.
         releaseMobileSAMResources()
         showCameraUI()
         startCamera()
         startRecording()
     }
-
-    @objc func onSelectTap(_ gesture: UITapGestureRecognizer) {
-        guard requiresTopHoldSelection, mode == .select, !isBusy else { return }
-        guard imgView.bounds.width > 0, imgView.bounds.height > 0 else { return }
-
-        let viewPoint = gesture.location(in: imgView)
-        guard imgView.bounds.contains(viewPoint) else { return }
-        cancelAutomaticRecordingStart()
-        let normalizedTap = CGPoint(
-            x: max(0, min(1, viewPoint.x / imgView.bounds.width)),
-            y: max(0, min(1, viewPoint.y / imgView.bounds.height))
-        )
-
-        selectionRequestID += 1
-        let requestID = selectionRequestID
-        // 탭할 때마다 이전 화각의 마스크를 버리고 새 선택을 시작한다.
-        pendingOverlay = nil
-        pendingTopBox = nil
-        selectOverlayView.image = nil
-        isBusy = true
-        mode = .processing
-        retakeBtn.isEnabled = false
-        recordBtn.isEnabled = false
-        selectHint.text = L("camera.analyzing_hold")
-        setLoading(true)
-
-        // 카메라 화각은 고정하되 탭마다 새 영상 프레임을 캡처한다.
-        videoFrameSink.captureCurrentFrame(
-            aspectRatio: activeRecordingAspect,
-            maxLongSide: CameraCfg.captureMaxLongSide
-        ) { [weak self] image in
-            guard let self else { return }
-            guard requestID == self.selectionRequestID, self.mode == .processing else { return }
-            guard let image, image.size.width > 0, image.size.height > 0 else {
-                self.isBusy = false
-                self.mode = .select
-                self.retakeBtn.isEnabled = true
-                self.recordBtn.isEnabled = false
-                self.selectHint.text = L("camera.capture_failed_retry")
-                self.setLoading(false)
-                return
-            }
-
-            let imagePoint = CGPoint(
-                x: normalizedTap.x * image.size.width,
-                y: normalizedTap.y * image.size.height
-            )
-            self.frameImage = image
-            let pixels = PixelMap(image: image)
-            self.topHoldAnalysisToken?.cancel()
-            let cancellationToken = AnalysisCancellationToken()
-            self.topHoldAnalysisToken = cancellationToken
-            self.scheduleTopHoldAnalysisTimeout(
-                at: imagePoint,
-                image: image,
-                requestID: requestID,
-                cancellationToken: cancellationToken
-            )
-
-            self.workQ.async { [weak self] in
-                autoreleasepool {
-                    // 촬영 배율이 이미지에 반영되어 있으므로 보정 좌표는 이미지 1배 기준을 사용한다.
-                    self?.runSAM(
-                        at: imagePoint,
-                        image: image,
-                        pixels: pixels,
-                        zoom: 1,
-                        requestID: requestID,
-                        cancellationToken: cancellationToken
-                    )
-                }
-            }
-        }
-    }
-
 
     @objc func onManualStop() {
         guard recState == .buffering else { return }

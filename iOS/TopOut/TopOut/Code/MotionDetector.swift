@@ -200,6 +200,17 @@ final class MotionDetector {
         }
     }
 
+    /// 녹화 중 손으로 고친 매트 경계로 교체한다. 진행 중인 등반 상태와 열린 구간은 유지한다.
+    func updateMatLine(_ line: [CGPoint]) {
+        guard line.count >= 2 else { return }
+        q.async { [weak self] in
+            guard let self else { return }
+            self.matLine = line.sorted { $0.x < $1.x }
+            self.previousCVFrame = nil
+            self.lastLowestAboveMat = nil
+        }
+    }
+
     func update(_ sampleBuffer: CMSampleBuffer) {
         pendingFrameLock.lock()
 

@@ -1,6 +1,6 @@
 # TopOut Android v1.4 (build 5)
 
-> 과거 릴리스 기록입니다. 현재 릴리스는 [v1.6 build 14](V1_6_BUILD_14_NOTES.md)이며 현재 동작은 [Android README](README.md)를 기준으로 합니다.
+> 과거 릴리스 기록입니다. 현재 릴리스는 [v3.0 versionCode 23](V3_0_BUILD_23_NOTES.md)이며 현재 동작은 [Android README](README.md)를 기준으로 합니다.
 
 - Automatic clip ranges are compared using their raw, unpadded boundaries.
 - Valid detected climbs remain separate even when the next climb starts within 1.0 second.

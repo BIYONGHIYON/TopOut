@@ -30,6 +30,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -56,9 +58,11 @@ internal fun PreviewControls(
     zoom: Float,
     showTip: Boolean,
     isLandscape: Boolean,
-    readyTitle: String,
+    /** 자동 구간 탐지를 쓰면 준비 완료, 아니면 빨간 녹화 시작 버튼을 둔다. */
+    showsReady: Boolean,
     enabled: Boolean,
     onReady: () -> Unit,
+    onRecord: () -> Unit,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -95,11 +99,11 @@ internal fun PreviewControls(
                         maxLines = 1
                     )
                 }
-                TopOutCapsuleButton(
-                    text = readyTitle,
-                    onClick = onReady,
-                    primary = true,
+                ReadyOrRecordButton(
+                    showsReady = showsReady,
                     enabled = enabled,
+                    onReady = onReady,
+                    onRecord = onRecord,
                     modifier = Modifier.size(width = 164.dp, height = 46.dp)
                 )
                 IconButton(
@@ -122,11 +126,11 @@ internal fun PreviewControls(
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold
                 )
-                TopOutCapsuleButton(
-                    text = readyTitle,
-                    onClick = onReady,
-                    primary = true,
+                ReadyOrRecordButton(
+                    showsReady = showsReady,
                     enabled = enabled,
+                    onReady = onReady,
+                    onRecord = onRecord,
                     modifier = Modifier.align(Alignment.Center).size(width = 180.dp, height = 52.dp)
                 )
                 IconButton(
@@ -140,9 +144,30 @@ internal fun PreviewControls(
 }
 
 @Composable
+private fun ReadyOrRecordButton(
+    showsReady: Boolean,
+    enabled: Boolean,
+    onReady: () -> Unit,
+    onRecord: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (showsReady) {
+        TopOutCapsuleButton(
+            text = tr("camera.ready"),
+            onClick = onReady,
+            primary = true,
+            enabled = enabled,
+            modifier = modifier
+        )
+    } else {
+        RecordStartCapsuleButton(onClick = onRecord, enabled = enabled, modifier = modifier)
+    }
+}
+
+/** 준비 완료 뒤 보정 화면: 다시 촬영 · 녹화 시작(빨간 아이콘). */
+@Composable
 internal fun SelectionControls(
     canRecord: Boolean,
-    enabled: Boolean,
     showTip: Boolean,
     tipText: String,
     isLandscape: Boolean,
@@ -165,18 +190,16 @@ internal fun SelectionControls(
             Modifier
                 .fillMaxWidth(if (isLandscape) 0.72f else 1f)
                 .widthIn(max = 560.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             TopOutCapsuleButton(
                 tr("camera.retake"),
                 onRetake,
-                enabled = enabled,
                 modifier = Modifier.weight(1f)
             )
-            TopOutCapsuleButton(
-                tr("camera.start_recording"),
-                onRecord,
-                primary = true,
+            RecordStartCapsuleButton(
+                onClick = onRecord,
                 enabled = canRecord,
                 modifier = Modifier.weight(1f)
             )
@@ -266,6 +289,43 @@ private fun RecordingStopCapsuleButton(
             maxLines = 1,
             softWrap = false
         )
+    }
+}
+
+/** 녹화 시작: 녹화 종료 버튼과 같은 빨간 캡슐에 문구 없이 녹화 아이콘만 둔다. */
+@Composable
+private fun RecordStartCapsuleButton(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val description = tr("camera.start_recording")
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier
+            .height(56.dp)
+            .semantics { contentDescription = description },
+        shape = RoundedCornerShape(999.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = TopOutColors.Red,
+            contentColor = Color.White,
+            disabledContainerColor = TopOutColors.Red.copy(alpha = 0.38f),
+            disabledContentColor = Color.White.copy(alpha = 0.55f)
+        ),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        RecordStartIcon(Modifier.size(30.dp))
+    }
+}
+
+/** 종료 아이콘(흰 원 + 빨간 사각형)과 짝을 이루는 흰 원 + 빨간 원. */
+@Composable
+private fun RecordStartIcon(modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val side = min(size.width, size.height)
+        drawCircle(color = Color.White, radius = side * 0.44f, center = center)
+        drawCircle(color = TopOutColors.Red, radius = side * 0.22f, center = center)
     }
 }
 

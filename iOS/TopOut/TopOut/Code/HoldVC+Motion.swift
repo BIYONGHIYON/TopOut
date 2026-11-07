@@ -21,11 +21,7 @@ extension HoldVC {
         switch event {
         case .start(let pts):
             clipTimes.startPTS = pts
-            setRecordingStatusText(
-                isTopHoldMaskingEnabled
-                    ? L("camera.tracking_hold")
-                    : L("camera.tracking_peak")
-            )
+            setRecordingStatusText(L("camera.tracking_peak"))
 
         case .retry:
             clipTimes.startPTS = nil
@@ -62,26 +58,5 @@ extension HoldVC {
 
         // 모든 탐지 구간을 유지하고 녹화 마무리에서 짧은 오탐만 제거한다.
         clipTimes.completedRanges.append(range)
-    }
-
-    func normalizedMaskBox(_ box: CGRect, image: UIImage) -> CGRect {
-        guard image.size.width > 0, image.size.height > 0 else { return .zero }
-
-        let visible = visibleMaskSize(for: image)
-        guard visible.width > 0, visible.height > 0 else { return .zero }
-
-        let imageRect = CGRect(
-            x: box.minX / visible.width * image.size.width,
-            y: box.minY / visible.height * image.size.height,
-            width: box.width / visible.width * image.size.width,
-            height: box.height / visible.height * image.size.height
-        ).standardized
-
-        return CGRect(
-            x: imageRect.minX / image.size.width,
-            y: imageRect.minY / image.size.height,
-            width: imageRect.width / image.size.width,
-            height: imageRect.height / image.size.height
-        ).standardized
     }
 }

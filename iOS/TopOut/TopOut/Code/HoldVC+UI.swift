@@ -9,6 +9,7 @@ extension HoldVC {
         launchImageView.isHidden = false
         previewTipLabel.isHidden = true
         readyBtn.isEnabled = false
+        recordBtn.isEnabled = false
         view.bringSubviewToFront(launchImageView)
     }
 
@@ -43,6 +44,7 @@ extension HoldVC {
             && isHelpEnabled
             && !isLandscapeLayout
             && launchImageView.isHidden
+            && selectTipLabel.isHidden
     }
 
     func updatePreviewTipVisibility() {
@@ -111,28 +113,27 @@ extension HoldVC {
     func showCameraUI() {
         mode = recState == .buffering ? .recording : .camera
         let isRecording = recState == .buffering
-        let usesPowerSavingScreen = isRecording && !isDeveloperModeEnabled
+        let showsLivePreview = isLivePreviewVisibleDuringRecording
+        let usesPowerSavingScreen = isRecording && !showsLivePreview
+        let hasRecordingStarted = recordingElapsedStartDate != nil
 
         camView.isHidden = usesPowerSavingScreen
         setPreviewRenderingEnabled(!usesPowerSavingScreen)
-        updateRecordingOverlayVisibility()
         zoomLabel.text = zoomDisplayText()
-        camHint.isHidden = false
-        selectView.isHidden = true
-        recordingMatLineView.isHidden = !(
-            isRecording &&
-            recordingElapsedStartDate != nil &&
-            isDeveloperModeEnabled &&
-            isAutoClipDetectionEnabled &&
-            matLinePoints.count >= 2
-        )
-        if !recordingMatLineView.isHidden { recordingMatLineView.setPoints(matLinePoints, notify: false) }
+
+        // 실시간 영상이 보이는 녹화 중에는 경계선을 표시하고 파란 점으로 바로 보정할 수 있다.
+        let showsRecordingMatLine = isRecording && hasRecordingStarted && showsLivePreview
+            && isAutoClipDetectionEnabled && matLinePoints.count >= 2
+        recordingMatLineView.showsHandles = showsRecordingMatLine
+        recordingMatLineView.isHidden = !showsRecordingMatLine
+        if showsRecordingMatLine { recordingMatLineView.setPoints(matLinePoints, notify: false) }
         powerSavingOverlayView.isHidden = !usesPowerSavingScreen
 
-        let hasRecordingStarted = recordingElapsedStartDate != nil
-
+        // 녹화 전 화면: 실시간 프리뷰 위에 안내와 준비 완료(또는 녹화 시작)를 둔다. 탑홀드는 결과 화면에서 고른다.
+        selectView.isHidden = isRecording
         readyBtn.isHidden = isRecording
-        readyBtn.isEnabled = !isRecording && isCameraReady && isCameraStreamReady && !isBusy
+        retakeBtn.isHidden = true
+        recordBtn.isHidden = isRecording
         settingsBtn.isHidden = isRecording
         settingsBtn.isEnabled = !isRecording && recState == .idle
         zoomLabel.isHidden = isRecording
@@ -149,7 +150,7 @@ extension HoldVC {
             camHint.isHidden = false
             camHint.text = currentRecordingStatusText(hasRecordingStarted: hasRecordingStarted)
             updateLivePreviewToggleButton()
-            if isDeveloperModeEnabled && hasRecordingStarted {
+            if showsLivePreview && hasRecordingStarted {
                 let elapsed = Date().timeIntervalSince(recordingElapsedStartDate ?? Date())
                 updateManualStopButton(elapsed: elapsed)
             }
@@ -157,40 +158,21 @@ extension HoldVC {
             manualStopButtonElapsedText = nil
             recordingStatusMessage = nil
             setPreviewRenderingEnabled(true)
+            camView.alpha = 1
             powerSavingOverlayView.isHidden = true
-            powerSavingRecordButton.isHidden = true
-            powerSavingElapsedLabel.isHidden = true
-            powerSavingCountdownLabel.isHidden = true
             livePreviewToggleButton.isHidden = true
-            updateReadyButtonTitle()
-            if requiresTopHoldSelection {
-                camHint.text = isAutoClipDetectionEnabled
-                    ? L("camera.preview_both")
-                    : L("camera.preview_hold")
-                camHint.isHidden = !isHelpEnabled
-            } else if isAutoClipDetectionEnabled {
-                camHint.text = L("camera.preview_mat")
-                camHint.isHidden = !isHelpEnabled
-            } else {
-                camHint.text = ""
-                camHint.isHidden = true
-            }
+            camHint.isHidden = true
+            imgView.image = nil
+            // 경계선은 준비 완료를 누른 뒤 측정해 보정 화면에서 보여준다.
+            matLineView.clear()
+            matLineView.isHidden = true
+            refreshRecordButtonAvailability()
+            refreshCameraHint()
         }
 
         updatePreviewTipVisibility()
-
-        retakeBtn.isEnabled = true
-        recordBtn.isEnabled = pendingOverlay != nil
         setLoading(false)
         view.setNeedsLayout()
-    }
-
-    func updateRecordingOverlayVisibility() {
-        let shouldShowOverlay = recState == .buffering
-            && isDeveloperModeEnabled
-            && isTopHoldMaskingEnabled
-            && overlayView.image != nil
-        overlayView.isHidden = !shouldShowOverlay
     }
 
     func updateLivePreviewToggleButton() {
@@ -253,13 +235,12 @@ extension HoldVC {
         camHint.text = currentRecordingStatusText(hasRecordingStarted: false)
         camView.isHidden = true
         setPreviewRenderingEnabled(false)
-        overlayView.isHidden = true
         view.bringSubviewToFront(powerSavingOverlayView)
         view.bringSubviewToFront(camHint)
     }
 
     func showPowerSavingRecording(elapsed: TimeInterval) {
-        guard !isDeveloperModeEnabled else { return }
+        guard !isLivePreviewVisibleDuringRecording else { return }
 
         let wasHidden = powerSavingOverlayView.isHidden || powerSavingRecordButton.isHidden || powerSavingElapsedLabel.isHidden
         powerSavingOverlayView.isHidden = false
@@ -295,7 +276,6 @@ extension HoldVC {
 
         camView.isHidden = true
         setPreviewRenderingEnabled(false)
-        overlayView.isHidden = true
         previewTipLabel.isHidden = true
         camHint.isHidden = false
         camHint.text = currentRecordingStatusText(hasRecordingStarted: recordingElapsedStartDate != nil)
@@ -322,21 +302,49 @@ extension HoldVC {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
-    func updateReadyButtonTitle() {
-        var config = readyBtn.configuration ?? .filled()
-        config.title = (isAutoClipDetectionEnabled || requiresTopHoldSelection)
-            ? L("camera.ready")
-            : L("camera.start_recording")
-        readyBtn.configuration = config
-        readyBtn.accessibilityLabel = config.title
-    }
-
     func makePowerSavingStopIcon(size: CGFloat) -> UIImage? {
         makeStopIcon(size: size, centerFillColor: .systemRed, minimumSide: 44)
     }
 
     func makeManualStopIcon(size: CGFloat) -> UIImage? {
         makeStopIcon(size: size, centerFillColor: .white, minimumSide: 28)
+    }
+
+    /// 녹화 시작 버튼: 녹화 종료 버튼과 같은 빨간 캡슐에 문구 없이 녹화 아이콘만 둔다.
+    func applyRecordStartButtonStyle() {
+        var config = UIButton.Configuration.filled()
+        config.title = nil
+        config.attributedTitle = nil
+        config.image = makeRecordStartIcon(size: 30)
+        config.cornerStyle = .capsule
+        config.baseBackgroundColor = .systemRed
+        config.baseForegroundColor = .white
+        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
+        recordBtn.configuration = config
+        recordBtn.accessibilityLabel = L("camera.start_recording")
+    }
+
+    /// 종료 아이콘과 같은 흰 원 테두리 안에 채운 원을 그려 시작·종료를 모양으로 구분한다.
+    private func makeRecordStartIcon(size: CGFloat) -> UIImage? {
+        let side = max(28, size)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = traitCollection.displayScale
+        format.opaque = false
+
+        return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
+            let lineWidth = max(2.5, side * 0.065)
+            let circleInset = lineWidth / 2 + side * 0.04
+            let ringRect = CGRect(x: circleInset, y: circleInset, width: side - circleInset * 2, height: side - circleInset * 2)
+
+            UIColor.white.setStroke()
+            let ring = UIBezierPath(ovalIn: ringRect)
+            ring.lineWidth = lineWidth
+            ring.stroke()
+
+            UIColor.white.setFill()
+            let dot = side * 0.46
+            UIBezierPath(ovalIn: CGRect(x: (side - dot) / 2, y: (side - dot) / 2, width: dot, height: dot)).fill()
+        }
     }
 
     private func makeStopIcon(size: CGFloat, centerFillColor: UIColor, minimumSide: CGFloat) -> UIImage? {
@@ -367,111 +375,6 @@ extension HoldVC {
         }
     }
 
-    func showSelectUI(with image: UIImage?) {
-        clearSelectionCache(clearPending: true)
-
-        mode = .select
-        hidePowerSavingRecordingUI()
-        frameImage = image
-        pendingOverlay = nil
-        pendingTopBox = nil
-
-        // 준비 완료 프레임은 매트 분석에만 쓰고 보정은 실시간 화면 위에서 진행한다.
-        imgView.image = nil
-        selectOverlayView.image = nil
-
-        // 탑홀드는 탭한 순간의 새 프레임으로 색상 정보와 임베딩을 만든다.
-        let boundaryRequestID = selectionRequestID
-        if isAutoClipDetectionEnabled, let image {
-            // 추론 전 75% 기본선을 먼저 표시하면 완료 시 선이 순간 이동해 보입니다.
-            // 추론 중에는 선을 숨기고, 최종 예측 또는 fallback을 한 번만 표시합니다.
-            matLinePoints = []
-            matLineView.clear()
-            matLineView.isHidden = true
-            recordBtn.isEnabled = false
-            setLoading(true)
-
-            selectHint.text = L("camera.analyzing_mat")
-            selectTipLabel.text = L("camera.tip_analysis")
-
-            isBusy = true
-            var didFinishBoundaryAnalysis = false
-            let cancellationToken = AnalysisCancellationToken()
-            matBoundaryAnalysisToken = cancellationToken
-            let finishBoundaryAnalysis: ([CGPoint]) -> Void = { [weak self] detectedLine in
-                guard let self,
-                      !didFinishBoundaryAnalysis,
-                      self.selectionRequestID == boundaryRequestID,
-                      self.mode == .select,
-                      self.frameImage === image else { return }
-
-                didFinishBoundaryAnalysis = true
-                self.matBoundaryAnalysisTimeoutWorkItem?.cancel()
-                self.matBoundaryAnalysisTimeoutWorkItem = nil
-                self.matBoundaryAnalysisToken = nil
-                self.isBusy = false
-                self.matLinePoints = detectedLine
-                self.matLineView.setPoints(detectedLine)
-                self.matLineView.isHidden = false
-                self.setLoading(false)
-
-                if self.requiresTopHoldSelection {
-                    self.selectHint.text = L("camera.selection_both")
-                    self.selectTipLabel.text = ""
-                    self.selectTipLabel.isHidden = true
-                    // 준비 완료 임베딩은 저장하지 않고 탑홀드 탭마다 새 프레임을 사용한다.
-                } else {
-                    self.selectHint.text = L("camera.selection_mat")
-                    self.selectTipLabel.text = L("camera.tip_adjust_line")
-                    self.selectTipLabel.isHidden = !self.isHelpEnabled
-                    self.recordBtn.isEnabled = detectedLine.count >= 2
-                    self.scheduleAutomaticRecordingStartIfEligible()
-                }
-            }
-
-            let timeoutWorkItem = DispatchWorkItem {
-                cancellationToken.cancel()
-                finishBoundaryAnalysis(Self.samMatDefaultLine)
-            }
-            matBoundaryAnalysisTimeoutWorkItem = timeoutWorkItem
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + Cfg.matBoundaryAnalysisTimeout,
-                execute: timeoutWorkItem
-            )
-            detectMatBoundaryWithMobileSAM(in: image, cancellationToken: cancellationToken, completion: finishBoundaryAnalysis)
-        } else {
-            matLinePoints = []
-            matLineView.clear()
-            matLineView.isHidden = true
-            selectHint.text = L("camera.selection_hold")
-            selectTipLabel.text = ""
-            selectTipLabel.isHidden = true
-            recordBtn.isEnabled = false
-        }
-        resetZoom()
-
-        camView.isHidden = false
-        overlayView.isHidden = true
-        recordingMatLineView.isHidden = true
-        // 준비 완료 뒤 녹화 종료나 재촬영 전까지 카메라 화각을 고정한다.
-        zoomLabel.isHidden = true
-        camHint.isHidden = true
-        previewTipLabel.isHidden = true
-        readyBtn.isHidden = true
-        settingsBtn.isHidden = true
-        manualStopBtn.isHidden = true
-        livePreviewToggleButton.isHidden = true
-        selectHint.isHidden = !isHelpEnabled
-        selectTipLabel.isHidden = !isHelpEnabled || (selectTipLabel.text?.isEmpty ?? true)
-        selectView.isHidden = false
-        retakeBtn.isEnabled = true
-        if !isAutoClipDetectionEnabled {
-            setLoading(false)
-        }
-        view.setNeedsLayout()
-
-    }
-
     func showCameraDeniedMessage() {
         showCameraError(L("permission.camera_settings_error"))
     }
@@ -484,25 +387,8 @@ extension HoldVC {
         livePreviewToggleButton.isHidden = true
         camHint.text = message
         camHint.isHidden = false
+        selectHint.isHidden = true
         readyBtn.isEnabled = false
-    }
-
-    // MARK: - 선택 캐시
-    func clearSelectionCache(clearPending: Bool) {
-        cancelAutomaticRecordingStart()
-        cancelSelectionAnalysis()
-
-        if clearPending {
-            pendingOverlay = nil
-            pendingTopBox = nil
-        }
-
-        frameImage = nil
-        isBusy = false
-
-        imgView.image = nil
-        selectOverlayView.image = nil
-        matLineView.clear()
         recordBtn.isEnabled = false
     }
 

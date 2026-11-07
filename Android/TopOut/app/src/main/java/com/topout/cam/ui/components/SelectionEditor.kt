@@ -18,35 +18,34 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.node.PointerInputModifierNode
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.platform.LocalDensity
-import com.topout.cam.model.HoldMask
-import com.topout.cam.model.TopOutConfig
-import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.sqrt
 
 /**
- * Transparent editor drawn directly over the live CameraX preview.
+ * Transparent editor drawn directly over the live CameraX preview, before and during recording.
  *
- * The Ready-time bitmap is never shown. The camera lens/zoom is frozen after Ready, mat endpoints
- * remain in normalized preview coordinates, and every top-hold tap is resolved against a freshly
- * captured live frame by the ViewModel.
+ * Mat endpoints remain in normalized preview coordinates. Touches are shared with the preview
+ * underneath so two-finger pinch zoom keeps working while the boundary is editable. 탑홀드는 결과
+ * 화면에서만 고른다.
  */
 @Composable
 fun SelectionEditor(
     matLine: List<Offset>,
-    holdMask: HoldMask?,
-    onTapHold: (Offset) -> Unit,
     onMatPointChanged: (Int, Offset) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onMatDragChanged: (Boolean) -> Unit = {}
 ) {
     val density = LocalDensity.current
     val latestMatLine by rememberUpdatedState(matLine)
-    val latestTap by rememberUpdatedState(onTapHold)
     val latestMatChanged by rememberUpdatedState(onMatPointChanged)
+    val latestMatDragChanged by rememberUpdatedState(onMatDragChanged)
     var viewport by remember { mutableStateOf(Size.Zero) }
 
     fun screenPoint(normalized: Offset): Offset = Offset(
@@ -63,11 +62,11 @@ fun SelectionEditor(
         )
     }
 
-    val touchSlop = with(density) { 8f * this.density }
     val matHitRadius = with(density) { 32f * this.density }
 
     Box(
         modifier = modifier
+            .then(SharePointerInputWithSiblingsElement)
             .onSizeChanged { viewport = Size(it.width.toFloat(), it.height.toFloat()) }
             .pointerInput(viewport) {
                 awaitEachGesture {
@@ -84,31 +83,18 @@ fun SelectionEditor(
                         sqrt(delta.x * delta.x + delta.y * delta.y) <= matHitRadius
                     }
 
-                    var moved = false
-                    var maxPointerCount = 1
-                    var accumulatedDistance = 0f
-                    var lastPointer = down.position
+                    if (draggedMatIndex == null) return@awaitEachGesture
+                    latestMatDragChanged(true)
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent(pass = PointerEventPass.Main)
+                            val pressed = event.changes.filter { it.pressed }
+                            if (pressed.isEmpty()) break
 
-                    while (true) {
-                        val event = awaitPointerEvent(pass = PointerEventPass.Main)
-                        val pressed = event.changes.filter { it.pressed }
-                        maxPointerCount = max(maxPointerCount, pressed.size)
-                        if (pressed.isEmpty()) break
+                            // 두 손가락 입력은 아래 미리보기의 핀치 줌으로 넘긴다.
+                            if (pressed.size >= 2) continue
 
-                        // 선택 중 두 손가락 입력을 소비해 카메라 화각 변경을 막는다.
-                        if (pressed.size >= 2) {
-                            moved = true
-                            event.changes.forEach { it.consume() }
-                            continue
-                        }
-
-                        val position = pressed.first().position
-                        val delta = position - lastPointer
-                        accumulatedDistance += sqrt(delta.x * delta.x + delta.y * delta.y)
-                        if (accumulatedDistance > touchSlop) moved = true
-
-                        if (draggedMatIndex != null) {
-                            normalizedPoint(position)?.let { point ->
+                            normalizedPoint(pressed.first().position)?.let { point ->
                                 val fixedX = latestMatLine.getOrNull(draggedMatIndex)?.x
                                     ?: initialMat.getOrNull(draggedMatIndex)?.x
                                     ?: point.x
@@ -116,11 +102,9 @@ fun SelectionEditor(
                             }
                             event.changes.forEach { it.consume() }
                         }
-                        lastPointer = position
-                    }
-
-                    if (!moved && maxPointerCount == 1 && draggedMatIndex == null) {
-                        normalizedPoint(down.position)?.let(latestTap)
+                    } finally {
+                        // 제스처가 취소돼도 드래그 종료를 알려, 녹화 중 고친 선이 분석에 반영되게 한다.
+                        latestMatDragChanged(false)
                     }
                 }
             }
@@ -145,21 +129,6 @@ fun SelectionEditor(
                 )
             }
 
-            holdMask?.normalizedContour?.takeIf { it.size >= 2 }?.let { contour ->
-                val path = Path()
-                contour.forEachIndexed { index, point ->
-                    val x = point.x.coerceIn(0f, 1f) * size.width
-                    val y = point.y.coerceIn(0f, 1f) * size.height
-                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                }
-                path.close()
-                val minimumSide = min(size.width, size.height)
-                val redWidth = max(TopOutConfig.MinRedLineWidth, minimumSide * TopOutConfig.RedLineRatio)
-                val whiteWidth = max(TopOutConfig.MinWhiteLineWidth, minimumSide * TopOutConfig.WhiteLineRatio)
-                drawPath(path, Color.Red, style = Stroke(width = redWidth, cap = StrokeCap.Round))
-                drawPath(path, Color.White, style = Stroke(width = whiteWidth, cap = StrokeCap.Round))
-            }
-
             matLine.forEach { point ->
                 val center = Offset(
                     point.x.coerceIn(0f, 1f) * size.width,
@@ -170,4 +139,19 @@ fun SelectionEditor(
             }
         }
     }
+}
+
+/** 선택 레이어가 터치를 받아도 아래 카메라 미리보기가 같은 터치로 핀치 줌을 처리하게 한다. */
+private object SharePointerInputWithSiblingsElement :
+    ModifierNodeElement<SharePointerInputWithSiblingsNode>() {
+    override fun create() = SharePointerInputWithSiblingsNode()
+    override fun update(node: SharePointerInputWithSiblingsNode) = Unit
+    override fun hashCode(): Int = javaClass.hashCode()
+    override fun equals(other: Any?): Boolean = other === this
+}
+
+private class SharePointerInputWithSiblingsNode : Modifier.Node(), PointerInputModifierNode {
+    override fun onPointerEvent(pointerEvent: PointerEvent, pass: PointerEventPass, bounds: IntSize) = Unit
+    override fun onCancelPointerInput() = Unit
+    override fun sharePointerInputWithSiblings(): Boolean = true
 }

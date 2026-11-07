@@ -8,8 +8,7 @@ import com.topout.cam.model.HoldMask
 interface HoldSegmenter : AutoCloseable {
     suspend fun segment(
         bitmap: Bitmap,
-        normalizedTap: Offset,
-        selectionZoom: Float = 1f
+        normalizedTap: Offset
     ): Result<HoldMask>
     override fun close() = Unit
 }

@@ -15,18 +15,13 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
-import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import kotlin.math.abs
-import kotlin.math.ceil
 import kotlin.math.cos
-import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
-import kotlin.math.sqrt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -117,6 +112,19 @@ class OnnxMobileSamSegmenter(
         }
     }
 
+    /**
+     * 메모리가 부족하거나 램 4GB 이하 기기에서 녹화를 시작할 때 모델 세션을 닫는다.
+     * 진행 중인 추론이 끝난 뒤 닫고, 다음 분석에서 필요할 때 다시 연다.
+     */
+    fun releaseSessions() {
+        if (closed) return
+        embeddingCacheGeneration.incrementAndGet()
+        cachedEmbedding = null
+        teardownScope.launch {
+            sessionMutex.withLock { if (!closed) closeSessionsLocked() }
+        }
+    }
+
     /** Releases the frozen-frame embedding once selection is complete. Model sessions stay warm. */
     fun releaseCachedEmbedding() {
         // 늦게 끝난 인코더 결과는 세대 번호로 폐기한다.
@@ -126,8 +134,7 @@ class OnnxMobileSamSegmenter(
 
     override suspend fun segment(
         bitmap: Bitmap,
-        normalizedTap: Offset,
-        selectionZoom: Float
+        normalizedTap: Offset
     ): Result<HoldMask> = withContext(Dispatchers.Default) {
         try {
             require(!bitmap.isRecycled) { "선택할 카메라 이미지가 이미 해제되었습니다." }
@@ -139,7 +146,6 @@ class OnnxMobileSamSegmenter(
                 runSelectionPipeline(
                     bitmap = bitmap,
                     normalizedTap = normalizedTap,
-                    selectionZoom = selectionZoom,
                     embedding = embedding,
                     decoder = sessions.decoder
                 )
@@ -190,6 +196,8 @@ class OnnxMobileSamSegmenter(
 
         val options = OrtSession.SessionOptions().apply {
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            // 인코더 추론 뒤 가장 컸던 작업 메모리를 앱이 켜져 있는 내내 붙잡지 않도록 arena를 끈다.
+            setCPUArenaAllocator(false)
         }
         try {
             // 모델을 파일 경로로 읽어 대용량 임시 바이트 배열 생성을 피한다.
@@ -310,187 +318,71 @@ class OnnxMobileSamSegmenter(
         }
     }
 
-    // iOS 파이프라인과 보정 로직
+    // 탑홀드 선택: 한 번 디코딩한 다중 마스크에서 HoldOutlineExtractor가 홀드 하나를 고른다. iOS Pipeline.swift와 같다.
 
     private suspend fun runSelectionPipeline(
         bitmap: Bitmap,
         normalizedTap: Offset,
-        selectionZoom: Float,
         embedding: CachedEmbedding,
         decoder: OrtSession
     ): HoldMask {
         currentCoroutineContext().ensureActive()
         val origin = normalizedTap.clamped()
-        val pixels = BitmapPixels(bitmap)
+        val decoded = decodeHoldCandidates(bitmap, origin, embedding, decoder)
         currentCoroutineContext().ensureActive()
-        val firstMask = decodeMask(bitmap, origin, embedding, decoder)
-        currentCoroutineContext().ensureActive()
-        val first = makePick(firstMask, origin, bitmap, pixels, TopOutConfig.HsvTolerance, origin)
-        val chosen = chooseBestPick(
-            first = first,
-            firstMask = firstMask,
-            bitmap = bitmap,
-            pixels = pixels,
-            embedding = embedding,
-            decoder = decoder,
-            origin = origin,
-            selectionZoom = selectionZoom.coerceAtLeast(TopOutConfig.SelectionMinZoom)
+        val outline = HoldOutlineExtractor().extract(
+            HoldOutlineExtractor.Input(
+                logits = decoded.logits,
+                channelCount = decoded.channelCount,
+                lowResSize = decoded.size,
+                iouPredictions = decoded.iou,
+                modelVisibleWidth = embedding.transform.resizedWidth.toFloat(),
+                modelVisibleHeight = embedding.transform.resizedHeight.toFloat(),
+                imageWidth = bitmap.width.toFloat(),
+                imageHeight = bitmap.height.toFloat(),
+                tapX = origin.x * bitmap.width,
+                tapY = origin.y * bitmap.height,
+                minimumDiameter = minimumHoldDiameter(bitmap),
+                strokeWidth = max(TopOutConfig.MinRedLineWidth, min(bitmap.width, bitmap.height) * TopOutConfig.RedLineRatio)
+            )
         )
-
-        return if (chosen.status == HitStatus.WALL || chosen.status == HitStatus.EMPTY || chosen.blob.isEmpty) {
-            makeFallbackHoldMask(bitmap, origin)
-        } else {
-            componentToHoldMask(chosen.mask, chosen.blob, bitmap)
-        }
+        return outlineToHoldMask(outline, bitmap)
     }
 
-    private suspend fun chooseBestPick(
-        first: Pick,
-        firstMask: BinaryMask,
-        bitmap: Bitmap,
-        pixels: BitmapPixels,
-        embedding: CachedEmbedding,
-        decoder: OrtSession,
-        origin: Offset,
-        selectionZoom: Float
-    ): Pick {
-        val reason = when (first.status) {
-            HitStatus.GOOD -> return first
-            HitStatus.WALL -> FixReason.WALL
-            HitStatus.TINY, HitStatus.EMPTY -> FixReason.TINY
-        }
-        return correctedPick(
-            first = first,
-            firstMask = firstMask,
-            reason = reason,
-            bitmap = bitmap,
-            pixels = pixels,
-            embedding = embedding,
-            decoder = decoder,
-            origin = origin,
-            selectionZoom = selectionZoom
-        ) ?: first
-    }
-
-    private suspend fun correctedPick(
-        first: Pick,
-        firstMask: BinaryMask,
-        reason: FixReason,
-        bitmap: Bitmap,
-        pixels: BitmapPixels,
-        embedding: CachedEmbedding,
-        decoder: OrtSession,
-        origin: Offset,
-        selectionZoom: Float
-    ): Pick? {
-        if (reason == FixReason.TINY) {
-            val samePoint = uniqueTolerances(TopOutConfig.LooseHsvTolerances.asList())
-                .filter { abs(it - first.tolerance) > 0.0001f }
-                .map { tolerance ->
-                    currentCoroutineContext().ensureActive()
-                    makePick(firstMask, first.point, bitmap, pixels, tolerance, origin)
-                }
-                .filter { isUsable(it, first, reason) }
-            bestCandidate(samePoint, reason, bitmap, selectionZoom)?.let { return it }
-        }
-
-        val tolerances = uniqueTolerances(
-            if (reason == FixReason.WALL) {
-                listOf(TopOutConfig.HsvTolerance)
-            } else {
-                listOf(TopOutConfig.HsvTolerance) + TopOutConfig.LooseHsvTolerances.asList()
-            }
-        )
-        var decodeCount = 0
-        for (ring in nearbyPointRings(origin, bitmap, selectionZoom)) {
-            currentCoroutineContext().ensureActive()
-            val candidates = mutableListOf<Pick>()
-            for (point in ring) {
-                if (decodeCount >= TopOutConfig.MaxCorrectionDecodes) break
-                currentCoroutineContext().ensureActive()
-                val mask = decodeMask(bitmap, point, embedding, decoder)
-                decodeCount += 1
-                for (tolerance in tolerances) {
-                    currentCoroutineContext().ensureActive()
-                    val pick = makePick(mask, point, bitmap, pixels, tolerance, origin)
-                    if (isUsable(pick, first, reason)) candidates += pick
-                }
-            }
-            bestCandidate(candidates, reason, bitmap, selectionZoom)?.let { return it }
-            if (decodeCount >= TopOutConfig.MaxCorrectionDecodes) break
-        }
-        return null
-    }
-
-    private fun isUsable(pick: Pick, first: Pick, reason: FixReason): Boolean {
-        if (pick.status != HitStatus.GOOD) return false
-        return when (reason) {
-            FixReason.WALL -> true
-            FixReason.TINY -> {
-                val minimumArea = max(
-                    first.blob.area * 2,
-                    (pick.mask.width * pick.mask.height * TopOutConfig.TinyAreaRatio).toInt()
+    /** 외곽선을 원본 프레임 기준 정규화 좌표의 HoldMask로 바꾼다. */
+    private fun outlineToHoldMask(outline: HoldOutline, bitmap: Bitmap): HoldMask {
+        val width = bitmap.width.toFloat()
+        val height = bitmap.height.toFloat()
+        val contour = when (outline) {
+            is HoldOutline.Circle -> (0 until 64).map { index ->
+                val angle = 2.0 * Math.PI * index / 64.0
+                Offset(
+                    (outline.centerX + cos(angle).toFloat() * outline.radius) / width,
+                    (outline.centerY + sin(angle).toFloat() * outline.radius) / height
                 )
-                pick.blob.area >= minimumArea
+            }
+            is HoldOutline.Polygon -> (0 until outline.points.size / 2).map { index ->
+                Offset(outline.points[index * 2] / width, outline.points[index * 2 + 1] / height)
             }
         }
-    }
-
-    private fun bestCandidate(
-        candidates: List<Pick>,
-        reason: FixReason,
-        bitmap: Bitmap,
-        selectionZoom: Float
-    ): Pick? {
-        if (candidates.isEmpty()) return null
-        val maxDistance = searchRadiusPixels(
-            TopOutConfig.SearchRadii.lastOrNull() ?: 0.03f,
-            bitmap,
-            selectionZoom
+        val left = contour.minOf { it.x }
+        val top = contour.minOf { it.y }
+        val right = contour.maxOf { it.x }
+        val bottom = contour.maxOf { it.y }
+        return HoldMask(
+            center = Offset((left + right) / 2f, (top + bottom) / 2f),
+            radiusX = max(0.002f, (right - left) / 2f),
+            radiusY = max(0.002f, (bottom - top) / 2f),
+            normalizedBounds = Rect(left, top, right, bottom),
+            normalizedContour = contour
         )
-        return candidates.minByOrNull { pick ->
-            val distanceScore = if (maxDistance > 0f) pick.distancePixels / maxDistance else 0f
-            val areaScore = sqrt(pick.blob.area / max(1f, (pick.mask.width * pick.mask.height).toFloat()))
-            when (reason) {
-                FixReason.WALL -> distanceScore * 0.85f - areaScore * 0.15f
-                FixReason.TINY -> distanceScore * 0.55f - areaScore * 0.45f
-            }
-        }
     }
 
-    private fun nearbyPointRings(origin: Offset, bitmap: Bitmap, selectionZoom: Float): List<List<Offset>> {
-        val directions = arrayOf(
-            1f to 0f, -1f to 0f, 0f to 1f, 0f to -1f,
-            0.707f to 0.707f, -0.707f to 0.707f,
-            0.707f to -0.707f, -0.707f to -0.707f
-        )
-        val seen = mutableSetOf<String>()
-        return TopOutConfig.SearchRadii.mapNotNull { ratio ->
-            val radius = searchRadiusPixels(ratio, bitmap, selectionZoom)
-            val ring = directions.mapNotNull { (dx, dy) ->
-                val xPixels = origin.x * bitmap.width + dx * radius
-                val yPixels = origin.y * bitmap.height + dy * radius
-                if (xPixels !in 0f..bitmap.width.toFloat() || yPixels !in 0f..bitmap.height.toFloat()) {
-                    null
-                } else {
-                    val key = "${xPixels.roundToInt()}_${yPixels.roundToInt()}"
-                    if (!seen.add(key)) null
-                    else Offset(xPixels / bitmap.width, yPixels / bitmap.height).clamped()
-                }
-            }
-            ring.takeIf { it.isNotEmpty() }
-        }
-    }
-
-    private fun searchRadiusPixels(ratio: Float, bitmap: Bitmap, selectionZoom: Float): Float =
-        min(bitmap.width, bitmap.height) * ratio / max(selectionZoom, TopOutConfig.MinZoom)
-
-    private fun uniqueTolerances(values: List<Float>): List<Float> {
-        val result = mutableListOf<Float>()
-        values.forEach { value ->
-            if (result.none { abs(it - value) < 0.0001f }) result += value
-        }
-        return result
+    /** 탑홀드 표시의 최소 지름. 짧은 변의 3.75%, 22px 이상, 짧은 변의 6% 이하. iOS minimumHoldDiameter와 같다. */
+    private fun minimumHoldDiameter(bitmap: Bitmap): Float {
+        val minSide = min(bitmap.width, bitmap.height).toFloat()
+        val ideal = minSide * TopOutConfig.FallbackHoldMaskDiameterRatio
+        return min(max(TopOutConfig.FallbackHoldMaskMinDiameter, ideal), minSide * TopOutConfig.FallbackHoldMaskMaxDiameterRatio)
     }
 
     // 디코더
@@ -600,12 +492,15 @@ class OnnxMobileSamSegmenter(
         }
     }
 
-    private fun decodeMask(
+    /** 한 점 프롬프트의 저해상도 다중 마스크 logit과 채널별 신뢰도. */
+    private class HoldCandidates(val logits: FloatArray, val channelCount: Int, val size: Int, val iou: FloatArray)
+
+    private fun decodeHoldCandidates(
         bitmap: Bitmap,
         normalizedPoint: Offset,
         embedding: CachedEmbedding,
         decoder: OrtSession
-    ): BinaryMask {
+    ): HoldCandidates {
         val inputNames = decoder.inputInfo.keys
         val embeddingName = resolveName(inputNames, DECODER_EMBEDDING_ALIASES, "decoder embedding 입력")
         val pointCoordsName = resolveName(inputNames, POINT_COORDS_ALIASES, "point coordinates 입력")
@@ -614,20 +509,16 @@ class OnnxMobileSamSegmenter(
         val hasMaskInputName = resolveName(inputNames, HAS_MASK_INPUT_ALIASES, "has-mask 입력")
         val originalSizeName = resolveName(inputNames, ORIGINAL_SIZE_ALIASES, "원본 이미지 크기 입력")
 
-        val pointX = normalizedPoint.x.coerceIn(0f, 1f) * bitmap.width
-        val pointY = normalizedPoint.y.coerceIn(0f, 1f) * bitmap.height
-        val transformedX = pointX * embedding.transform.scaleX
-        val transformedY = pointY * embedding.transform.scaleY
-
         val coordsInfo = decoder.inputInfo.getValue(pointCoordsName).tensorInfo("point coordinates 입력")
         val coordsShape = pointCoordsShape(coordsInfo.shape)
         val coords = FloatArray(coordsShape.elementCountOrThrow("point coordinates 입력"))
         require(coords.size >= 2) { "point coordinates 입력 크기가 올바르지 않습니다." }
-        coords[0] = transformedX
-        coords[1] = transformedY
+        coords[0] = normalizedPoint.x.coerceIn(0f, 1f) * bitmap.width * embedding.transform.scaleX
+        coords[1] = normalizedPoint.y.coerceIn(0f, 1f) * bitmap.height * embedding.transform.scaleY
 
         val labelsInfo = decoder.inputInfo.getValue(pointLabelsName).tensorInfo("point labels 입력")
         val labelsShape = pointLabelsShape(labelsInfo.shape, max(1, coords.size / 2))
+        // 나머지 칸은 SAM의 빈 점(-1)으로 둔다.
         val labels = FloatArray(labelsShape.elementCountOrThrow("point labels 입력")) { -1f }
         labels[0] = 1f
 
@@ -657,17 +548,20 @@ class OnnxMobileSamSegmenter(
             )
 
             decoder.run(inputs).use { result ->
-                val outputName = resolveMaskOutputName(decoder.outputInfo.keys)
-                val tensor = result.tensor(outputName, "decoder mask 출력")
-                return selectMask(
-                    data = tensor.copyFloatData(),
-                    shape = tensor.info.shape,
-                    originalWidth = bitmap.width,
-                    originalHeight = bitmap.height,
-                    transform = embedding.transform,
-                    isLowResolution = outputName in LOW_RES_MASK_ALIASES ||
-                        tensor.info.shape.takeLast(2).all { it in 1L..512L }
-                )
+                val outputs = decoder.outputInfo.keys
+                val maskName = resolveNameOrNull(outputs, LOW_RES_MASK_ALIASES)
+                    ?: error("decoder 저해상도 mask 출력을 찾지 못했습니다. outputs=$outputs")
+                val maskTensor = result.tensor(maskName, "decoder mask 출력")
+                val parsed = parseMaskShape(maskTensor.info.shape)
+                require(parsed.width == parsed.height) { "decoder mask가 정사각형이 아닙니다." }
+                val logits = maskTensor.copyFloatData()
+                require(logits.size >= parsed.maskCount * parsed.width * parsed.height) {
+                    "decoder mask 출력 크기가 shape과 일치하지 않습니다."
+                }
+                val iou = resolveNameOrNull(outputs, IOU_ALIASES)
+                    ?.let { result.tensor(it, "decoder iou 출력").copyFloatData() }
+                    ?: FloatArray(0)
+                return HoldCandidates(logits, parsed.maskCount, parsed.width, iou)
             }
         } finally {
             inputs.values.forEach { runCatching { it.close() } }
@@ -686,370 +580,16 @@ class OnnxMobileSamSegmenter(
         else -> longArrayOf(1, pointCount.toLong())
     }
 
-    private fun selectMask(
-        data: FloatArray,
-        shape: LongArray,
-        originalWidth: Int,
-        originalHeight: Int,
-        transform: ImageTransform,
-        isLowResolution: Boolean
-    ): BinaryMask {
-        val parsed = parseMaskShape(shape)
-        // 마스크가 여러 개면 iOS와 같이 두 번째 채널을 사용한다.
-        val maskIndex = if (parsed.maskCount > 1) 1 else 0
-        val maskOffset = maskIndex * parsed.width * parsed.height
-        require(maskOffset + parsed.width * parsed.height <= data.size) {
-            "decoder mask 출력 크기가 shape과 일치하지 않습니다."
-        }
-
-        var minimum = Float.POSITIVE_INFINITY
-        var maximum = Float.NEGATIVE_INFINITY
-        for (index in maskOffset until maskOffset + parsed.width * parsed.height) {
-            minimum = min(minimum, data[index])
-            maximum = max(maximum, data[index])
-        }
-        val threshold = if (minimum >= 0f && maximum <= 1.0001f) 0.5f else 0f
-
-        val downScale = min(1f, TopOutConfig.MaskSize.toFloat() / max(originalWidth, originalHeight).toFloat())
-        val outputWidth = max(1, (originalWidth * downScale).roundToInt())
-        val outputHeight = max(1, (originalHeight * downScale).roundToInt())
-        val binary = BooleanArray(outputWidth * outputHeight)
-
-        for (y in 0 until outputHeight) {
-            val originalY = (y + 0.5f) / outputHeight * originalHeight
-            val sourceY = if (isLowResolution) {
-                (originalY * transform.scaleY / transform.inputHeight * parsed.height).toInt()
-            } else {
-                (originalY * transform.scaleY / transform.inputHeight * parsed.height).toInt()
-            }.coerceIn(0, parsed.height - 1)
-            for (x in 0 until outputWidth) {
-                val originalX = (x + 0.5f) / outputWidth * originalWidth
-                val sourceX = if (isLowResolution) {
-                    (originalX * transform.scaleX / transform.inputWidth * parsed.width).toInt()
-                } else {
-                    (originalX * transform.scaleX / transform.inputWidth * parsed.width).toInt()
-                }.coerceIn(0, parsed.width - 1)
-                binary[y * outputWidth + x] = data[maskOffset + sourceY * parsed.width + sourceX] > threshold
-            }
-        }
-        return BinaryMask(outputWidth, outputHeight, binary)
-    }
-
-    // 색상 필터와 연결 영역 추출
-
-    private fun makePick(
-        mask: BinaryMask,
-        point: Offset,
-        bitmap: Bitmap,
-        pixels: BitmapPixels,
-        tolerance: Float,
-        origin: Offset
-    ): Pick {
-        val target = pixels.averageRgb(point, TopOutConfig.ColorSampleRadius)
-        val targetHsv = rgbToHsv(target)
-        val valid = BooleanArray(mask.values.size)
-        for (y in 0 until mask.height) {
-            val imageY = ((y + 0.5f) / mask.height * bitmap.height).toInt().coerceIn(0, bitmap.height - 1)
-            for (x in 0 until mask.width) {
-                val index = y * mask.width + x
-                if (!mask.values[index]) continue
-                val imageX = ((x + 0.5f) / mask.width * bitmap.width).toInt().coerceIn(0, bitmap.width - 1)
-                val hsv = rgbToHsv(pixels.rgb(imageX, imageY))
-                if (hsvDistance(targetHsv, hsv) <= tolerance) valid[index] = true
-            }
-        }
-        val blob = largestBlob(valid, mask.width, mask.height)
-        val status = classify(blob, mask)
-        val distance = hypot(
-            ((point.x - origin.x) * bitmap.width).toDouble(),
-            ((point.y - origin.y) * bitmap.height).toDouble()
-        ).toFloat()
-        return Pick(point, tolerance, mask, blob, status, distance)
-    }
-
-    private fun largestBlob(valid: BooleanArray, width: Int, height: Int): Blob {
-        val visited = BooleanArray(valid.size)
-        var best = IntArray(0)
-        val queue = ArrayDeque<Int>()
-        for (start in valid.indices) {
-            if (!valid[start] || visited[start]) continue
-            val builder = IntArrayBuilder()
-            visited[start] = true
-            queue.add(start)
-            while (queue.isNotEmpty()) {
-                val current = queue.removeFirst()
-                builder.add(current)
-                val x = current % width
-                val y = current / width
-                for (dy in -1..1) {
-                    for (dx in -1..1) {
-                        if (dx == 0 && dy == 0) continue
-                        val nextX = x + dx
-                        val nextY = y + dy
-                        if (nextX !in 0 until width || nextY !in 0 until height) continue
-                        val next = nextY * width + nextX
-                        if (valid[next] && !visited[next]) {
-                            visited[next] = true
-                            queue.add(next)
-                        }
-                    }
-                }
-            }
-            val component = builder.toArray()
-            if (component.size > best.size) best = component
-        }
-        return makeBlob(best, width)
-    }
-
-    private fun makeBlob(indices: IntArray, width: Int): Blob {
-        if (indices.isEmpty()) return Blob.Empty
-        var minX = Int.MAX_VALUE
-        var minY = Int.MAX_VALUE
-        var maxX = Int.MIN_VALUE
-        var maxY = Int.MIN_VALUE
-        indices.forEach { index ->
-            val x = index % width
-            val y = index / width
-            minX = min(minX, x)
-            minY = min(minY, y)
-            maxX = max(maxX, x)
-            maxY = max(maxY, y)
-        }
-        return Blob(indices, IntBounds(minX, minY, maxX, maxY))
-    }
-
-    private fun classify(blob: Blob, mask: BinaryMask): HitStatus {
-        if (blob.isEmpty) return HitStatus.EMPTY
-        val spanX = blob.bounds.width / max(1f, mask.width.toFloat())
-        val spanY = blob.bounds.height / max(1f, mask.height.toFloat())
-        val areaRatio = blob.area / max(1f, (mask.width * mask.height).toFloat())
-        return when {
-            spanX >= TopOutConfig.WallSpanRatio || spanY >= TopOutConfig.WallSpanRatio -> HitStatus.WALL
-            areaRatio <= TopOutConfig.TinyAreaRatio -> HitStatus.TINY
-            else -> HitStatus.GOOD
-        }
-    }
-
-    private fun componentToHoldMask(mask: BinaryMask, blob: Blob, bitmap: Bitmap): HoldMask {
-        val bounds = Rect(
-            blob.bounds.minX.toFloat() / mask.width,
-            blob.bounds.minY.toFloat() / mask.height,
-            (blob.bounds.maxX + 1f) / mask.width,
-            (blob.bounds.maxY + 1f) / mask.height
-        )
-        var sumX = 0.0
-        var sumY = 0.0
-        blob.indices.forEach { index ->
-            sumX += index % mask.width
-            sumY += index / mask.width
-        }
-        val center = Offset(
-            ((sumX / blob.area + 0.5) / mask.width).toFloat(),
-            ((sumY / blob.area + 0.5) / mask.height).toFloat()
-        )
-        val roundedBounds = roundedDrawingBounds(bounds, bitmap)
-        val contour = if (shouldUseRoundedShape(blob, roundedBounds)) {
-            roundedRectContour(roundedBounds, TopOutConfig.RoundedCornerRatio)
-        } else {
-            contourPoints(blob, mask).takeIf { it.size >= TopOutConfig.ContourMinPoints }
-                ?: roundedRectContour(bounds, 0.12f)
-        }
-        return HoldMask(
-            center = center,
-            radiusX = max(0.002f, bounds.width / 2f),
-            radiusY = max(0.002f, bounds.height / 2f),
-            normalizedBounds = bounds,
-            normalizedContour = contour
-        )
-    }
-
-    private fun shouldUseRoundedShape(blob: Blob, roundedBounds: Rect): Boolean {
-        val maxSpan = max(blob.bounds.width, blob.bounds.height).toFloat()
-        val minSpan = max(1, min(blob.bounds.width, blob.bounds.height)).toFloat()
-        if (maxSpan / minSpan >= TopOutConfig.RoundAspectLimit) return false
-        val areaRatio = roundedBounds.width * roundedBounds.height
-        if (roundedBounds.width >= TopOutConfig.WallSpanRatio ||
-            roundedBounds.height >= TopOutConfig.WallSpanRatio ||
-            areaRatio >= TopOutConfig.RoundedMaxAreaRatio
-        ) return false
-        return maxSpan <= TopOutConfig.TinyRoundMaxSpan || blob.area <= TopOutConfig.TinyRoundMaxArea
-    }
-
-    /** Mask.swift pads only a rounded outline; the top-hold hit box remains the raw blob bounds. */
-    private fun roundedDrawingBounds(bounds: Rect, bitmap: Bitmap): Rect {
-        val minSide = min(bitmap.width, bitmap.height).toFloat()
-        val redWidth = max(minSide * TopOutConfig.RedLineRatio, TopOutConfig.MinRedLineWidth)
-        val padPixels = redWidth * TopOutConfig.RoundedPaddingRatio
-        val padX = padPixels / max(1f, bitmap.width.toFloat())
-        val padY = padPixels / max(1f, bitmap.height.toFloat())
-        return Rect(
-            left = (bounds.left - padX).coerceIn(0f, 1f),
-            top = (bounds.top - padY).coerceIn(0f, 1f),
-            right = (bounds.right + padX).coerceIn(0f, 1f),
-            bottom = (bounds.bottom + padY).coerceIn(0f, 1f)
-        )
-    }
-
-    private fun contourPoints(blob: Blob, mask: BinaryMask): List<Offset> {
-        val inside = BooleanArray(mask.values.size)
-        blob.indices.forEach { if (it in inside.indices) inside[it] = true }
-        val edge = blob.indices.filter { index ->
-            val x = index % mask.width
-            val y = index / mask.width
-            var boundary = false
-            for (dy in -1..1) {
-                for (dx in -1..1) {
-                    if (dx == 0 && dy == 0) continue
-                    val nx = x + dx
-                    val ny = y + dy
-                    if (nx !in 0 until mask.width || ny !in 0 until mask.height || !inside[ny * mask.width + nx]) {
-                        boundary = true
-                        break
-                    }
-                }
-                if (boundary) break
-            }
-            boundary
-        }
-        if (edge.isEmpty()) return emptyList()
-        var raw = edge.map { index ->
-            Offset(
-                ((index % mask.width) + 0.5f) / mask.width,
-                ((index / mask.width) + 0.5f) / mask.height
-            )
-        }
-        raw = decimate(raw, TopOutConfig.ContourRawPointLimit)
-        var ordered = convexHull(raw)
-        ordered = decimate(ordered, TopOutConfig.ContourPointLimit)
-        repeat(TopOutConfig.ContourSmoothIterations) { ordered = chaikinSmooth(ordered) }
-        return ordered
-    }
-
-    private fun decimate(points: List<Offset>, maximum: Int): List<Offset> {
-        if (maximum <= 0 || points.size <= maximum) return points
-        val step = max(1, ceil(points.size.toDouble() / maximum).toInt())
-        return points.indices.step(step).map { points[it] }
-    }
-
-    private fun convexHull(points: List<Offset>): List<Offset> {
-        if (points.size <= 3) return points
-        val sorted = points.sortedWith(compareBy<Offset> { it.x }.thenBy { it.y })
-        fun cross(origin: Offset, a: Offset, b: Offset): Float =
-            (a.x - origin.x) * (b.y - origin.y) - (a.y - origin.y) * (b.x - origin.x)
-        val lower = mutableListOf<Offset>()
-        sorted.forEach { point ->
-            while (lower.size >= 2 && cross(lower[lower.lastIndex - 1], lower.last(), point) <= 0f) {
-                lower.removeAt(lower.lastIndex)
-            }
-            lower += point
-        }
-        val upper = mutableListOf<Offset>()
-        sorted.asReversed().forEach { point ->
-            while (upper.size >= 2 && cross(upper[upper.lastIndex - 1], upper.last(), point) <= 0f) {
-                upper.removeAt(upper.lastIndex)
-            }
-            upper += point
-        }
-        if (lower.isNotEmpty()) lower.removeAt(lower.lastIndex)
-        if (upper.isNotEmpty()) upper.removeAt(upper.lastIndex)
-        return lower + upper
-    }
-
-    private fun chaikinSmooth(points: List<Offset>): List<Offset> {
-        if (points.size < 4) return points
-        val output = ArrayList<Offset>(points.size * 2)
-        points.indices.forEach { index ->
-            val a = points[index]
-            val b = points[(index + 1) % points.size]
-            output += Offset(a.x * 0.75f + b.x * 0.25f, a.y * 0.75f + b.y * 0.25f)
-            output += Offset(a.x * 0.25f + b.x * 0.75f, a.y * 0.25f + b.y * 0.75f)
-        }
-        return output
-    }
-
-    private fun roundedRectContour(bounds: Rect, radiusRatio: Float): List<Offset> {
-        val radius = min(bounds.width, bounds.height) * radiusRatio.coerceIn(0f, 0.5f)
-        if (radius <= 0f) return listOf(
-            Offset(bounds.left, bounds.top), Offset(bounds.right, bounds.top),
-            Offset(bounds.right, bounds.bottom), Offset(bounds.left, bounds.bottom)
-        )
-        val centers = listOf(
-            Offset(bounds.right - radius, bounds.top + radius) to (-90f to 0f),
-            Offset(bounds.right - radius, bounds.bottom - radius) to (0f to 90f),
-            Offset(bounds.left + radius, bounds.bottom - radius) to (90f to 180f),
-            Offset(bounds.left + radius, bounds.top + radius) to (180f to 270f)
-        )
-        val result = mutableListOf<Offset>()
-        centers.forEach { (center, range) ->
-            for (step in 0..7) {
-                val degrees = range.first + (range.second - range.first) * step / 7f
-                val radians = Math.toRadians(degrees.toDouble())
-                result += Offset(
-                    center.x + cos(radians).toFloat() * radius,
-                    center.y + sin(radians).toFloat() * radius
-                )
-            }
-        }
-        return result
-    }
-
+    /** 홀드를 찾지 못했을 때 탭 위치에 그리는 최소 크기 원. */
     private fun makeFallbackHoldMask(bitmap: Bitmap, point: Offset): HoldMask {
-        val minSide = min(bitmap.width, bitmap.height).toFloat()
-        val ideal = minSide * TopOutConfig.FallbackHoldMaskDiameterRatio
-        val maximum = minSide * TopOutConfig.FallbackHoldMaskMaxDiameterRatio
-        val diameter = min(max(TopOutConfig.FallbackHoldMaskMinDiameter, ideal), maximum)
-        val half = diameter / 2f
-        val centerX = (point.x * bitmap.width).coerceIn(half, bitmap.width - half)
-        val centerY = (point.y * bitmap.height).coerceIn(half, bitmap.height - half)
-        val bounds = Rect(
-            (centerX - half) / bitmap.width,
-            (centerY - half) / bitmap.height,
-            (centerX + half) / bitmap.width,
-            (centerY + half) / bitmap.height
+        val radius = minimumHoldDiameter(bitmap) / 2f
+        val circle = HoldOutline.Circle(
+            centerX = (point.x * bitmap.width).coerceIn(radius, max(radius, bitmap.width - radius)),
+            centerY = (point.y * bitmap.height).coerceIn(radius, max(radius, bitmap.height - radius)),
+            radius = radius
         )
-        val contour = (0 until 48).map { index ->
-            val angle = 2.0 * Math.PI * index / 48.0
-            Offset(
-                centerX / bitmap.width + cos(angle).toFloat() * half / bitmap.width,
-                centerY / bitmap.height + sin(angle).toFloat() * half / bitmap.height
-            )
-        }
-        return HoldMask(
-            center = Offset(centerX / bitmap.width, centerY / bitmap.height),
-            radiusX = half / bitmap.width,
-            radiusY = half / bitmap.height,
-            normalizedBounds = bounds,
-            normalizedContour = contour
-        )
+        return outlineToHoldMask(circle, bitmap)
     }
-
-    private fun rgbToHsv(rgb: Rgb): Hsv {
-        val r = rgb.r / 255f
-        val g = rgb.g / 255f
-        val b = rgb.b / 255f
-        val maximum = max(r, max(g, b))
-        val minimum = min(r, min(g, b))
-        val delta = maximum - minimum
-        var hue = 0f
-        if (delta != 0f) {
-            hue = when (maximum) {
-                r -> 60f * (((g - b) / delta) % 6f)
-                g -> 60f * (((b - r) / delta) + 2f)
-                else -> 60f * (((r - g) / delta) + 4f)
-            }
-        }
-        if (hue < 0f) hue += 360f
-        return Hsv(hue, if (maximum == 0f) 0f else delta / maximum, maximum)
-    }
-
-    private fun hsvDistance(a: Hsv, b: Hsv): Float {
-        var hue = abs(a.h - b.h)
-        if (hue > 180f) hue = 360f - hue
-        hue /= 180f
-        return hue * 0.8f + abs(a.s - b.s) * 0.1f + abs(a.v - b.v) * 0.1f
-    }
-
-    // 인코더 전처리와 메타데이터
 
     private fun preprocessBitmap(bitmap: Bitmap, rawShape: LongArray): PreprocessedImage {
         val shape = positiveShape(rawShape, longArrayOf(1, 3, TopOutConfig.SamSize.toLong(), TopOutConfig.SamSize.toLong()))
@@ -1242,68 +782,6 @@ class OnnxMobileSamSegmenter(
     )
     private data class PreprocessedImage(val buffer: FloatBuffer, val shape: LongArray, val transform: ImageTransform)
     private data class ParsedMaskShape(val maskCount: Int, val width: Int, val height: Int)
-    private data class BinaryMask(val width: Int, val height: Int, val values: BooleanArray)
-    private data class IntBounds(val minX: Int, val minY: Int, val maxX: Int, val maxY: Int) {
-        val width: Int get() = maxX - minX + 1
-        val height: Int get() = maxY - minY + 1
-    }
-    private data class Blob(val indices: IntArray, val bounds: IntBounds) {
-        val area: Int get() = indices.size
-        val isEmpty: Boolean get() = indices.isEmpty()
-        companion object {
-            val Empty = Blob(IntArray(0), IntBounds(0, 0, -1, -1))
-        }
-    }
-    private data class Pick(
-        val point: Offset,
-        val tolerance: Float,
-        val mask: BinaryMask,
-        val blob: Blob,
-        val status: HitStatus,
-        val distancePixels: Float
-    )
-    private enum class HitStatus { GOOD, WALL, TINY, EMPTY }
-    private enum class FixReason { WALL, TINY }
-    private data class Rgb(val r: Int, val g: Int, val b: Int)
-    private data class Hsv(val h: Float, val s: Float, val v: Float)
-
-    private class BitmapPixels(private val bitmap: Bitmap) {
-        private val values = IntArray(bitmap.width * bitmap.height).also {
-            bitmap.getPixels(it, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-        }
-        fun rgb(x: Int, y: Int): Rgb {
-            val pixel = values[y.coerceIn(0, bitmap.height - 1) * bitmap.width + x.coerceIn(0, bitmap.width - 1)]
-            return Rgb((pixel shr 16) and 0xFF, (pixel shr 8) and 0xFF, pixel and 0xFF)
-        }
-        fun averageRgb(point: Offset, radius: Int): Rgb {
-            val centerX = (point.x * bitmap.width).roundToInt().coerceIn(0, bitmap.width - 1)
-            val centerY = (point.y * bitmap.height).roundToInt().coerceIn(0, bitmap.height - 1)
-            var red = 0L
-            var green = 0L
-            var blue = 0L
-            var count = 0
-            for (y in max(0, centerY - radius)..min(bitmap.height - 1, centerY + radius)) {
-                for (x in max(0, centerX - radius)..min(bitmap.width - 1, centerX + radius)) {
-                    val color = rgb(x, y)
-                    red += color.r
-                    green += color.g
-                    blue += color.b
-                    count += 1
-                }
-            }
-            return Rgb((red / max(1, count)).toInt(), (green / max(1, count)).toInt(), (blue / max(1, count)).toInt())
-        }
-    }
-
-    private class IntArrayBuilder(initialCapacity: Int = 256) {
-        private var storage = IntArray(initialCapacity)
-        private var count = 0
-        fun add(value: Int) {
-            if (count == storage.size) storage = storage.copyOf(storage.size * 2)
-            storage[count++] = value
-        }
-        fun toArray(): IntArray = storage.copyOf(count)
-    }
 
     companion object {
         const val ENCODER_FILE_NAME = "mobile_sam_encoder.onnx"
@@ -1319,6 +797,7 @@ class OnnxMobileSamSegmenter(
         private val ORIGINAL_SIZE_ALIASES = listOf("orig_im_size", "original_image_size", "original_size")
         private val FULL_MASK_ALIASES = listOf("masks", "mask", "high_res_masks")
         private val LOW_RES_MASK_ALIASES = listOf("low_res_masks", "low_resolution_masks")
+        private val IOU_ALIASES = listOf("iou_predictions", "scores")
         private val MAT_PROMPT_Y_VALUES = floatArrayOf(0.70f, 0.80f, 0.90f, 0.95f)
     }
 }

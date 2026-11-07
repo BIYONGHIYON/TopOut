@@ -4,13 +4,10 @@ import CoreML
 import CoreMedia
 import AVFoundation
 
-typealias RGB = (r: Int, g: Int, b: Int)
-typealias HSV = (h: Float, s: Float, v: Float)
-
 enum ScreenMode {
     case camera
+    /// 준비 완료 뒤 측정한 매트 경계를 보정하는 화면
     case select
-    case processing
     case recording
     case reviewing
 }
@@ -171,45 +168,6 @@ enum AppError: Error {
     case modelNotReady
     case encoderOutputMissing
     case renderFailed
-}
-
-enum HitStatus: CustomStringConvertible {
-    case good
-    case wall
-    case tiny
-    case empty
-
-    var description: String {
-        switch self {
-        case .good: return "good"
-        case .wall: return "wall"
-        case .tiny: return "tiny"
-        case .empty: return "empty"
-        }
-    }
-}
-
-enum FixReason {
-    case wall
-    case tiny
-}
-
-struct Blob {
-    let indices: [Int]
-    let box: CGRect
-
-    static let empty = Blob(indices: [], box: .zero)
-
-    var area: Int { indices.count }
-    var isEmpty: Bool { indices.isEmpty }
-}
-
-struct Pick {
-    let point: CGPoint
-    let tol: Float
-    let blob: Blob
-    let status: HitStatus
-    let dist: CGFloat
 }
 
 struct ClipRange {

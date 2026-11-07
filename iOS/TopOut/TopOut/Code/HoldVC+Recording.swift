@@ -70,7 +70,7 @@ extension HoldVC {
                 self.setRecordingStatusText(self.defaultActiveRecordingStatusText())
                 self.startRecordingElapsedTimer()
                 self.startRecordingStorageMonitor()
-                if self.isDeveloperModeEnabled {
+                if self.isLivePreviewVisibleDuringRecording {
                     self.showCameraUI()
                 } else {
                     self.showPowerSavingRecording(elapsed: 0)
@@ -129,6 +129,8 @@ extension HoldVC {
         hidePowerSavingRecordingUI()
         recState = .reviewing
         mode = .reviewing
+        // 녹화 시작 때 내린 MobileSAM은 결과 화면에서 탑홀드를 고를 때만 다시 불러온다.
+        if isTopHoldMaskingEnabled { preloadMobileSAMAfterCameraStarts() }
 
         // AVCaptureSession.stopRunning()은 동기 작업이지만 전용 sessionQ에서 실행됩니다.
         // 실제 종료가 끝나기 전에 AVPlayer를 만들면 일부 기기에서 재생 버튼을 눌러도
@@ -159,17 +161,25 @@ extension HoldVC {
             defaultStart: safeStart,
             defaultEnd: safeEnd,
             detectedRanges: detectedRanges,
-            topHoldOverlayImage: isTopHoldMaskingEnabled ? overlayView.image : nil,
-            includeTopHoldOverlayByDefault: false,
-            topHoldOverlayToggleLocked: false,
+            topHoldSelectionEnabled: isTopHoldMaskingEnabled,
             autoClipDetectionEnabled: isAutoClipDetectionEnabled,
             helpEnabled: isHelpEnabled,
             recordingAspectRatio: selectedRecordingAspectRatio
         )
         vc.modalPresentationStyle = .fullScreen
 
+        vc.onSelectTopHold = { [weak self] frame, point, completion in
+            guard let self else {
+                completion(nil)
+                return
+            }
+            self.selectTopHoldForReview(in: frame, at: point, completion: completion)
+        }
+
         vc.onClose = { [weak self] in
             guard let self else { return }
+            self.reviewTopHoldToken?.cancel()
+            self.reviewTopHoldToken = nil
             self.cancelRecordingCountdown()
             self.stopRecordingElapsedTimer()
             self.stopRecordingStorageMonitor()
@@ -179,7 +189,6 @@ extension HoldVC {
             self.recorder.deleteAll()
             self.recState = .idle
             self.mode = .camera
-            self.overlayView.image = nil
             self.unlockCameraOrientation()
             self.showCameraUI()
             self.view.layoutIfNeeded()
@@ -193,19 +202,16 @@ extension HoldVC {
             }
         }
 
-        vc.onRetake = { [weak self] in
-            self?.restartRecordingWithExistingSelection()
-        }
-
         vc.onSaveTrim = { [weak self, weak vc] startSeconds, endSeconds, includeTopHoldOverlay in
             guard let self else { return }
             vc?.setSaving(true)
             vc?.setStatus(includeTopHoldOverlay ? L("review.processing_mask") : L("review.trimming"))
 
+            // 탑홀드 마스크는 결과 화면에서 고른 것을 쓴다.
             self.recorder.exportTrimmedClip(
                 fromOffset: startSeconds,
                 toOffset: endSeconds,
-                topHoldOverlayImage: includeTopHoldOverlay ? self.overlayView.image : nil
+                topHoldOverlayImage: includeTopHoldOverlay ? vc?.topHoldOverlayImage : nil
             ) { result in
                 switch result {
                 case .success(let url):
@@ -238,57 +244,6 @@ extension HoldVC {
             guard let self, let vc, let notice else { return }
             self.presentPersistentRecordingNotice(notice, from: vc)
         }
-    }
-
-    func restartRecordingWithExistingSelection() {
-        cancelRecordingCountdown()
-        stopRecordingElapsedTimer()
-        stopRecordingStorageMonitor()
-        hidePowerSavingRecordingUI()
-        videoFrameSink.setRecording(false)
-        motionDetector.stop()
-        recorder.deleteAll()
-        recState = .idle
-        mode = .camera
-        recorder.configure(
-            resolution: selectedRecordingResolution,
-            frameRate: selectedRecordingFrameRate,
-            aspectRatio: selectedRecordingAspectRatio
-        )
-        setLoading(false)
-        showCameraUI()
-        view.layoutIfNeeded()
-        updateCameraOrientationIfPossible()
-        prepareAudioSessionForCameraUse()
-        startCamera()
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            guard UIApplication.shared.applicationState == .active,
-                  self.view.window != nil,
-                  self.recState == .idle,
-                  self.mode == .camera else { return }
-            self.layoutUI()
-            self.updateCameraOrientationIfPossible()
-            self.startRecording()
-        }
-    }
-
-
-    func startRecordingWithoutSelection() {
-        guard case .idle = recState else { return }
-        lockCurrentCameraOrientation()
-
-        overlayView.image = nil
-        motionDetector.stop()
-        recorder.configure(
-            resolution: selectedRecordingResolution,
-            frameRate: selectedRecordingFrameRate,
-            aspectRatio: selectedRecordingAspectRatio
-        )
-        clearSelectionCache(clearPending: true)
-        releaseMobileSAMResources()
-        setLoading(false)
-        startRecording()
     }
 
     private func detectedClipRanges(for session: ContinuousRecorder.RecordingSession) -> [ReviewClipRange] {

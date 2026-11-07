@@ -127,16 +127,11 @@ extension HoldVC {
         videoFrameSink.setStreamReadinessHandler { [weak self] in
             guard let self else { return }
             self.isCameraStreamReady = true
-            // 재촬영 카운트다운에서는 해제한 모델을 다시 불러오지 않고 선택 단계에서만 예열한다.
-            if self.recState == .idle,
-               self.mode == .camera || self.mode == .select || self.mode == .processing {
-                self.preloadMobileSAMAfterCameraStarts()
-            }
-            if self.mode == .camera,
-               self.recState == .idle,
-               !self.isBusy,
-               self.launchImageView.isHidden {
-                self.readyBtn.isEnabled = true
+            if self.recState == .idle, self.mode == .camera || self.mode == .select {
+                // 준비 완료 분석이 5초 제한 안에 끝나도록 자동 구간 탐지를 쓸 때만 미리 불러온다.
+                // 녹화 중에는 해제한 모델을 다시 불러오지 않는다.
+                if self.isAutoClipDetectionEnabled { self.preloadMobileSAMAfterCameraStarts() }
+                self.refreshRecordButtonAvailability()
             }
         }
 
@@ -318,7 +313,7 @@ extension HoldVC {
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     self.isCameraStreamReady = false
-                    self.readyBtn.isEnabled = false
+                    self.disableCameraStartButtons()
                 }
 
                 self.session.beginConfiguration()
@@ -540,7 +535,7 @@ extension HoldVC {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.isCameraStreamReady = false
-                self.readyBtn.isEnabled = false
+                self.disableCameraStartButtons()
             }
             self.session.startRunning()
         }
@@ -571,17 +566,62 @@ extension HoldVC {
             DispatchQueue.main.async { [weak self] in
                 guard let self,
                       self.mode == .camera,
-                      self.recState == .idle,
-                      !self.isBusy else { return }
-                self.readyBtn.isEnabled = isRunning && self.isCameraStreamReady
+                      self.recState == .idle else { return }
+                if isRunning {
+                    self.refreshRecordButtonAvailability()
+                } else {
+                    self.disableCameraStartButtons()
+                }
             }
         }
     }
 
     func updateCameraOrientationIfPossible() {
         let orientation = lockedVideoOrientation ?? currentVideoOrientation()
-        setVideoOrientation(orientation, on: previewLayer?.connection)
+        // 프리뷰는 화면에 수평으로 보이는 각도를 따로 쓴다. iPhone Duo처럼 접고 펼 때 창 크기와
+        // 디스플레이가 바뀌는 기기에서도 AVFoundation이 계산한 값이 정확하다.
+        if #available(iOS 17.0, *),
+           let previewAngle = coordinatedPreviewRotationAngle(),
+           let connection = previewLayer?.connection,
+           connection.isVideoRotationAngleSupported(previewAngle) {
+            connection.videoRotationAngle = previewAngle
+        } else {
+            setVideoOrientation(orientation, on: previewLayer?.connection)
+        }
         setVideoOrientation(orientation, on: videoOutput.connection(with: .video))
+    }
+
+    /// 현재 카메라와 프리뷰 레이어 기준의 회전 조정자를 준비한다. 렌즈 전환으로 기기가 바뀌면 새로 만든다.
+    @available(iOS 17.0, *)
+    private func rotationCoordinator() -> AVCaptureDevice.RotationCoordinator? {
+        guard let device = activeCameraDevice, let layer = previewLayer else { return nil }
+        if let existing = cameraRotationCoordinator as? AVCaptureDevice.RotationCoordinator,
+           existing.device === device,
+           existing.previewLayer === layer {
+            return existing
+        }
+        let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: layer)
+        cameraRotationCoordinator = coordinator
+        return coordinator
+    }
+
+    private func coordinatedPreviewRotationAngle() -> CGFloat? {
+        guard #available(iOS 17.0, *), let coordinator = rotationCoordinator() else { return nil }
+        return coordinator.videoRotationAngleForHorizonLevelPreview
+    }
+
+    /// 녹화·분석 프레임이 수평이 되도록 AVFoundation이 계산한 각도를 TopOut 방향으로 바꾼다.
+    /// 일반 iPhone에서는 기존 기기 방향 매핑과 같은 값(세로 90°, 가로 0°/180°)이 나온다.
+    private func coordinatedCaptureOrientation() -> TopOutVideoOrientation? {
+        guard #available(iOS 17.0, *), let coordinator = rotationCoordinator() else { return nil }
+        let angle = coordinator.videoRotationAngleForHorizonLevelCapture
+        let normalized = (Int((angle / 90).rounded()) % 4 + 4) % 4
+        switch normalized {
+        case 0: return .landscapeRight
+        case 1: return .portrait
+        case 2: return .landscapeLeft
+        default: return .portraitUpsideDown
+        }
     }
 
     func lockCurrentCameraOrientation() {
@@ -599,6 +639,10 @@ extension HoldVC {
     }
 
     func currentVideoOrientation() -> TopOutVideoOrientation {
+        if let coordinated = coordinatedCaptureOrientation() {
+            return coordinated
+        }
+
         let deviceOrientation = UIDevice.current.orientation
         if deviceOrientation.isValidInterfaceOrientation {
             return TopOutVideoOrientation.from(
@@ -631,7 +675,7 @@ extension HoldVC {
     }
 
     @objc func onCameraPinch(_ gesture: UIPinchGestureRecognizer) {
-        guard mode == .camera, recState == .idle, !isBusy else { return }
+        guard mode == .camera, recState == .idle else { return }
         guard let camera = activeCameraDevice else { return }
 
         switch gesture.state {
@@ -668,7 +712,7 @@ extension HoldVC {
     }
 
     @objc func onReady() {
-        guard mode == .camera, recState == .idle, !isBusy else { return }
+        guard mode == .camera, recState == .idle, !isBusy, isAutoClipDetectionEnabled else { return }
         guard isCameraReady, isCameraStreamReady else {
             showCameraError(L("error.camera_session_not_ready"))
             return
@@ -680,60 +724,41 @@ extension HoldVC {
         readyFlowRequestID &+= 1
         let requestID = readyFlowRequestID
 
-        // 준비완료 화면과 동일한 비율/줌의 비디오 프레임을 그대로 사용합니다.
-        // 사진 출력은 영상 화각과 다를 수 있으므로 사용하지 않는다.
+        // 준비 완료 화면과 같은 비율·줌의 비디오 프레임을 쓴다. 사진 출력은 영상 화각과 다를 수 있다.
         applySelectedCaptureFormatIfPossible { [weak self] in
-            guard let self else { return }
-            guard self.isReadyFlowValid(requestID) else { return }
+            guard let self, self.isReadyFlowValid(requestID) else { return }
             self.lockCurrentCameraOrientation()
 
-            // 탑홀드 마스킹이 꺼져 있고 자동 구간 탐지도 꺼져 있으면
-            // 별도 기준 프레임 없이 바로 일반 녹화를 시작합니다.
-            if !self.requiresTopHoldSelection && !self.isAutoClipDetectionEnabled {
-                self.startRecordingWithoutSelection()
-                return
-            }
-
-            // 탑홀드만 사용하는 경우 Ready 시점의 정지 이미지는 더 이상 필요하지 않습니다.
-            // 라이브 선택 화면으로 바로 진입하고, 실제 SAM 입력은 탑홀드를 탭하는 매 순간
-            // 새 비디오 프레임을 캡처해 생성합니다.
-            if self.requiresTopHoldSelection && !self.isAutoClipDetectionEnabled {
-                self.setLoading(false)
-                self.showSelectUI(with: nil)
-                return
-            }
-
-            // 자동 구간 탐지의 매트 경계만 Ready 직후 도착하는 첫 비디오 프레임으로 한 번
-            // 확정합니다. 이 이미지는 MobileSAM 입력에만 쓰이며 사용자에게 표시하지 않습니다.
+            // 매트 경계는 준비 완료 직후 노출·초점이 안정된 비디오 프레임으로 한 번 측정한다.
+            // 이 이미지는 MobileSAM 입력에만 쓰고, 보정은 실시간 화면 위에서 한다.
             self.videoFrameSink.captureStableFrame(
                 aspectRatio: self.activeRecordingAspect,
                 maxLongSide: CameraCfg.captureMaxLongSide,
                 camera: self.activeCameraDevice
             ) { [weak self] image in
-                guard let self else { return }
-                guard self.isReadyFlowValid(requestID) else { return }
+                guard let self, self.isReadyFlowValid(requestID) else { return }
                 guard let image else {
                     self.unlockCameraOrientation()
                     self.isBusy = false
                     self.setLoading(false)
-                    self.readyBtn.isEnabled = self.isCameraStreamReady
+                    self.refreshRecordButtonAvailability()
                     self.showCameraError(L("camera.capture_failed"))
                     return
                 }
-
-                // 자동 구간 탐지가 켜져 있으면 사용자가 라이브 프리뷰 위에서 매트 경계를
-                // 직접 확인·보정합니다. 탑홀드도 같은 라이브 화면에서 선택합니다.
+                self.isBusy = false
                 self.showSelectUI(with: image)
             }
         }
     }
 
+    /// 준비 완료 프레임 캡처를 멈춘다. 백그라운드 전환과 카메라 중단에서 쓴다.
     func cancelPendingReadyFlow() {
         readyFlowRequestID &+= 1
         guard mode == .camera, recState == .idle, isBusy else { return }
         isBusy = false
         setLoading(false)
         unlockCameraOrientation()
+        refreshRecordButtonAvailability()
     }
 
     private func isReadyFlowValid(_ requestID: Int) -> Bool {

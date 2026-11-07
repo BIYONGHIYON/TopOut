@@ -16,10 +16,14 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Forward5
+import androidx.compose.material.icons.rounded.Replay5
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.CheckBox
 import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
+import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -65,44 +69,77 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.time.Duration.Companion.milliseconds
 
+/**
+ * 1행: 5초 전 · 재생/정지 · 5초 후 · 선택 구간 저장
+ * 2행: 탑홀드 마스크 · 닫기 (탑홀드 마스킹을 끈 녹화는 닫기가 전체 폭)
+ * 가로 화면은 같은 순서를 한 줄에 둔다.
+ */
 @Composable
 internal fun ReviewActionControls(
     isLandscape: Boolean,
     isPlaying: Boolean,
     saving: Boolean,
+    /** 결과 화면 탑홀드 보정 중에는 마스크와 저장만 잠근다. */
+    topHoldAnalyzing: Boolean,
     includeOverlay: Boolean,
+    /** 탑홀드 마스킹을 켠 녹화면 마스크 버튼을 보인다. */
     overlayAvailable: Boolean,
+    /** 결과 화면에서 탑홀드를 이미 골랐는지. 고르기 전에는 누르면 탭 안내를 보여준다. */
+    overlaySelected: Boolean,
     savedMatchesCurrentSelection: Boolean,
     onTogglePlayback: () -> Unit,
     onToggleOverlay: () -> Unit,
     onSaveOrView: () -> Unit,
-    onRetake: () -> Unit,
+    onSeekBackward: () -> Unit,
+    onSeekForward: () -> Unit,
     onClose: () -> Unit
 ) {
     val spacing = if (isLandscape) 6.dp else 8.dp
+    val iconWidth = if (isLandscape) 44.dp else 50.dp
+    val playWidth = if (isLandscape) 48.dp else 58.dp
+    val buttonHeight = if (isLandscape) 40.dp else 42.dp
+
+    @Composable
+    fun OverlayButton(modifier: Modifier) = TopOutCapsuleButton(
+        text = tr("review.top_hold_mask"),
+        onClick = onToggleOverlay,
+        icon = when {
+            !overlaySelected -> Icons.Rounded.TouchApp
+            includeOverlay -> Icons.Rounded.CheckBox
+            else -> Icons.Rounded.CheckBoxOutlineBlank
+        },
+        enabled = !saving && !topHoldAnalyzing,
+        primary = includeOverlay,
+        compact = true,
+        modifier = modifier
+    )
+
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(spacing),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        ReviewIconButton(
+            icon = Icons.Rounded.Replay5,
+            contentDescription = tr("review.seek_backward_5s"),
+            enabled = !saving,
+            onClick = onSeekBackward,
+            modifier = Modifier.size(width = iconWidth, height = buttonHeight)
+        )
         PlaybackButton(
             isPlaying = isPlaying,
             enabled = !saving,
             onClick = onTogglePlayback,
-            modifier = Modifier.size(
-                width = if (isLandscape) 48.dp else 58.dp,
-                height = if (isLandscape) 40.dp else 42.dp
-            )
+            modifier = Modifier.size(width = playWidth, height = buttonHeight)
         )
-        TopOutCapsuleButton(
-            text = tr("review.top_hold_mask"),
-            onClick = onToggleOverlay,
-            icon = if (includeOverlay) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
-            enabled = !saving && overlayAvailable,
-            primary = includeOverlay,
-            compact = true,
-            modifier = Modifier.weight(1f)
+        ReviewIconButton(
+            icon = Icons.Rounded.Forward5,
+            contentDescription = tr("review.seek_forward_5s"),
+            enabled = !saving,
+            onClick = onSeekForward,
+            modifier = Modifier.size(width = iconWidth, height = buttonHeight)
         )
+        if (isLandscape && overlayAvailable) OverlayButton(Modifier.weight(1f))
         TopOutCapsuleButton(
             text = when {
                 saving -> tr("review.saving")
@@ -110,21 +147,40 @@ internal fun ReviewActionControls(
                 else -> tr("review.save_clip")
             },
             onClick = onSaveOrView,
-            enabled = !saving,
+            enabled = !saving && !topHoldAnalyzing,
             primary = true,
             compact = true,
             modifier = Modifier.weight(1f)
         )
         if (isLandscape) {
-            TopOutCapsuleButton(tr("camera.retake"), onRetake, enabled = !saving, compact = true, modifier = Modifier.weight(0.78f))
             TopOutCapsuleButton(tr("common.close"), onClose, enabled = !saving, compact = true, modifier = Modifier.weight(0.62f))
         }
     }
     if (!isLandscape) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TopOutCapsuleButton(tr("camera.retake"), onRetake, enabled = !saving, compact = true, modifier = Modifier.weight(1f))
+            if (overlayAvailable) OverlayButton(Modifier.weight(1f))
             TopOutCapsuleButton(tr("common.close"), onClose, enabled = !saving, compact = true, modifier = Modifier.weight(1f))
         }
+    }
+}
+
+@Composable
+internal fun ReviewIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier,
+        shape = RoundedCornerShape(999.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = TopOutColors.GrayButton),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+    ) {
+        Icon(icon, contentDescription, tint = Color.White)
     }
 }
 

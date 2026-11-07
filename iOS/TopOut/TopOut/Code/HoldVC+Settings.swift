@@ -29,7 +29,10 @@ extension HoldVC {
             self.saveUserSettings()
             self.view.setNeedsLayout()
             self.applySelectedCaptureFormatIfPossible { [weak self] in
-                self?.showCameraUI()
+                guard let self else { return }
+                self.showCameraUI()
+                // 자동 구간 탐지를 켰다면 준비 완료 전에 모델을 미리 불러 둔다.
+                if self.isAutoClipDetectionEnabled, self.isCameraStreamReady { self.preloadMobileSAMAfterCameraStarts() }
             }
         }
         vc.onLanguageChanged = { [weak self] in
@@ -122,9 +125,3 @@ extension HoldVC {
     }
 }
 
-
-extension HoldVC {
-    var requiresTopHoldSelection: Bool {
-        isTopHoldMaskingEnabled
-    }
-}

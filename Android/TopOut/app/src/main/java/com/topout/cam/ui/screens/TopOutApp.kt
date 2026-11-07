@@ -56,7 +56,7 @@ fun TopOutApp(viewModel: TopOutViewModel) {
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
     val lockCaptureOrientation = state.isBusy ||
         state.stage == CameraStage.SELECT || state.stage == CameraStage.RECORDING
-    // 큰 화면에서도 선택과 녹화 중에는 촬영 방향을 고정한다.
+    // 큰 화면에서도 경계선 측정·보정과 녹화 중에는 촬영 방향을 고정한다.
     val cameraIsLandscape = if (lockCaptureOrientation) state.isLandscape else isLandscape
 
     DisposableEffect(lifecycleOwner) {
@@ -113,10 +113,7 @@ fun TopOutApp(viewModel: TopOutViewModel) {
         enabled = state.stage == CameraStage.SELECT || state.stage == CameraStage.RECORDING
     ) {
         when (state.stage) {
-            CameraStage.SELECT -> {
-                // 분석 중에는 요청을 유지하고 완료 후에만 미리보기로 돌아간다.
-                if (!state.isBusy) viewModel.retakeSelection()
-            }
+            CameraStage.SELECT -> viewModel.retakeSelection()
             CameraStage.RECORDING -> {
                 // 촬영 시작과 파일 마무리 중에도 같은 안전 종료 경로를 사용한다.
                 if (state.recordingState in setOf(RecordingState.STARTING, RecordingState.RECORDING)) {
@@ -135,8 +132,10 @@ fun TopOutApp(viewModel: TopOutViewModel) {
             savingStatus = state.savingStatus,
             savingStatusSelection = state.savingStatusSelection,
             savedGalleryVideos = state.savedGalleryVideos,
+            topHoldAnalyzing = state.reviewTopHoldAnalyzing,
+            topHoldStatus = state.reviewTopHoldStatus,
             onSave = viewModel::saveSelectedClip,
-            onRetake = viewModel::retakeFromReview,
+            onSelectTopHold = viewModel::selectTopHoldInReview,
             onClose = viewModel::closeReview
         )
     } else {
@@ -158,9 +157,11 @@ fun TopOutApp(viewModel: TopOutViewModel) {
                                 modifier = Modifier.fillMaxSize(),
                                 onPreviewReady = viewModel::bindCamera,
                                 previewViewChanged = { previewView = it },
+                                // 준비 완료 뒤에는 측정한 화각을 지키려고 줌을 막는다.
                                 zoomEnabled = state.cameraReady &&
                                     state.stage == CameraStage.PREVIEW &&
-                                    state.recordingState == RecordingState.IDLE,
+                                    state.recordingState == RecordingState.IDLE &&
+                                    !state.isBusy,
                                 zoomTransitionInProgress = state.lensTransition.inProgress,
                                 zoomTransitionAwaitingGestureEnd =
                                     state.lensTransition.awaitingGestureEnd,
@@ -186,38 +187,36 @@ fun TopOutApp(viewModel: TopOutViewModel) {
                         modifier = Modifier.fillMaxSize()
                     )
 
-                    if (state.stage == CameraStage.SELECT) {
+                    // 준비 완료 뒤 실시간 영상 위에서 측정한 경계선을 보정한다. 탑홀드는 결과 화면에서 고른다.
+                    if (state.stage == CameraStage.SELECT && state.matLine.size >= 2) {
                         SelectionEditor(
                             matLine = state.matLine,
-                            holdMask = state.holdMask,
-                            onTapHold = viewModel::onHoldTapped,
                             onMatPointChanged = viewModel::updateMatPoint,
+                            onMatDragChanged = viewModel::onMatLineDragChanged,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
 
-                    if (
-                        state.stage == CameraStage.RECORDING &&
+                    val recordingVisible = state.stage == CameraStage.RECORDING &&
                         state.recordingState == RecordingState.RECORDING &&
-                        state.livePreviewEnabled &&
-                        state.settings.topHoldMaskingEnabled
-                    ) {
-                        state.holdMask?.let { HoldMaskOverlay(it, Modifier.fillMaxSize()) }
-                    }
-
+                        state.livePreviewVisible
+                    // 실시간 영상이 보이는 동안에는 녹화 중에도 경계선을 직접 보정할 수 있다.
                     if (
-                        state.stage == CameraStage.RECORDING &&
-                        state.recordingState == RecordingState.RECORDING &&
-                        state.livePreviewEnabled &&
+                        recordingVisible &&
                         state.settings.autoClipDetectionEnabled &&
                         state.matLine.size >= 2
                     ) {
-                        RecordingMatLineOverlay(state.matLine, Modifier.fillMaxSize())
+                        SelectionEditor(
+                            matLine = state.matLine,
+                            onMatPointChanged = viewModel::updateMatPoint,
+                            onMatDragChanged = viewModel::onMatLineDragChanged,
+                            modifier = Modifier.fillMaxSize()
+                        )
                     }
                         }
                 }
 
-                if (state.stage == CameraStage.RECORDING && !state.livePreviewEnabled) {
+                if (state.stage == CameraStage.RECORDING && !state.livePreviewVisible) {
                     PowerSavingRecordingOverlay(
                         elapsedSeconds = state.recordingElapsedSeconds,
                         recordingStarted = state.recordingState == RecordingState.RECORDING,
@@ -253,9 +252,9 @@ fun TopOutApp(viewModel: TopOutViewModel) {
                         zoom = state.zoomFactor,
                         showTip = state.settings.helpEnabled,
                         isLandscape = isLandscape,
-                        readyTitle = TopOutCopy.readyButtonTitle(state.settings),
-                        enabled = state.cameraReady && !state.isBusy &&
-                            !state.lensTransition.inProgress,
+                        // 자동 구간 탐지는 준비 완료로 경계선을 측정하고, 끄면 바로 녹화를 시작한다.
+                        showsReady = state.settings.autoClipDetectionEnabled,
+                        enabled = state.cameraReady && !state.isBusy && !state.lensTransition.inProgress,
                         onReady = {
                             viewModel.onReady(
                                 frameProvider = { previewView?.bitmap },
@@ -263,26 +262,21 @@ fun TopOutApp(viewModel: TopOutViewModel) {
                                 targetRotation = previewView?.display?.rotation ?: state.cameraTargetRotation
                             )
                         },
+                        onRecord = viewModel::startRecording,
                         onSettings = viewModel::showSettings,
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
                     CameraStage.SELECT -> SelectionControls(
-                        canRecord = !state.isBusy && when {
-                            state.settings.requiresTopHoldSelection -> state.holdMask != null
-                            state.settings.autoClipDetectionEnabled -> state.matLine.size >= 2
-                            else -> false
-                        },
-                        enabled = !state.isBusy,
-                        showTip = state.settings.helpEnabled &&
-                            TopOutCopy.selectionTip(state.settings).isNotEmpty(),
-                        tipText = TopOutCopy.selectionTip(state.settings),
+                        canRecord = !state.isBusy && state.cameraReady && state.matLine.size >= 2,
+                        showTip = state.settings.helpEnabled,
+                        tipText = TopOutCopy.selectionTip(),
                         isLandscape = isLandscape,
                         onRetake = viewModel::retakeSelection,
                         onRecord = viewModel::startRecording,
                         modifier = Modifier.align(Alignment.BottomCenter)
                     )
                     CameraStage.RECORDING -> if (
-                        state.livePreviewEnabled && state.recordingState == RecordingState.RECORDING
+                        state.livePreviewVisible && state.recordingState == RecordingState.RECORDING
                     ) {
                         RecordingControls(
                             elapsedSeconds = state.recordingElapsedSeconds,

@@ -5,7 +5,6 @@ extension HoldVC {
     // MARK: - 화면 구성
     func setupUI() {
         view.addSubview(camView)
-        view.addSubview(overlayView)
         view.addSubview(recordingMatLineView)
         view.addSubview(powerSavingOverlayView)
         powerSavingOverlayView.addSubview(powerSavingCountdownLabel)
@@ -13,7 +12,6 @@ extension HoldVC {
         powerSavingOverlayView.addSubview(powerSavingElapsedLabel)
         view.addSubview(camHint)
         view.addSubview(previewTipLabel)
-        view.addSubview(readyBtn)
         view.addSubview(manualStopBtn)
         view.addSubview(livePreviewToggleButton)
         view.addSubview(settingsBtn)
@@ -22,10 +20,10 @@ extension HoldVC {
         view.addSubview(selectView)
         selectView.addSubview(scrollView)
         scrollView.addSubview(imgView)
-        imgView.addSubview(selectOverlayView)
         imgView.addSubview(matLineView)
         selectView.addSubview(selectHint)
         selectView.addSubview(selectTipLabel)
+        selectView.addSubview(readyBtn)
         selectView.addSubview(retakeBtn)
         selectView.addSubview(recordBtn)
 
@@ -40,20 +38,21 @@ extension HoldVC {
             self?.matLinePoints = points
         }
 
-        readyBtn.addTarget(self, action: #selector(onReady), for: .touchUpInside)
         manualStopBtn.addTarget(self, action: #selector(onManualStop), for: .touchUpInside)
         powerSavingRecordButton.addTarget(self, action: #selector(onManualStop), for: .touchUpInside)
         livePreviewToggleButton.addTarget(self, action: #selector(onToggleLivePreviewDuringRecording), for: .touchUpInside)
         settingsBtn.addTarget(self, action: #selector(onSettings), for: .touchUpInside)
+        readyBtn.addTarget(self, action: #selector(onReady), for: .touchUpInside)
         retakeBtn.addTarget(self, action: #selector(onRetake), for: .touchUpInside)
         recordBtn.addTarget(self, action: #selector(onRecordStart), for: .touchUpInside)
-
-        let tap = UITapGestureRecognizer(target: self, action: #selector(onSelectTap(_:)))
-        tap.numberOfTapsRequired = 1
-        imgView.addGestureRecognizer(tap)
+        applyRecordStartButtonStyle()
 
         let cameraPinch = UIPinchGestureRecognizer(target: self, action: #selector(onCameraPinch(_:)))
         camView.addGestureRecognizer(cameraPinch)
+        // 녹화 전 화면은 안내 레이어가 프리뷰 위에 있으므로 같은 줌 제스처를 연결한다.
+        // 준비 완료 뒤 보정 화면에서는 측정한 화각을 지키려고 줌을 막는다.
+        let selectionPinch = UIPinchGestureRecognizer(target: self, action: #selector(onCameraPinch(_:)))
+        imgView.addGestureRecognizer(selectionPinch)
 
         loadUserSettings()
         showCameraUI()
@@ -78,8 +77,6 @@ extension HoldVC {
 
         camView.frame = activeFrame
         previewLayer?.frame = camView.bounds
-        overlayView.frame = activeFrame
-        overlayView.contentMode = .scaleAspectFill
         recordingMatLineView.frame = activeFrame
         launchImageView.frame = bounds
         powerSavingOverlayView.frame = bounds
@@ -104,26 +101,25 @@ extension HoldVC {
 
         if imgView.bounds.size != scrollView.bounds.size {
             imgView.frame = scrollView.bounds
-            selectOverlayView.frame = imgView.bounds
             matLineView.frame = imgView.bounds
             scrollView.contentSize = imgView.bounds.size
             resetZoom()
         } else {
-            selectOverlayView.frame = imgView.bounds
             matLineView.frame = imgView.bounds
         }
 
-        view.bringSubviewToFront(overlayView)
         view.bringSubviewToFront(recordingMatLineView)
         view.bringSubviewToFront(powerSavingOverlayView)
         view.bringSubviewToFront(camHint)
         view.bringSubviewToFront(previewTipLabel)
         view.bringSubviewToFront(settingsBtn)
         view.bringSubviewToFront(zoomLabel)
-        view.bringSubviewToFront(readyBtn)
         view.bringSubviewToFront(manualStopBtn)
         view.bringSubviewToFront(livePreviewToggleButton)
         view.bringSubviewToFront(selectView)
+        // 선택 레이어가 화면 전체를 덮으므로 설정과 줌 표시는 그 위에 둔다.
+        view.bringSubviewToFront(settingsBtn)
+        view.bringSubviewToFront(zoomLabel)
         view.bringSubviewToFront(spinner)
         if !launchImageView.isHidden { view.bringSubviewToFront(launchImageView) }
     }
@@ -136,12 +132,23 @@ extension HoldVC {
         let tipFrame = CGRect(x: 32, y: controlY - 44, width: bounds.width - 64, height: 34)
         previewTipLabel.frame = tipFrame
         selectTipLabel.frame = tipFrame
-        readyBtn.frame = CGRect(x: bounds.midX - 90, y: controlY, width: 180, height: buttonHeight)
+        let centerButtonFrame = CGRect(x: bounds.midX - 90, y: controlY, width: 180, height: buttonHeight)
+        readyBtn.frame = centerButtonFrame
+        if mode == .select {
+            // 보정 화면: 다시 촬영 · 녹화 시작
+            let buttonWidth = min((bounds.width - 58) * 0.5, CGFloat(168))
+            let spacing: CGFloat = 12
+            let startX = bounds.midX - (buttonWidth * 2 + spacing) * 0.5
+            retakeBtn.frame = CGRect(x: startX, y: controlY, width: buttonWidth, height: buttonHeight)
+            recordBtn.frame = CGRect(x: startX + buttonWidth + spacing, y: controlY, width: buttonWidth, height: buttonHeight)
+        } else {
+            recordBtn.frame = centerButtonFrame
+        }
 
         let recordingButtonHeight: CGFloat = 54
         let recordingButtonWidth = min((bounds.width - 58) * 0.5, CGFloat(168))
         let recordingButtonSpacing: CGFloat = 12
-        if recState == .buffering && isDeveloperModeEnabled {
+        if recState == .buffering && isLivePreviewVisibleDuringRecording {
             let totalWidth = recordingButtonWidth * 2 + recordingButtonSpacing
             let startX = bounds.midX - totalWidth * 0.5
             livePreviewToggleButton.frame = CGRect(
@@ -161,13 +168,6 @@ extension HoldVC {
         }
         settingsBtn.frame = CGRect(x: bounds.width - safe.right - 70, y: controlY + 5, width: 44, height: 44)
         zoomLabel.frame = CGRect(x: safe.left + 22, y: controlY + 13, width: 64, height: 28)
-
-        let buttonWidth = min((bounds.width - 58) * 0.5, CGFloat(168))
-        let spacing: CGFloat = 12
-        let totalWidth = buttonWidth * 2 + spacing
-        let startX = bounds.midX - totalWidth * 0.5
-        retakeBtn.frame = CGRect(x: startX, y: controlY, width: buttonWidth, height: buttonHeight)
-        recordBtn.frame = CGRect(x: startX + buttonWidth + spacing, y: controlY, width: buttonWidth, height: buttonHeight)
     }
 
     private func layoutLandscapeControls(in bounds: CGRect, safe: UIEdgeInsets) {
@@ -175,8 +175,18 @@ extension HoldVC {
         let controlY = bounds.height - safe.bottom - buttonHeight - 12
         let centerX = bounds.midX
 
-        readyBtn.frame = CGRect(x: centerX - 84, y: controlY, width: 168, height: buttonHeight)
-        if recState == .buffering && isDeveloperModeEnabled {
+        let centerButtonFrame = CGRect(x: centerX - 84, y: controlY, width: 168, height: buttonHeight)
+        readyBtn.frame = centerButtonFrame
+        if mode == .select {
+            let buttonWidth: CGFloat = 176
+            let spacing: CGFloat = 12
+            let startX = centerX - (buttonWidth * 2 + spacing) * 0.5
+            retakeBtn.frame = CGRect(x: startX, y: controlY, width: buttonWidth, height: buttonHeight)
+            recordBtn.frame = CGRect(x: startX + buttonWidth + spacing, y: controlY, width: buttonWidth, height: buttonHeight)
+        } else {
+            recordBtn.frame = centerButtonFrame
+        }
+        if recState == .buffering && isLivePreviewVisibleDuringRecording {
             let buttonWidth: CGFloat = 176
             let spacing: CGFloat = 12
             let totalWidth = buttonWidth * 2 + spacing
@@ -186,15 +196,8 @@ extension HoldVC {
         } else {
             manualStopBtn.frame = CGRect(x: centerX - 98, y: controlY, width: 196, height: buttonHeight)
         }
-        zoomLabel.frame = CGRect(x: readyBtn.frame.minX - 78, y: controlY + 10, width: 64, height: 28)
-        settingsBtn.frame = CGRect(x: readyBtn.frame.maxX + 16, y: controlY + 2, width: 44, height: 44)
-
-        let buttonWidth: CGFloat = 176
-        let spacing: CGFloat = 12
-        let totalWidth = buttonWidth * 2 + spacing
-        let startX = centerX - totalWidth * 0.5
-        retakeBtn.frame = CGRect(x: startX, y: controlY, width: buttonWidth, height: buttonHeight)
-        recordBtn.frame = CGRect(x: startX + buttonWidth + spacing, y: controlY, width: buttonWidth, height: buttonHeight)
+        zoomLabel.frame = CGRect(x: centerButtonFrame.minX - 78, y: controlY + 10, width: 64, height: 28)
+        settingsBtn.frame = CGRect(x: centerButtonFrame.maxX + 16, y: controlY + 2, width: 44, height: 44)
 
         let tipWidth = min(bounds.width - safe.left - safe.right - 40, CGFloat(380))
         let landscapeTipFrame = CGRect(
@@ -241,7 +244,7 @@ extension HoldVC {
             height: elapsedHeight
         )
 
-        if recState == .buffering && !isDeveloperModeEnabled {
+        if recState == .buffering && !isLivePreviewVisibleDuringRecording {
             let toggleWidth = min(bounds.width - 72, isLandscape ? CGFloat(176) : CGFloat(198))
             let toggleHeight: CGFloat = 42
             livePreviewToggleButton.frame = CGRect(

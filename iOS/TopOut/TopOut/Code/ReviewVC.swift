@@ -10,10 +10,12 @@ final class ReviewVC: UIViewController {
         let includeTopHoldOverlay: Bool
     }
 
-    private let recordingURL: URL
+    let recordingURL: URL
     let duration: TimeInterval
-    let topHoldOverlayImage: UIImage?
-    let topHoldOverlayToggleLocked: Bool
+    /// 결과 화면에서 탑홀드를 탭해 만든 마스크. 저장할 때 이 마스크를 쓴다.
+    var topHoldOverlayImage: UIImage?
+    /// 탑홀드 마스킹을 켠 녹화는 결과 화면에서 멈춘 프레임의 탑홀드를 탭해 마스크를 지정한다.
+    let topHoldSelectionEnabled: Bool
     let autoClipDetectionEnabled: Bool
     let helpEnabled: Bool
     private let recordingAspectRatio: RecordingAspectRatio
@@ -43,6 +45,17 @@ final class ReviewVC: UIViewController {
     var activePlaybackEnd: TimeInterval?
     var isWaitingForFirstPlaybackTimestamp = false
 
+    /// 영상과 탑홀드 마스크를 함께 담아 확대·이동하는 컨테이너. 터치는 아래 뷰가 받는다.
+    let videoContainerView: UIView = {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        return view
+    }()
+    var videoZoomScale: CGFloat = 1
+    var videoZoomOffset: CGPoint = .zero
+    var videoZoomPinchRecognizer: UIPinchGestureRecognizer?
+    var videoZoomPanRecognizer: UIPanGestureRecognizer?
+
     let topHoldOverlayView: UIImageView = {
         let view = UIImageView()
         view.contentMode = .scaleAspectFit
@@ -53,8 +66,12 @@ final class ReviewVC: UIViewController {
     }()
 
     var onClose: (() -> Void)?
-    var onRetake: (() -> Void)?
     var onSaveTrim: ((_ startSeconds: TimeInterval, _ endSeconds: TimeInterval, _ includeTopHoldOverlay: Bool) -> Void)?
+    /// 프레임 이미지와 이미지 좌표의 탭 위치로 탑홀드 마스크를 만든다. 실패하면 nil을 돌려준다.
+    var onSelectTopHold: ((_ frame: UIImage, _ point: CGPoint, _ completion: @escaping (UIImage?) -> Void) -> Void)?
+    var isSelectingTopHold = false
+    var reviewFrameGenerator: AVAssetImageGenerator?
+    var hasShownTopHoldTapTip = false
 
     let statusLabel: UILabel = {
         let label = UILabel()
@@ -218,22 +235,27 @@ final class ReviewVC: UIViewController {
         return btn
     }()
 
-    let retakeBtn: UIButton = {
+    /// 선택 구간 안에서 5초 뒤로 이동하는 아이콘 버튼.
+    let seekBackwardBtn: UIButton = ReviewVC.makeSeekButton(
+        systemName: "gobackward.5",
+        accessibilityLabel: L("review.seek_backward_5s")
+    )
+
+    /// 선택 구간 안에서 5초 앞으로 이동하는 아이콘 버튼.
+    let seekForwardBtn: UIButton = ReviewVC.makeSeekButton(
+        systemName: "goforward.5",
+        accessibilityLabel: L("review.seek_forward_5s")
+    )
+
+    private static func makeSeekButton(systemName: String, accessibilityLabel: String) -> UIButton {
         var config = UIButton.Configuration.gray()
-        config.title = L("camera.retake")
         config.cornerStyle = .capsule
-        config.titleAlignment = .center
-        config.titleLineBreakMode = .byWordWrapping
-        config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
+        config.image = UIImage(systemName: systemName)
+        config.contentInsets = NSDirectionalEdgeInsets(top: 7, leading: 10, bottom: 7, trailing: 10)
         let btn = UIButton(configuration: config)
-        btn.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
-        btn.titleLabel?.numberOfLines = 2
-        btn.titleLabel?.textAlignment = .center
-        btn.titleLabel?.lineBreakMode = .byWordWrapping
-        btn.titleLabel?.adjustsFontSizeToFitWidth = true
-        btn.titleLabel?.minimumScaleFactor = 0.78
+        btn.accessibilityLabel = accessibilityLabel
         return btn
-    }()
+    }
 
     let closeBtn: UIButton = {
         var config = UIButton.Configuration.gray()
@@ -258,20 +280,17 @@ final class ReviewVC: UIViewController {
         defaultStart: TimeInterval,
         defaultEnd: TimeInterval,
         detectedRanges: [ReviewClipRange],
-        topHoldOverlayImage: UIImage?,
-        includeTopHoldOverlayByDefault: Bool,
-        topHoldOverlayToggleLocked: Bool,
+        topHoldSelectionEnabled: Bool,
         autoClipDetectionEnabled: Bool,
         helpEnabled: Bool,
         recordingAspectRatio: RecordingAspectRatio
     ) {
         self.recordingURL = recordingURL
         self.duration = Swift.max(0.01, duration)
-        self.topHoldOverlayImage = topHoldOverlayImage
-        self.topHoldOverlayToggleLocked = topHoldOverlayToggleLocked && topHoldOverlayImage != nil
+        self.topHoldSelectionEnabled = topHoldSelectionEnabled
         self.autoClipDetectionEnabled = autoClipDetectionEnabled
         self.detectedRanges = detectedRanges
-        self.includeTopHoldOverlay = includeTopHoldOverlayByDefault && topHoldOverlayImage != nil
+        self.includeTopHoldOverlay = false
         self.helpEnabled = helpEnabled
         self.recordingAspectRatio = recordingAspectRatio
 
@@ -304,10 +323,11 @@ final class ReviewVC: UIViewController {
         overrideUserInterfaceStyle = .dark
         view.backgroundColor = .black
 
+        view.addSubview(videoContainerView)
+        videoContainerView.addSubview(topHoldOverlayView)
         view.addSubview(statusLabel)
         view.addSubview(previousRangeBtn)
         view.addSubview(nextRangeBtn)
-        view.addSubview(topHoldOverlayView)
         view.addSubview(detectedRangeLabel)
         view.addSubview(rangeLabel)
         view.addSubview(selectedRangeZoomLabel)
@@ -317,7 +337,8 @@ final class ReviewVC: UIViewController {
         view.addSubview(playPauseBtn)
         view.addSubview(overlayToggleBtn)
         view.addSubview(saveBtn)
-        view.addSubview(retakeBtn)
+        view.addSubview(seekBackwardBtn)
+        view.addSubview(seekForwardBtn)
         view.addSubview(closeBtn)
 
         NotificationCenter.default.addObserver(
@@ -358,12 +379,17 @@ final class ReviewVC: UIViewController {
         playPauseBtn.addTarget(self, action: #selector(onTapPlayPause), for: .touchUpInside)
         overlayToggleBtn.addTarget(self, action: #selector(onTapOverlayToggle), for: .touchUpInside)
         saveBtn.addTarget(self, action: #selector(onTapSave), for: .touchUpInside)
-        retakeBtn.addTarget(self, action: #selector(onTapRetake), for: .touchUpInside)
+        seekBackwardBtn.addTarget(self, action: #selector(onTapSeekBackward), for: .touchUpInside)
+        seekForwardBtn.addTarget(self, action: #selector(onTapSeekForward), for: .touchUpInside)
         closeBtn.addTarget(self, action: #selector(onTapClose), for: .touchUpInside)
+
+        let videoTap = UITapGestureRecognizer(target: self, action: #selector(onVideoTap(_:)))
+        videoTap.delegate = self
+        view.addGestureRecognizer(videoTap)
+        installVideoZoomGestures()
 
         updateDetectedRangeNavigationUI()
         refreshSelectedRangeZoomControl(recenter: true)
-        topHoldOverlayView.image = topHoldOverlayImage
         updateSaveButtonMode()
 
         let playerItem = AVPlayerItem(url: recordingURL)
@@ -379,7 +405,7 @@ final class ReviewVC: UIViewController {
 
         let layer = AVPlayerLayer(player: player)
         layer.videoGravity = .resizeAspect
-        view.layer.insertSublayer(layer, at: 0)
+        videoContainerView.layer.insertSublayer(layer, at: 0)
         self.player = player
         self.playerLayer = layer
 
@@ -437,11 +463,24 @@ final class ReviewVC: UIViewController {
         .allButUpsideDown
     }
 
+    /// 화면에 실제로 그려진 영상 영역. 재생 준비 전에는 비율로 계산한다.
+    var displayedVideoRect: CGRect {
+        if let rect = playerLayer?.videoRect, rect.width > 0, rect.height > 0 { return rect }
+        return recordingAspectRatio.displayRect(in: view.bounds, isLandscape: view.bounds.width > view.bounds.height)
+    }
+
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        playerLayer?.frame = view.bounds
-        topHoldOverlayView.frame = view.bounds
+        let containerBounds = CGRect(origin: .zero, size: view.bounds.size)
+        if videoContainerView.bounds.size != containerBounds.size {
+            // 화면 크기가 바뀌면 영상 위치가 달라지므로 확대를 풀고 다시 배치한다.
+            resetVideoZoom()
+            videoContainerView.bounds = containerBounds
+        }
+        videoContainerView.center = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+        playerLayer?.frame = containerBounds
+        topHoldOverlayView.frame = containerBounds
 
         let safe = view.safeAreaInsets
         let w = view.bounds.width
@@ -500,6 +539,7 @@ final class ReviewVC: UIViewController {
     }
 
     deinit {
+        reviewFrameGenerator?.cancelAllCGImageGeneration()
         cancelGalleryAssetRequest()
         sliderTimeBubbleHideWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
@@ -512,5 +552,27 @@ final class ReviewVC: UIViewController {
             player?.removeTimeObserver(timeObserver)
         }
         player?.pause()
+    }
+}
+
+extension ReviewVC: UIGestureRecognizerDelegate {
+    /// 버튼·슬라이더가 아닌 영상 영역을 직접 만진 경우에만 탑홀드 보정과 확대를 받는다.
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        touch.view === view
+    }
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === videoZoomPinchRecognizer { return topHoldSelectionEnabled }
+        // 한 손가락 이동은 확대한 뒤에만 받아 평소 탭과 겹치지 않게 한다.
+        if gestureRecognizer === videoZoomPanRecognizer { return topHoldSelectionEnabled && isVideoZoomed }
+        return true
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        let zoomRecognizers: [UIGestureRecognizer?] = [videoZoomPinchRecognizer, videoZoomPanRecognizer]
+        return zoomRecognizers.contains { $0 === gestureRecognizer } && zoomRecognizers.contains { $0 === otherGestureRecognizer }
     }
 }

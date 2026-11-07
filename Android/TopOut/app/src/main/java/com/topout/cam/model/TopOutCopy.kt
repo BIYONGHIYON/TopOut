@@ -10,36 +10,17 @@ import com.topout.cam.localization.tr
  */
 object TopOutCopy {
     fun previewGuidance(settings: AppSettings): String = when {
-        settings.requiresTopHoldSelection && settings.autoClipDetectionEnabled ->
+        settings.topHoldMaskingEnabled && settings.autoClipDetectionEnabled ->
             tr("camera.preview_both")
-        settings.requiresTopHoldSelection ->
+        settings.topHoldMaskingEnabled ->
             tr("camera.preview_hold")
         settings.autoClipDetectionEnabled ->
             tr("camera.preview_mat")
         else -> ""
     }
 
-    fun readyButtonTitle(settings: AppSettings): String =
-        if (settings.autoClipDetectionEnabled || settings.requiresTopHoldSelection) {
-            tr("camera.ready")
-        } else {
-            tr("camera.start_recording")
-        }
-
-    fun selectionGuidance(settings: AppSettings): String = when {
-        settings.autoClipDetectionEnabled && settings.requiresTopHoldSelection ->
-            tr("camera.selection_both")
-        settings.autoClipDetectionEnabled ->
-            tr("camera.selection_mat")
-        else -> tr("camera.selection_hold")
-    }
-
-    fun selectionTip(settings: AppSettings): String =
-        if (settings.requiresTopHoldSelection) {
-            ""
-        } else {
-            tr("camera.tip_adjust_line")
-        }
+    /** 준비 완료 뒤 보정 화면 Tip. */
+    fun selectionTip(): String = tr("camera.tip_adjust_line")
 
     fun countdownStatus(settings: AppSettings, remaining: Int? = null): String {
         if (remaining != null && remaining > 0) {
@@ -51,10 +32,6 @@ object TopOutCopy {
     fun activeRecordingStatus(settings: AppSettings): String =
         if (settings.autoClipDetectionEnabled) tr("camera.waiting_motion") else tr("camera.recording")
 
-    fun climbingStatus(settings: AppSettings): String =
-        if (settings.topHoldMaskingEnabled) {
-            tr("camera.tracking_hold")
-        } else {
-            tr("camera.tracking_peak")
-        }
+    /** 탑홀드는 결과 화면에서만 고르므로 녹화 중에는 항상 가장 높이 올라간 순간을 추적한다. */
+    fun climbingStatus(): String = tr("camera.tracking_peak")
 }

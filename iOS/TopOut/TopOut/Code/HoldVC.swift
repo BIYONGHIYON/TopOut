@@ -14,10 +14,13 @@ final class AnalysisCancellationToken: @unchecked Sendable {
         lock.unlock()
     }
 
-    func check() throws {
+    var isCancelled: Bool {
         lock.lock()
-        let isCancelled = cancelled
-        lock.unlock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    func check() throws {
         if isCancelled { throw AnalysisCancellationError.cancelled }
     }
 }
@@ -28,14 +31,6 @@ final class HoldVC: UIViewController {
     // MARK: - 카메라 화면
     let camView = UIView()
     var previewLayer: AVCaptureVideoPreviewLayer?
-
-    let overlayView: UIImageView = {
-        let view = UIImageView()
-        view.contentMode = .scaleAspectFit
-        view.clipsToBounds = true
-        view.isUserInteractionEnabled = false
-        return view
-    }()
 
     let launchImageView: UIImageView = {
         let view = UIImageView()
@@ -238,14 +233,6 @@ final class HoldVC: UIViewController {
         return view
     }()
 
-    let selectOverlayView: UIImageView = {
-        let view = UIImageView()
-        view.contentMode = .scaleAspectFit
-        view.clipsToBounds = true
-        view.isUserInteractionEnabled = false
-        return view
-    }()
-
     let matLineView = MatLineView()
 
     /// 자동 구간 탐지 중 실시간 화면에 표시하는 읽기 전용 매트 경계선이다.
@@ -259,7 +246,7 @@ final class HoldVC: UIViewController {
 
     let selectHint: UILabel = {
         let label = UILabel()
-        label.text = L("camera.selection_both")
+        label.text = L("camera.preview_mat")
         label.textColor = .white
         label.textAlignment = .center
         label.font = .systemFont(ofSize: 14, weight: .semibold)
@@ -346,6 +333,8 @@ final class HoldVC: UIViewController {
     /// 통화 중처럼 마이크를 다른 클라이언트가 점유하면 false로 내려가고 영상만 녹화합니다.
     var isAudioCaptureEnabled = false
     var activeCameraDevice: AVCaptureDevice?
+    /// iOS 17+ `AVCaptureDevice.RotationCoordinator`. iOS 16 타깃이라 타입을 지운 채 보관한다.
+    var cameraRotationCoordinator: AnyObject?
     var selectedRecordingResolution: RecordingResolution = .fhd
     var selectedRecordingFrameRate: RecordingFrameRate = .fps60
     var selectedRecordingAspectRatio: RecordingAspectRatio = .story916
@@ -354,18 +343,23 @@ final class HoldVC: UIViewController {
 
     // MARK: - 이미지 분할 상태
     var mode: ScreenMode = .camera
-    var frameImage: UIImage?
-    var pendingOverlay: UIImage?
-    var pendingTopBox: CGRect?
     var matLinePoints: [CGPoint] = []
-    var selectionRequestID = 0
     var matBoundaryAnalysisTimeoutWorkItem: DispatchWorkItem?
-    var topHoldAnalysisTimeoutWorkItem: DispatchWorkItem?
     var matBoundaryAnalysisToken: AnalysisCancellationToken?
-    var topHoldAnalysisToken: AnalysisCancellationToken?
-    var automaticRecordingStartWorkItem: DispatchWorkItem?
-    var automaticRecordingWarningWorkItem: DispatchWorkItem?
+    /// 결과 화면 탑홀드 지정 분석. 새로 탭하면 이전 분석을 취소한다.
+    var reviewTopHoldToken: AnalysisCancellationToken?
+
+    /// 준비 완료 경계선 측정 요청. 재촬영·백그라운드 전환으로 늦게 도착한 결과를 버린다.
+    var matMeasurementRequestID = 0
+    /// 준비 완료 프레임 캡처나 경계선 분석이 진행 중이면 true.
     var isBusy = false
+    /// 촬영 흐름을 벗어나면 비동기 준비 완료 결과를 무효화한다.
+    var readyFlowRequestID = 0
+
+    /// 녹화 중 실시간 영상 설정이 켜져 있으면 true.
+    var isLivePreviewVisibleDuringRecording: Bool {
+        isDeveloperModeEnabled
+    }
 
     var encoder: MobileSAM_Encoder?
     var decoder: MobileSAM_Decoder?
@@ -381,8 +375,6 @@ final class HoldVC: UIViewController {
     var recordingCountdownWorkItems: [DispatchWorkItem] = []
     /// 이전 녹화 요청의 지연 카운트다운을 무효화한다.
     var recordingRequestGeneration = 0
-    /// 촬영 흐름을 벗어나면 비동기 준비 완료 결과를 무효화한다.
-    var readyFlowRequestID = 0
     var recordingElapsedTimer: Timer?
     var recordingElapsedStartDate: Date?
     var recordingStatusMessage: String?
@@ -464,6 +456,7 @@ final class HoldVC: UIViewController {
 
         setupUI()
         setupMotionCallbacks()
+        configureMatLineCallbacks()
         registerTraitChangeHandlers()
         showLaunchScreen()
         // 카메라 권한과 첫 화면은 모델 로딩을 기다리지 않는다.
@@ -498,7 +491,7 @@ final class HoldVC: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         setScreenAwake(true)
-        if mode == .camera || mode == .recording { startCamera() }
+        if mode == .camera || mode == .select || mode == .recording { startCamera() }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -526,11 +519,8 @@ final class HoldVC: UIViewController {
     deinit {
         NotificationCenter.default.removeObserver(self)
         matBoundaryAnalysisTimeoutWorkItem?.cancel()
-        topHoldAnalysisTimeoutWorkItem?.cancel()
         matBoundaryAnalysisToken?.cancel()
-        topHoldAnalysisToken?.cancel()
-        automaticRecordingStartWorkItem?.cancel()
-        automaticRecordingWarningWorkItem?.cancel()
+        reviewTopHoldToken?.cancel()
         cancelRecordingCountdown()
         recordingElapsedTimer?.invalidate()
         recordingStorageTimer?.invalidate()

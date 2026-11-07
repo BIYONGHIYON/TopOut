@@ -61,7 +61,8 @@ extension HoldVC {
         }
     }
 
-    func decode(point: CGPoint, embedding: MLMultiArray, scale: CGFloat) throws -> MLMultiArray {
+    /// 한 점 프롬프트의 다중 마스크 logit과 채널별 신뢰도를 돌려준다.
+    func decode(point: CGPoint, embedding: MLMultiArray, scale: CGFloat) throws -> (masks: MLMultiArray, iou: MLMultiArray) {
         guard let decoder else { throw AppError.modelNotReady }
 
         let x = Float(point.x * scale)
@@ -91,7 +92,7 @@ extension HoldVC {
         )
 
         let output = try decoder.prediction(input: input)
-        return output.low_res_masks
+        return (output.low_res_masks, output.iou_predictions)
     }
 
     func preprocess(_ image: UIImage) throws -> (MLMultiArray, CGFloat) {

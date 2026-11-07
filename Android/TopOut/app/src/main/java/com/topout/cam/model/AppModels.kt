@@ -9,7 +9,7 @@ import com.topout.cam.localization.tr
 import kotlin.math.max
 import kotlin.math.min
 
-/** UI stages mirror HoldVC's camera, selection, recording and review modes. */
+/** UI stages mirror HoldVC's camera, mat-line selection, recording and review modes. */
 enum class CameraStage { PREVIEW, SELECT, RECORDING, REVIEW }
 enum class RecordingState { IDLE, STARTING, RECORDING, FINALIZING, EXPORTING }
 
@@ -105,10 +105,6 @@ data class AppSettings(
     /** Mirrors iOS developer mode: true keeps the camera visible while recording. */
     val livePreviewDuringRecordingEnabled: Boolean = false
 ) {
-    /** iOS only requires a top-hold selection when top-hold masking is enabled. */
-    val requiresTopHoldSelection: Boolean
-        get() = topHoldMaskingEnabled
-
     /** The four feature switches are independent in the completed iOS app. */
     fun normalized(): AppSettings = this
 }
@@ -140,7 +136,12 @@ data class RecordedVideo(
     val defaultEndSeconds: Double,
     val overlayBitmap: Bitmap?,
     val aspectRatio: RecordingAspectRatio,
-    val automaticStopNotice: RecordingStopNotice? = null
+    val automaticStopNotice: RecordingStopNotice? = null,
+    /** 탑홀드 마스킹을 켠 녹화는 결과 화면에서 멈춘 프레임의 탑홀드를 탭해 마스크를 지정한다. */
+    val topHoldSelectionEnabled: Boolean = false,
+    /** 마스크 비트맵을 영상과 같은 크기로 다시 만들 때 쓰는 표시 크기. */
+    val overlayWidth: Int = 0,
+    val overlayHeight: Int = 0
 )
 
 /** Exact review selection used to keep save progress/results isolated per detected clip. */
@@ -241,7 +242,6 @@ data class TopOutUiState(
     val settings: AppSettings = AppSettings(),
     val capabilities: CameraCapabilities = CameraCapabilities(),
     val matLine: List<Offset> = emptyList(),
-    val holdMask: HoldMask? = null,
     val zoomFactor: Float = TopOutConfig.MinZoom,
     val lensTransition: LensTransitionUiState = LensTransitionUiState(),
     val recordingElapsedSeconds: Double = 0.0,
@@ -251,10 +251,13 @@ data class TopOutUiState(
     val detectedRanges: List<ClipRange> = emptyList(),
     val recordedVideo: RecordedVideo? = null,
     val settingsVisible: Boolean = false,
-    /** Mirrors HoldVC.isBusy while capturing a frame or running MobileSAM. */
+    /** Mirrors HoldVC.isBusy while capturing the Ready frame or running MobileSAM. */
     val isBusy: Boolean = false,
     val saving: Boolean = false,
     val savingStatus: String? = null,
+    /** 결과 화면 탑홀드 지정 중이거나 방금 끝난 결과 안내. */
+    val reviewTopHoldAnalyzing: Boolean = false,
+    val reviewTopHoldStatus: String? = null,
     /** Selection that owns [savingStatus], so messages never leak into another detected clip. */
     val savingStatusSelection: GalleryClipSelection? = null,
     /** Every clip whose MediaStore row and contents were reopened successfully. */
@@ -266,7 +269,11 @@ data class TopOutUiState(
     val isLandscape: Boolean = false,
     /** CameraX target rotation frozen at Ready so large-screen window rotations cannot move FOV. */
     val cameraTargetRotation: Int = 0
-)
+) {
+    /** 녹화 중 실시간 영상 설정이 켜져 있으면 true. */
+    val livePreviewVisible: Boolean
+        get() = livePreviewEnabled
+}
 
 /** Values are a direct port of Config.swift. */
 object TopOutConfig {
@@ -275,16 +282,11 @@ object TopOutConfig {
     val SamMean = floatArrayOf(123.675f, 116.28f, 103.53f)
     val SamStd = floatArrayOf(58.395f, 57.12f, 57.375f)
 
-    const val HsvTolerance = 0.15f
-    val LooseHsvTolerances = floatArrayOf(0.18f, 0.21f)
-    const val WallSpanRatio = 0.25f
-    const val TinyAreaRatio = 0.0006f
-    val SearchRadii = listOf(0.01f, 0.02f, 0.03f)
-    const val MaxCorrectionDecodes = 8
-    const val ColorSampleRadius = 1
-    const val FallbackHoldMaskDiameterRatio = 0.075f
-    const val FallbackHoldMaskMinDiameter = 44f
-    const val FallbackHoldMaskMaxDiameterRatio = 0.12f
+    // 탑홀드 선택 규칙은 sam/HoldOutlineExtractor.Tuning에 있다.
+    /** 최소 표시 원 지름: 짧은 변의 3.75%, 22px 이상, 짧은 변의 6% 이하. */
+    const val FallbackHoldMaskDiameterRatio = 0.0375f
+    const val FallbackHoldMaskMinDiameter = 22f
+    const val FallbackHoldMaskMaxDiameterRatio = 0.06f
     const val TopHoldAnalysisTimeoutMillis = 5_000L
 
     // iOS와 같이 선택 화면은 5배, 카메라는 8배로 제한한다.
@@ -294,25 +296,13 @@ object TopOutConfig {
     const val CameraMaxZoom = 8f
     const val CaptureMaxLongSide = 1600
 
-    const val TinyRoundMaxSpan = 6f
-    const val TinyRoundMaxArea = 75
-    const val RoundAspectLimit = 1.8f
-    const val RoundedMaxAreaRatio = 0.0625f
-    const val RoundedPaddingRatio = 0.10f
-    const val RoundedCornerRatio = 0.48f
     const val RedLineRatio = 0.016f
     const val WhiteLineRatio = 0.006f
     const val MinRedLineWidth = 8f
     const val MinWhiteLineWidth = 2.5f
-    const val ContourRawPointLimit = 160
-    const val ContourPointLimit = 26
-    const val ContourSmoothIterations = 2
-    const val ContourMinPoints = 8
 
     const val MatDefaultY = 0.75f
     const val MatBoundaryAnalysisTimeoutMillis = 5_000L
-    const val AutomaticRecordingStartDelayMillis = 60_000L
-    const val AutomaticRecordingWarningLeadMillis = 5_000L
     const val ReviewEndPreviewLeadSeconds = 3.0
     /** The lowest reliable joint must clear the mat line by 6% of the selected video height. */
     const val PoseStartAboveMatVideoHeightRatio = 0.06f
@@ -354,6 +344,8 @@ object TopOutConfig {
     const val PoseMinimumKnees = 1
     /** Human validation passes when at least 3 of the 4 required joint groups are present. */
     const val PoseMinimumSatisfiedGroups = 3
+    /** 믿을 만한 관절이 화면 긴 변의 이 비율보다 좁게 몰리면 홀드 위 가짜 뼈대로 보고 버린다. */
+    const val PoseMinimumSkeletonSpanRatio = 0.05f
     /** Raw detected climbs shorter than this are treated as short candidates before padding. */
     const val ShortClipMinimumDetectionSeconds = 2.0
     /** A short raw range may merge only when its raw gap to a neighbour is at most this value. */

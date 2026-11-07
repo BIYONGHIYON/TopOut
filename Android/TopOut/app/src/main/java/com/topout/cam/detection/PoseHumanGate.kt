@@ -18,6 +18,16 @@ object PoseHumanGate {
         return satisfiedGroups >= TopOutConfig.PoseMinimumSatisfiedGroups
     }
 
+    /**
+     * MoveNet은 사람이 없는 벽에서 홀드 위에 손가락 크기의 뼈대를 만들고 높은 신뢰도를 주기도 한다.
+     * 믿을 만한 관절이 화면 긴 변의 5%보다 좁게 몰려 있으면 사람으로 보지 않는다.
+     * 실제 등반자 1,203프레임의 최소 폭은 5.6%였고, 가짜 뼈대 41건 중 20건이 이 기준에 걸렸다.
+     */
+    fun hasPlausibleSize(spanXPixels: Float, spanYPixels: Float, imageLongSidePixels: Int): Boolean {
+        if (imageLongSidePixels <= 0) return true
+        return maxOf(spanXPixels, spanYPixels) >= imageLongSidePixels * TopOutConfig.PoseMinimumSkeletonSpanRatio
+    }
+
     /** Compatibility overload retained for unit tests and small pure callers. */
     fun isValid(reliableLandmarkTypes: Set<Int>): Boolean {
         var shoulderCount = 0

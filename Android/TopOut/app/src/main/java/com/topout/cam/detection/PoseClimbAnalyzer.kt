@@ -158,6 +158,15 @@ class PoseClimbAnalyzer(
         resetStateLocked(keepConfiguration = true)
     }
 
+    /** 녹화 중 사용자가 경계선을 보정하면 탐지 상태를 유지한 채 선만 바꾼다. */
+    @Synchronized
+    fun updateMatLine(matLine: List<Offset>) {
+        this.matLine = matLine.sortedBy { it.x }
+        cachedMotionSearchBounds = null
+        previousMotionFrame = null
+        lastLowestAboveMat = null
+    }
+
     @Synchronized
     fun resetForRecording() {
         resetStateLocked(keepConfiguration = true)
@@ -338,7 +347,7 @@ class PoseClimbAnalyzer(
             poseDetector.resetTracking()
             return
         }
-        val reliable = pose?.let(::reliablePose)
+        val reliable = pose?.let { reliablePose(it, geometry.sourceWidth, geometry.sourceHeight) }
         if (pose == null || reliable == null) {
             handlePoseMiss(
                 seconds = seconds,
@@ -395,8 +404,12 @@ class PoseClimbAnalyzer(
     }
 
     /** Builds one compact reliable-pose representation instead of repeated Map/List conversions. */
-    private fun reliablePose(pose: PoseResult): ReliablePose? {
+    private fun reliablePose(pose: PoseResult, imageWidth: Int, imageHeight: Int): ReliablePose? {
         val points = ArrayList<Offset>(motionLandmarkTypes.size)
+        var pointsMinX = 1f
+        var pointsMaxX = 0f
+        var pointsMinY = 1f
+        var pointsMaxY = 0f
         var shoulderCount = 0
         var hipCount = 0
         var elbowCount = 0
@@ -413,6 +426,10 @@ class PoseClimbAnalyzer(
                 keypoint.position.y.coerceIn(0f, 1f)
             )
             points += point
+            pointsMinX = minOf(pointsMinX, point.x)
+            pointsMaxX = maxOf(pointsMaxX, point.x)
+            pointsMinY = minOf(pointsMinY, point.y)
+            pointsMaxY = maxOf(pointsMaxY, point.y)
             if (type == PoseLandmark.LEFT_SHOULDER ||
                 type == PoseLandmark.RIGHT_SHOULDER ||
                 type == PoseLandmark.LEFT_HIP ||
@@ -440,6 +457,12 @@ class PoseClimbAnalyzer(
                 hipCount = hipCount,
                 elbowCount = elbowCount,
                 kneeCount = kneeCount
+            )
+        ) return null
+        if (!PoseHumanGate.hasPlausibleSize(
+                spanXPixels = (pointsMaxX - pointsMinX) * imageWidth,
+                spanYPixels = (pointsMaxY - pointsMinY) * imageHeight,
+                imageLongSidePixels = maxOf(imageWidth, imageHeight)
             )
         ) return null
         return ReliablePose(

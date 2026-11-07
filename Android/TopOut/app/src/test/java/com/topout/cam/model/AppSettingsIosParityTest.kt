@@ -20,18 +20,6 @@ class AppSettingsIosParityTest {
     }
 
     @Test
-    fun topHoldSelectionDependsOnlyOnMasking() {
-        assertFalse(
-            AppSettings(autoClipDetectionEnabled = true, topHoldMaskingEnabled = false)
-                .requiresTopHoldSelection
-        )
-        assertTrue(
-            AppSettings(autoClipDetectionEnabled = false, topHoldMaskingEnabled = true)
-                .requiresTopHoldSelection
-        )
-    }
-
-    @Test
     fun normalizationDoesNotForceFeatureSwitchesTogether() {
         val autoOnly = AppSettings(
             autoClipDetectionEnabled = true,
@@ -59,7 +47,10 @@ class AppSettingsIosParityTest {
         assertEquals(0.06f, TopOutConfig.PoseStartAboveMatVideoHeightRatio, 0.0001f)
         assertEquals(0.04f, TopOutConfig.PoseFinishAboveMatVideoHeightRatio, 0.0001f)
         assertEquals(256, TopOutConfig.MaskSize)
-        assertEquals(0.48f, TopOutConfig.RoundedCornerRatio, 0.0001f)
+        // 탑홀드 최소 표시 원: 짧은 변의 3.75%, 22px 이상, 6% 이하 (iOS Config와 같다).
+        assertEquals(0.0375f, TopOutConfig.FallbackHoldMaskDiameterRatio, 0.0001f)
+        assertEquals(22f, TopOutConfig.FallbackHoldMaskMinDiameter, 0.0001f)
+        assertEquals(0.06f, TopOutConfig.FallbackHoldMaskMaxDiameterRatio, 0.0001f)
         assertEquals(0.016f, TopOutConfig.RedLineRatio, 0.0001f)
         assertEquals(0.006f, TopOutConfig.WhiteLineRatio, 0.0001f)
         assertEquals(8f, TopOutConfig.MinRedLineWidth, 0.0001f)

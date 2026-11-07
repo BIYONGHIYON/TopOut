@@ -2,141 +2,78 @@ import UIKit
 import CoreML
 
 extension HoldVC {
-    func scheduleTopHoldAnalysisTimeout(
+    /// 탭한 위치의 탑홀드를 MobileSAM으로 분리해 외곽선 이미지를 만든다. 작업 큐에서 호출한다.
+    /// 홀드를 고르는 규칙은 HoldOutlineExtractor에 있다.
+    func makeTopHoldOverlay(
         at point: CGPoint,
         image: UIImage,
-        requestID: Int,
         cancellationToken: AnalysisCancellationToken
-    ) {
-        topHoldAnalysisTimeoutWorkItem?.cancel()
+    ) throws -> UIImage {
+        try cancellationToken.check()
+        let embedding = try makeEmbedding(for: image, cancellationToken: cancellationToken)
+        try cancellationToken.check()
+        let decoded = try decode(point: point, embedding: embedding.values, scale: embedding.scale)
+        try cancellationToken.check()
 
-        let timeoutWorkItem = DispatchWorkItem { [weak self] in
-            guard let self,
-                  self.selectionRequestID == requestID,
-                  self.mode == .processing else { return }
+        let masks = MLShapedArray<Float>(converting: decoded.masks)
+        let iou = MLShapedArray<Float>(converting: decoded.iou)
+        let shape = masks.shape
+        guard shape.count == 4, shape[2] == shape[3] else { throw AppError.encoderOutputMissing }
 
-            self.topHoldAnalysisTimeoutWorkItem = nil
-            cancellationToken.cancel()
-            self.selectionRequestID += 1
-
-            if let fallback = self.makeDefaultTouchOverlay(at: point, image: image) {
-                self.pendingOverlay = fallback.overlay
-                self.pendingTopBox = fallback.maskBox
-                self.selectOverlayView.image = fallback.overlay
-                self.recordBtn.isEnabled = true
-                self.selectHint.text = L("camera.selection_complete")
-            } else {
-                self.recordBtn.isEnabled = false
-                self.selectHint.text = L("camera.selection_failed")
-            }
-
-            self.topHoldAnalysisToken = nil
-            self.isBusy = false
-            self.mode = .select
-            self.retakeBtn.isEnabled = true
-            self.setLoading(false)
-            if self.pendingOverlay != nil {
-                self.scheduleAutomaticRecordingStartIfEligible()
-            }
-        }
-
-        topHoldAnalysisTimeoutWorkItem = timeoutWorkItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Cfg.topHoldAnalysisTimeout,
-            execute: timeoutWorkItem
-        )
+        let outline = HoldOutlineExtractor().extract(.init(
+            logits: masks.scalars,
+            channelCount: shape[1],
+            lowResSize: shape[2],
+            iouPredictions: iou.scalars,
+            modelVisibleSize: CGSize(
+                width: (image.size.width * embedding.scale).rounded(),
+                height: (image.size.height * embedding.scale).rounded()
+            ),
+            imageSize: image.size,
+            tap: point,
+            minimumDiameter: minimumHoldDiameter(image: image),
+            strokeWidth: outlineStyle(image: image).redWidth
+        ))
+        try cancellationToken.check()
+        guard let overlay = makeHoldOverlay(outline, image: image) else { throw AppError.renderFailed }
+        return overlay
     }
 
-    func runSAM(
+    /// 결과 화면에서 멈춘 프레임의 탑홀드를 고른다. 응답이 늦거나 실패하면 탭 위치에 최소 크기 원을 쓴다.
+    func selectTopHoldForReview(
+        in image: UIImage,
         at point: CGPoint,
-        image: UIImage,
-        pixels: PixelMap?,
-        zoom: CGFloat,
-        requestID: Int,
-        cancellationToken: AnalysisCancellationToken
+        completion: @escaping (UIImage?) -> Void
     ) {
-        do {
-            try cancellationToken.check()
-            guard let pixels else { throw AppError.encoderOutputMissing }
-            let embedding = try makeEmbedding(for: image, cancellationToken: cancellationToken)
-            try cancellationToken.check()
+        reviewTopHoldToken?.cancel()
+        let token = AnalysisCancellationToken()
+        reviewTopHoldToken = token
+        var isFinished = false
+        let finish: (UIImage?) -> Void = { [weak self] overlay in
+            guard !isFinished else { return }
+            isFinished = true
+            if self?.reviewTopHoldToken === token { self?.reviewTopHoldToken = nil }
+            completion(overlay)
+        }
 
-            let firstMask = try decode(point: point, embedding: embedding.values, scale: embedding.scale)
-            try cancellationToken.check()
-            let first = try makePick(from: firstMask, at: point, image: image, pixels: pixels, scale: embedding.scale, tol: Cfg.hsvTol, origin: point)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Cfg.topHoldAnalysisTimeout) { [weak self] in
+            guard !isFinished else { return }
+            token.cancel()
+            finish(self?.makeDefaultTouchOverlay(at: point, image: image))
+        }
 
-            let chosen = try chooseBestPick(
-                first,
-                firstMask: firstMask,
-                image: image,
-                pixels: pixels,
-                embedding: embedding.values,
-                scale: embedding.scale,
-                origin: point,
-                zoom: zoom,
-                cancellationToken: cancellationToken
-            )
-            try cancellationToken.check()
-
-            let blob = blobForRender(chosen)
-            let selection: (overlay: UIImage, box: CGRect, usedFallback: Bool)
-
-            if blob.isEmpty {
-                guard let fallback = makeDefaultTouchOverlay(at: point, image: image) else {
-                    throw AppError.renderFailed
+        workQ.async { [weak self] in
+            let overlay: UIImage? = autoreleasepool {
+                guard let self else { return nil }
+                do {
+                    return try self.makeTopHoldOverlay(at: point, image: image, cancellationToken: token)
+                } catch {
+                    return token.isCancelled ? nil : self.makeDefaultTouchOverlay(at: point, image: image)
                 }
-                selection = (fallback.overlay, fallback.maskBox, true)
-            } else if let overlay = makeTransparentOverlay(from: blob, image: image) {
-                selection = (overlay, blob.box, false)
-            } else if let fallback = makeDefaultTouchOverlay(at: point, image: image) {
-                selection = (fallback.overlay, fallback.maskBox, true)
-            } else {
-                throw AppError.renderFailed
             }
-
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.selectionRequestID == requestID, self.mode == .processing else { return }
-
-                self.topHoldAnalysisTimeoutWorkItem?.cancel()
-                self.topHoldAnalysisTimeoutWorkItem = nil
-                self.topHoldAnalysisToken = nil
-                self.pendingOverlay = selection.overlay
-                self.pendingTopBox = selection.box
-                self.selectOverlayView.image = selection.overlay
-                // 선택 뒤 픽셀과 임베딩만 비우고 재촬영을 위해 모델은 유지한다.
-                self.mode = .select
-                self.isBusy = false
-                self.retakeBtn.isEnabled = true
-                self.recordBtn.isEnabled = true
-                self.selectHint.text = L("camera.selection_complete")
-                self.scheduleAutomaticRecordingStartIfEligible()
-                self.setLoading(false)
-            }
-        } catch {
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.selectionRequestID == requestID, self.mode == .processing else { return }
-
-                self.topHoldAnalysisTimeoutWorkItem?.cancel()
-                self.topHoldAnalysisTimeoutWorkItem = nil
-                self.topHoldAnalysisToken = nil
-                if let fallback = self.makeDefaultTouchOverlay(at: point, image: image) {
-                    self.pendingOverlay = fallback.overlay
-                    self.pendingTopBox = fallback.maskBox
-                    self.selectOverlayView.image = fallback.overlay
-                    self.recordBtn.isEnabled = true
-                    self.selectHint.text = L("camera.selection_complete")
-                } else {
-                    self.recordBtn.isEnabled = self.pendingOverlay != nil
-                    self.selectHint.text = L("camera.selection_failed")
-                }
-
-                self.isBusy = false
-                self.mode = .select
-                self.retakeBtn.isEnabled = true
-                self.setLoading(false)
-                if self.pendingOverlay != nil {
-                    self.scheduleAutomaticRecordingStartIfEligible()
-                }
+            DispatchQueue.main.async {
+                guard !token.isCancelled else { return }
+                finish(overlay)
             }
         }
     }

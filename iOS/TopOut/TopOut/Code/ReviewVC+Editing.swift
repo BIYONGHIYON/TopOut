@@ -61,12 +61,13 @@ extension ReviewVC {
             updateSaveButtonMode()
         }
         playPauseBtn.isEnabled = !saving
-        overlayToggleBtn.isEnabled = !saving && topHoldOverlayImage != nil && !topHoldOverlayToggleLocked
+        seekBackwardBtn.isEnabled = !saving
+        seekForwardBtn.isEnabled = !saving
+        overlayToggleBtn.isEnabled = !saving && topHoldSelectionEnabled && !isSelectingTopHold
         trimSlider.isEnabled = !saving
         selectedRangeZoomSlider.isEnabled = !saving && trimSlider.maximumAllowedSelectedRangeZoomFactor > 1.01
         selectedRangeZoomLabel.alpha = saving ? 0.45 : 1.0
         selectedRangeZoomValueLabel.alpha = saving ? 0.45 : 1.0
-        retakeBtn.isEnabled = !saving
         closeBtn.isEnabled = !saving
         if !saving {
             updateDetectedRangeNavigationUI()
@@ -166,7 +167,7 @@ extension ReviewVC {
         playFromCurrentPlayhead()
     }
 
-    private func showSliderTimeBubble(for seconds: TimeInterval) {
+    func showSliderTimeBubble(for seconds: TimeInterval) {
         let visibleSeconds = clamped(seconds, min: 0, max: duration)
         rangeLabel.text = formatSecondsBubble(visibleSeconds)
         rangeLabel.isHidden = false
@@ -275,23 +276,24 @@ extension ReviewVC {
 
     func updateOverlayToggleButton() {
         let hasOverlay = topHoldOverlayImage != nil
-        overlayToggleBtn.isEnabled = hasOverlay && !topHoldOverlayToggleLocked
-        overlayToggleBtn.alpha = hasOverlay ? (topHoldOverlayToggleLocked ? 0.75 : 1.0) : 0.45
+        // 탑홀드 마스킹을 쓰지 않은 녹화는 버튼을 숨기고 닫기가 2행 전체를 쓴다.
+        // 아직 마스크를 고르지 않았으면 누를 때 탑홀드를 탭하라고 안내한다.
+        overlayToggleBtn.isHidden = !topHoldSelectionEnabled
+        overlayToggleBtn.isEnabled = topHoldSelectionEnabled && !isSelectingTopHold
         topHoldOverlayView.isHidden = !(hasOverlay && includeTopHoldOverlay)
 
         var config = includeTopHoldOverlay
             ? UIButton.Configuration.filled()
             : UIButton.Configuration.gray()
-        let titleText = topHoldOverlayToggleLocked ? L("review.top_hold_mask_locked") : L("review.top_hold_mask")
-        var title = AttributedString(titleText)
-        title.font = .systemFont(ofSize: topHoldOverlayToggleLocked ? 12 : 13, weight: .semibold)
+        var title = AttributedString(L("review.top_hold_mask"))
+        title.font = .systemFont(ofSize: 13, weight: .semibold)
         config.title = nil
         config.attributedTitle = title
         config.cornerStyle = .capsule
-        if topHoldOverlayToggleLocked {
-            config.image = UIImage(systemName: "lock.fill")
-        } else {
+        if hasOverlay {
             config.image = UIImage(systemName: includeTopHoldOverlay ? "checkmark.square.fill" : "square")
+        } else {
+            config.image = UIImage(systemName: "hand.tap")
         }
         config.imagePlacement = .leading
         config.imagePadding = 3
@@ -308,10 +310,10 @@ extension ReviewVC {
             config.baseForegroundColor = .white
         }
         overlayToggleBtn.configuration = config
-        overlayToggleBtn.titleLabel?.font = .systemFont(ofSize: topHoldOverlayToggleLocked ? 12 : 13, weight: .semibold)
+        overlayToggleBtn.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
         normalizeReviewButtonContentLayout()
-        if topHoldOverlayToggleLocked {
-            overlayToggleBtn.accessibilityLabel = L("review.top_hold_mask_locked")
+        if !hasOverlay {
+            overlayToggleBtn.accessibilityLabel = L("review.top_hold_tap_tip")
         } else {
             overlayToggleBtn.accessibilityLabel = includeTopHoldOverlay
                 ? L("review.top_hold_mask_include")

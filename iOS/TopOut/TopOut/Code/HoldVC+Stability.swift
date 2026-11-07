@@ -40,7 +40,6 @@ extension HoldVC {
     }
 
     @objc private func onAppDidEnterBackground() {
-        cancelAutomaticRecordingStart()
         cancelPendingReadyFlow()
         interruptSelectionAnalysis()
         stopCamera()
@@ -62,11 +61,9 @@ extension HoldVC {
               pendingAutomaticStopNotice == nil,
               !isAutomaticStopInProgress else { return }
 
-        if recState == .idle,
-           mode == .camera || mode == .select || mode == .processing {
+        if recState == .idle, mode == .camera || mode == .select {
             prepareAudioSessionForCameraUse()
             startCamera()
-            scheduleAutomaticRecordingStartIfEligible()
         }
     }
 
@@ -80,10 +77,6 @@ extension HoldVC {
 
         Task { @MainActor [weak self] in
             guard let self else { return }
-
-            if self.recState == .idle, self.mode == .select {
-                self.cancelAutomaticRecordingStart()
-            }
 
             if self.recState == .idle, self.mode == .camera {
                 self.cancelPendingReadyFlow()
@@ -116,7 +109,6 @@ extension HoldVC {
                 self.refreshReadyButtonAfterSessionRecovery()
             } else if self.mode == .select, self.recState == .idle {
                 self.startCamera()
-                self.scheduleAutomaticRecordingStartIfEligible()
             }
         }
     }

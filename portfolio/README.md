@@ -25,8 +25,8 @@
 - 현재 SAM 경계: iOS `Code/MobileSAMMatDetector.swift` 및 루트 README. 과거 페이지의 폭 40% 설명을 **현재 상단 직선 지지 비율 60%**로 정정했습니다. 모델 정확도 60%와 다른 값입니다.
 - Android 카메라: `camera/CameraEngine.kt`, `ui/components/LensZoomGestureController.kt`. 논리·물리 렌즈 분기, 핀치 중 정지 프레임 확대, 손을 뗄 때 재바인딩, 되돌리기 취소, STREAMING·줌 완료 확인, 전환·시도 ID와 이전 렌즈 복구를 확인했습니다.
 - 정밀 편집: iOS `Code/TrimRangeSlider.swift`. 최대 30배, 0.1초, 정밀 진입 35pt/s·0.14초 / 이탈 55pt/s는 iOS 구현 수치임을 명시했습니다.
-- 저장 검증·재촬영·타임아웃·언어: 현재 루트 및 플랫폼 README, v1.5~v2.3 노트. 댓글은 사용자 정정에 따라 **Android 출시 소식이 아닌 홍보 릴스**로 표기했습니다.
-- 현재 릴리스: iOS `project.pbxproj`의 2.3 / 21, Android `app/build.gradle.kts`의 2.3 / 21 / minSdk 26과 대조했습니다.
+- 저장 검증·재촬영·타임아웃·언어: 현재 루트 및 플랫폼 README, v1.5~v3.0 노트. 댓글은 사용자 정정에 따라 **Android 출시 소식이 아닌 홍보 릴스**로 표기했습니다.
+- 현재 릴리스: iOS `project.pbxproj`의 3.0 / 23, Android `app/build.gradle.kts`의 3.0 / 23 / minSdk 26과 대조했습니다.
 
 ## 미디어
 

@@ -49,3 +49,6 @@ keystore.properties
 
 *.aab
 *.apks
+
+# Local preview server config
+.claude/launch.json

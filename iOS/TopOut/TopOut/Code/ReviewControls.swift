@@ -178,29 +178,3 @@ final class TrackTappableSlider: UIControl {
         )
     }
 }
-
-extension UIAlertController {
-    /// 기본 경고창 구조를 유지하고 긴 본문 글자만 줄인다.
-    func applyCompactMessageFont(matching message: String) {
-        loadViewIfNeeded()
-        guard let messageLabel = view.descendantLabel(matching: message) else { return }
-        messageLabel.font = UIFontMetrics(forTextStyle: .footnote).scaledFont(
-            for: .systemFont(ofSize: 13)
-        )
-        messageLabel.adjustsFontForContentSizeCategory = true
-        view.setNeedsLayout()
-        view.layoutIfNeeded()
-    }
-}
-
-private extension UIView {
-    func descendantLabel(matching text: String) -> UILabel? {
-        if let label = self as? UILabel {
-            let displayedText = label.attributedText?.string ?? label.text
-            if displayedText == text || label.accessibilityLabel == text {
-                return label
-            }
-        }
-        return subviews.lazy.compactMap { $0.descendantLabel(matching: text) }.first
-    }
-}

@@ -26,39 +26,42 @@ extension ReviewVC {
         rangeLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
         applyReviewButtonInsets(isLandscape: false)
 
+        // 2행: 탑홀드 마스크 · 닫기. 탑홀드 마스킹을 끈 녹화는 닫기가 전체 폭을 쓴다.
         let secondRowY = panelBottom - buttonHeight
-        let halfWidth = (panelWidth - buttonGap) * 0.5
-        retakeBtn.frame = CGRect(
-            x: panelX,
-            y: secondRowY,
-            width: halfWidth,
-            height: buttonHeight
-        )
-        closeBtn.frame = CGRect(
-            x: retakeBtn.frame.maxX + buttonGap,
-            y: secondRowY,
-            width: halfWidth,
-            height: buttonHeight
-        )
+        if overlayToggleBtn.isHidden {
+            overlayToggleBtn.frame = .zero
+            closeBtn.frame = CGRect(x: panelX, y: secondRowY, width: panelWidth, height: buttonHeight)
+        } else {
+            let halfWidth = (panelWidth - buttonGap) * 0.5
+            overlayToggleBtn.frame = CGRect(x: panelX, y: secondRowY, width: halfWidth, height: buttonHeight)
+            closeBtn.frame = CGRect(
+                x: overlayToggleBtn.frame.maxX + buttonGap,
+                y: secondRowY,
+                width: panelX + panelWidth - overlayToggleBtn.frame.maxX - buttonGap,
+                height: buttonHeight
+            )
+        }
 
+        // 1행: 5초 전 · 재생/정지 · 5초 후 · 선택 구간 저장
         let firstRowY = secondRowY - buttonGap - buttonHeight
-        let textButtonWidth = Swift.max(96, (panelWidth - playWidth - buttonGap * 2) * 0.5)
+        let seekWidth: CGFloat = 50
+        seekBackwardBtn.frame = CGRect(x: panelX, y: firstRowY, width: seekWidth, height: buttonHeight)
         playPauseBtn.frame = CGRect(
-            x: panelX,
+            x: seekBackwardBtn.frame.maxX + buttonGap,
             y: firstRowY,
             width: playWidth,
             height: buttonHeight
         )
-        overlayToggleBtn.frame = CGRect(
+        seekForwardBtn.frame = CGRect(
             x: playPauseBtn.frame.maxX + buttonGap,
             y: firstRowY,
-            width: textButtonWidth,
+            width: seekWidth,
             height: buttonHeight
         )
         saveBtn.frame = CGRect(
-            x: overlayToggleBtn.frame.maxX + buttonGap,
+            x: seekForwardBtn.frame.maxX + buttonGap,
             y: firstRowY,
-            width: panelX + panelWidth - overlayToggleBtn.frame.maxX - buttonGap,
+            width: panelX + panelWidth - seekForwardBtn.frame.maxX - buttonGap,
             height: buttonHeight
         )
 
@@ -91,20 +94,30 @@ extension ReviewVC {
 
         let buttonPanelWidth = min(panelWidth, CGFloat(760))
         let buttonPanelX = panelX + (panelWidth - buttonPanelWidth) * 0.5
-        let availableWidth = Swift.max(0, buttonPanelWidth - gap * 4)
+        // 가로 화면은 한 줄: 5초 전 · 재생/정지 · 5초 후 · 탑홀드 마스크 · 선택 구간 저장 · 닫기
+        let hasOverlayButton = !overlayToggleBtn.isHidden
+        let buttonCount: CGFloat = hasOverlayButton ? 6 : 5
+        let availableWidth = Swift.max(0, buttonPanelWidth - gap * (buttonCount - 1))
         let playWidth = min(CGFloat(58), max(CGFloat(50), availableWidth * 0.10))
-        let retakeWidth = min(CGFloat(110), max(CGFloat(84), availableWidth * 0.17))
+        let seekWidth = min(CGFloat(50), max(CGFloat(44), availableWidth * 0.08))
         let closeWidth = min(CGFloat(90), max(CGFloat(70), availableWidth * 0.14))
-        let remainingWidth = Swift.max(0, availableWidth - playWidth - retakeWidth - closeWidth)
-        let overlayWidth = min(CGFloat(170), max(CGFloat(126), remainingWidth * 0.46))
+        let remainingWidth = Swift.max(0, availableWidth - playWidth - seekWidth * 2 - closeWidth)
+        let overlayWidth = hasOverlayButton ? min(CGFloat(170), max(CGFloat(126), remainingWidth * 0.46)) : 0
         let saveWidth = Swift.max(CGFloat(130), remainingWidth - overlayWidth)
         let buttonY = panelBottom - buttonHeight
 
-        playPauseBtn.frame = CGRect(x: buttonPanelX, y: buttonY, width: playWidth, height: buttonHeight)
-        overlayToggleBtn.frame = CGRect(x: playPauseBtn.frame.maxX + gap, y: buttonY, width: overlayWidth, height: buttonHeight)
-        saveBtn.frame = CGRect(x: overlayToggleBtn.frame.maxX + gap, y: buttonY, width: saveWidth, height: buttonHeight)
-        retakeBtn.frame = CGRect(x: saveBtn.frame.maxX + gap, y: buttonY, width: retakeWidth, height: buttonHeight)
-        closeBtn.frame = CGRect(x: retakeBtn.frame.maxX + gap, y: buttonY, width: closeWidth, height: buttonHeight)
+        seekBackwardBtn.frame = CGRect(x: buttonPanelX, y: buttonY, width: seekWidth, height: buttonHeight)
+        playPauseBtn.frame = CGRect(x: seekBackwardBtn.frame.maxX + gap, y: buttonY, width: playWidth, height: buttonHeight)
+        seekForwardBtn.frame = CGRect(x: playPauseBtn.frame.maxX + gap, y: buttonY, width: seekWidth, height: buttonHeight)
+        var nextX = seekForwardBtn.frame.maxX + gap
+        if hasOverlayButton {
+            overlayToggleBtn.frame = CGRect(x: nextX, y: buttonY, width: overlayWidth, height: buttonHeight)
+            nextX = overlayToggleBtn.frame.maxX + gap
+        } else {
+            overlayToggleBtn.frame = .zero
+        }
+        saveBtn.frame = CGRect(x: nextX, y: buttonY, width: saveWidth, height: buttonHeight)
+        closeBtn.frame = CGRect(x: saveBtn.frame.maxX + gap, y: buttonY, width: closeWidth, height: buttonHeight)
 
         let zoomSliderHeight: CGFloat = 16
         let zoomLabelHeight: CGFloat = 10
@@ -162,7 +175,7 @@ extension ReviewVC {
         let verticalInset: CGFloat = isLandscape ? 4 : 5
         let horizontalInset: CGFloat = isLandscape ? 7 : 9
 
-        for button in [playPauseBtn, overlayToggleBtn, saveBtn, retakeBtn, closeBtn] {
+        for button in [seekBackwardBtn, playPauseBtn, seekForwardBtn, overlayToggleBtn, saveBtn, closeBtn] {
             var config = button.configuration
             config?.cornerStyle = .capsule
             if button === overlayToggleBtn {
@@ -192,7 +205,7 @@ extension ReviewVC {
     }
 
     func normalizeReviewButtonContentLayout() {
-        for button in [playPauseBtn, overlayToggleBtn, saveBtn, retakeBtn, closeBtn] {
+        for button in [seekBackwardBtn, playPauseBtn, seekForwardBtn, overlayToggleBtn, saveBtn, closeBtn] {
             button.contentHorizontalAlignment = .center
             button.contentVerticalAlignment = .center
             button.titleLabel?.textAlignment = .center

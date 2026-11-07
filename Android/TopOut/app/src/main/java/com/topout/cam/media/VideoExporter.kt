@@ -82,6 +82,55 @@ class VideoExporter(private val context: Context) {
         }
     }
 
+    /** 결과 화면 탑홀드 보정에 쓸 회전 적용 프레임을 정확한 시각에서 뽑는다. */
+    suspend fun extractFrame(uri: Uri, positionMs: Long, maxLongSide: Int): Bitmap? = withContext(Dispatchers.IO) {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(context, uri)
+            val timeUs = positionMs.coerceAtLeast(0L) * 1000L
+            // Android 8.1 이상은 원본 크기 프레임을 만들지 않고 처음부터 줄여서 뽑아 저메모리 기기의 순간 메모리를 낮춘다.
+            val scaledSize = scaledDisplaySize(retriever, maxLongSide)
+            val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 && scaledSize != null) {
+                retriever.getScaledFrameAtTime(
+                    timeUs,
+                    MediaMetadataRetriever.OPTION_CLOSEST,
+                    scaledSize.first,
+                    scaledSize.second
+                )
+            } else {
+                retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+            } ?: return@withContext null
+            val longSide = maxOf(frame.width, frame.height)
+            if (longSide <= maxLongSide || longSide <= 0) return@withContext frame
+            val scale = maxLongSide.toFloat() / longSide
+            val scaled = Bitmap.createScaledBitmap(
+                frame,
+                (frame.width * scale).toInt().coerceAtLeast(1),
+                (frame.height * scale).toInt().coerceAtLeast(1),
+                true
+            )
+            if (scaled !== frame) frame.recycle()
+            scaled
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Exception) {
+            null
+        } finally {
+            retriever.release()
+        }
+    }
+
+    /** 회전을 반영한 표시 크기를 비율을 지킨 채 긴 변이 [maxLongSide] 이하가 되도록 줄인다. */
+    private fun scaledDisplaySize(retriever: MediaMetadataRetriever, maxLongSide: Int): Pair<Int, Int>? {
+        val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: return null
+        val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: return null
+        val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+        if (width <= 0 || height <= 0) return null
+        val (displayWidth, displayHeight) = if (rotation % 180 == 0) width to height else height to width
+        val scale = minOf(1f, maxLongSide.toFloat() / maxOf(displayWidth, displayHeight))
+        return (displayWidth * scale).toInt().coerceAtLeast(1) to (displayHeight * scale).toInt().coerceAtLeast(1)
+    }
+
     /** Reads all review metadata in one IO-bound pass. A malformed partial recording is non-fatal. */
     suspend fun inspectVideo(file: File): VideoMetadata? = withContext(Dispatchers.IO) {
         val retriever = MediaMetadataRetriever()

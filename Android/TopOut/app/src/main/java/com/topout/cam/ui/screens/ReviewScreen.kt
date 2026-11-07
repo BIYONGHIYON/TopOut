@@ -1,9 +1,12 @@
 package com.topout.cam.ui.screens
 
 import android.content.res.Configuration
+import android.view.LayoutInflater
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +33,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -37,9 +41,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -60,6 +69,7 @@ import androidx.media3.ui.PlayerView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.topout.cam.R
 import com.topout.cam.model.AppSettings
 import com.topout.cam.model.GalleryClipSelection
 import com.topout.cam.model.RecordedVideo
@@ -73,14 +83,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
 private enum class TrimEditEdge { START, END }
-private val retakeWarningMessage: String get() = tr("review.retake_warning")
 private val closeWarningMessage: String get() = tr("review.close_warning")
 
 private data class DiscardConfirmation(
     val message: String,
-    val compactText: Boolean,
     val confirmedAction: () -> Unit
 )
+
+/** 결과 화면의 5초 전/후 이동 간격. 선택 구간 안에서만 움직인다. */
+private const val REVIEW_SEEK_STEP_SECONDS = 5.0
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
@@ -91,8 +102,10 @@ fun ReviewScreen(
     savingStatus: String?,
     savingStatusSelection: GalleryClipSelection?,
     savedGalleryVideos: List<SavedGalleryVideo>,
+    topHoldAnalyzing: Boolean,
+    topHoldStatus: String?,
     onSave: (Double, Double, Boolean) -> Unit,
-    onRetake: () -> Unit,
+    onSelectTopHold: (positionMs: Long, tap: Offset, containerSize: Size) -> Unit,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
@@ -118,6 +131,17 @@ fun ReviewScreen(
     }
     // 탑홀드 마스크 저장은 기본적으로 끈다.
     var includeOverlay by remember(video.uri) { mutableStateOf(false) }
+    var topHoldTipShown by remember(video.uri) { mutableStateOf(false) }
+    var topHoldTipVisible by remember(video.uri) { mutableStateOf(false) }
+    // 탑홀드 마스크가 체크된 상태면 두 손가락으로 확대한 뒤 다시 탭할 수 있다고 알려준다.
+    var topHoldZoomTipVisible by remember(video.uri) { mutableStateOf(false) }
+    // 결과 화면에서 탑홀드를 고르면 새 마스크를 바로 켠다.
+    LaunchedEffect(video.overlayBitmap) {
+        if (video.overlayBitmap != null) {
+            includeOverlay = true
+            topHoldZoomTipVisible = settings.helpEnabled
+        }
+    }
     var selectedRangeIndex by remember(video.uri) {
         mutableIntStateOf(video.detectedRanges.lastIndex.coerceAtLeast(0))
     }
@@ -128,11 +152,10 @@ fun ReviewScreen(
 
     fun requestDiscardConfirmation(
         message: String,
-        compactText: Boolean,
         confirmedAction: () -> Unit
     ) {
         if (settings.helpEnabled) {
-            discardConfirmation = DiscardConfirmation(message, compactText, confirmedAction)
+            discardConfirmation = DiscardConfirmation(message, confirmedAction)
         } else {
             confirmedAction()
         }
@@ -143,7 +166,6 @@ fun ReviewScreen(
         if (!saving) {
             requestDiscardConfirmation(
                 closeWarningMessage,
-                compactText = false,
                 confirmedAction = onClose
             )
         }
@@ -240,40 +262,108 @@ fun ReviewScreen(
     }
     val savedMatchesCurrentSelection = currentSavedGalleryVideo != null
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { viewContext ->
-                PlayerView(viewContext).apply {
-                    useController = false
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    this.player = player
-                    setShutterBackgroundColor(android.graphics.Color.BLACK)
-                }
-            },
-            update = { it.player = player }
-        )
+    // 탑홀드 마스킹을 켠 녹화는 두 손가락으로 영상을 확대·이동한 뒤 탑홀드를 탭할 수 있다. iOS ReviewVC+VideoZoom과 같다.
+    var videoZoomScale by remember(video.uri) { mutableFloatStateOf(1f) }
+    var videoZoomOffset by remember(video.uri) { mutableStateOf(Offset.Zero) }
 
-        if (includeOverlay) {
-            video.overlayBitmap?.let { bitmap ->
-                Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit
-                )
+    Box(Modifier.fillMaxSize().background(Color.Black).clipToBounds()) {
+        // 영상과 탑홀드 마스크를 같은 층에 두어 함께 확대한다.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = videoZoomScale
+                    scaleY = videoZoomScale
+                    translationX = videoZoomOffset.x
+                    translationY = videoZoomOffset.y
+                }
+        ) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { viewContext ->
+                    val view = if (video.topHoldSelectionEnabled) {
+                        // 확대가 화면에 반영되도록 TextureView를 쓰는 PlayerView를 쓴다.
+                        LayoutInflater.from(viewContext)
+                            .inflate(R.layout.review_zoomable_player_view, null, false) as PlayerView
+                    } else {
+                        PlayerView(viewContext).apply {
+                            useController = false
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            setShutterBackgroundColor(android.graphics.Color.BLACK)
+                        }
+                    }
+                    view.apply { this.player = player }
+                },
+                update = { it.player = player }
+            )
+
+            if (includeOverlay) {
+                video.overlayBitmap?.let { bitmap ->
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
             }
+        }
+
+        if (video.topHoldSelectionEnabled) {
+            // 영상을 멈추고 현재 프레임에서 탭한 탑홀드로 마스크를 만든다. 조작 버튼은 이 위에 그려진다.
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(video.uri) {
+                        detectTransformGestures { centroid, pan, zoom, _ ->
+                            val center = Offset(size.width / 2f, size.height / 2f)
+                            val oldScale = videoZoomScale
+                            val newScale = (oldScale * zoom).coerceIn(1f, ReviewMaxVideoZoomScale)
+                            // 손가락 아래의 영상 지점이 그대로 머물도록 이동량을 맞춘다.
+                            val relative = centroid - center
+                            val anchored = relative - (relative - videoZoomOffset) * (newScale / oldScale)
+                            videoZoomScale = newScale
+                            videoZoomOffset = clampVideoZoomOffset(
+                                anchored + pan, newScale, size.width, size.height, video
+                            )
+                        }
+                    }
+                    .pointerInput(video.uri, saving, topHoldAnalyzing) {
+                        detectTapGestures { offset ->
+                            if (saving || topHoldAnalyzing) return@detectTapGestures
+                            // 확대를 되돌린 원래 화면 좌표로 바꿔 영상 위치를 구한다.
+                            val center = Offset(size.width / 2f, size.height / 2f)
+                            val contentPoint = center + (offset - center - videoZoomOffset) / videoZoomScale
+                            // 버튼 사이 빈 곳처럼 영상 밖을 누른 경우는 무시한다.
+                            if (!isInsideFittedVideo(contentPoint, size.width, size.height, video)) return@detectTapGestures
+                            player.pause()
+                            isPlaying = false
+                            topHoldTipVisible = false
+                            onSelectTopHold(
+                                player.currentPosition,
+                                contentPoint,
+                                Size(size.width.toFloat(), size.height.toFloat())
+                            )
+                        }
+                    }
+            )
         }
 
         val currentSavingStatus = savingStatus?.takeIf {
             savingStatusSelection?.matches(currentSelection) == true
         }
-        val reviewStatusText = playbackErrorMessage ?: currentSavingStatus ?: if (video.detectedRanges.isEmpty()) {
-            tr("review.manual_prompt")
-        } else {
-            tr("review.auto_prompt")
+        val topHoldTip = when {
+            topHoldZoomTipVisible && includeOverlay && video.overlayBitmap != null -> tr("review.top_hold_zoom_tip")
+            topHoldTipVisible -> tr("review.top_hold_tap_tip")
+            else -> null
         }
-        if (settings.helpEnabled || currentSavingStatus != null) {
+        val reviewStatusText = playbackErrorMessage ?: currentSavingStatus ?: topHoldStatus ?: topHoldTip
+            ?: if (video.detectedRanges.isEmpty()) {
+                tr("review.manual_prompt")
+            } else {
+                tr("review.auto_prompt")
+            }
+        if (settings.helpEnabled || currentSavingStatus != null || topHoldStatus != null) {
             TopStatusBanner(
                 text = reviewStatusText,
                 isLandscape = isLandscape,
@@ -390,21 +480,21 @@ fun ReviewScreen(
             val togglePlayback = {
                 isPlaying = !isPlaying
                 if (isPlaying) {
+                    topHoldTipVisible = false
                     if (playhead >= selectedEnd - 0.05) seek(selectedStart)
                     player.play()
-                } else player.pause()
-            }
-            val requestRetake = {
-                requestDiscardConfirmation(
-                    retakeWarningMessage,
-                    compactText = true,
-                    confirmedAction = onRetake
-                )
+                } else {
+                    player.pause()
+                    // 처음 멈췄을 때 탑홀드를 탭해 마스크를 지정한다고 한 번 알려준다.
+                    if (video.topHoldSelectionEnabled && settings.helpEnabled && !topHoldTipShown) {
+                        topHoldTipShown = true
+                        topHoldTipVisible = true
+                    }
+                }
             }
             val requestClose = {
                 requestDiscardConfirmation(
                     closeWarningMessage,
-                    compactText = false,
                     confirmedAction = onClose
                 )
             }
@@ -413,11 +503,25 @@ fun ReviewScreen(
                 isLandscape = isLandscape,
                 isPlaying = isPlaying,
                 saving = saving,
+                topHoldAnalyzing = topHoldAnalyzing,
                 includeOverlay = includeOverlay,
-                overlayAvailable = video.overlayBitmap != null,
+                overlayAvailable = video.topHoldSelectionEnabled,
+                overlaySelected = video.overlayBitmap != null,
                 savedMatchesCurrentSelection = savedMatchesCurrentSelection,
                 onTogglePlayback = togglePlayback,
-                onToggleOverlay = { includeOverlay = !includeOverlay },
+                onToggleOverlay = {
+                    if (video.overlayBitmap == null) {
+                        // 아직 마스크가 없으면 영상을 멈추고 탑홀드를 탭하라고 안내한다.
+                        player.pause()
+                        isPlaying = false
+                        topHoldTipShown = true
+                        topHoldTipVisible = true
+                    } else {
+                        includeOverlay = !includeOverlay
+                        // 체크하면 확대 안내를 보여주고, 끄면 기본 안내로 돌아간다.
+                        topHoldZoomTipVisible = includeOverlay && settings.helpEnabled
+                    }
+                },
                 onSaveOrView = {
                     player.pause()
                     isPlaying = false
@@ -427,7 +531,9 @@ fun ReviewScreen(
                         onSave(selectedStart, selectedEnd, includeOverlay)
                     }
                 },
-                onRetake = requestRetake,
+                // 재생 중이면 이동한 위치부터 계속 재생하고, 구간 끝에서는 기존 루프가 멈춘다.
+                onSeekBackward = { seek(playhead - REVIEW_SEEK_STEP_SECONDS) },
+                onSeekForward = { seek(playhead + REVIEW_SEEK_STEP_SECONDS) },
                 onClose = requestClose
             )
         }
@@ -455,8 +561,8 @@ fun ReviewScreen(
             text = {
                 Text(
                     text = confirmation.message,
-                    fontSize = if (confirmation.compactText) 13.sp else 14.sp,
-                    lineHeight = if (confirmation.compactText) 18.sp else 20.sp
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
                 )
             },
             dismissButton = {
@@ -479,4 +585,37 @@ fun ReviewScreen(
             }
         )
     }
+}
+
+private const val ReviewMaxVideoZoomScale = 5f
+
+/** 확대된 영상이 원래 영상 영역을 항상 덮도록 이동 범위를 제한한다. 영상은 화면 가운데에 맞춰 그려진다. */
+private fun clampVideoZoomOffset(
+    offset: Offset,
+    scale: Float,
+    containerWidth: Int,
+    containerHeight: Int,
+    video: RecordedVideo
+): Offset {
+    if (scale <= 1.001f || containerWidth <= 0 || containerHeight <= 0) return Offset.Zero
+    val (videoWidth, videoHeight) = if (video.overlayWidth > 0 && video.overlayHeight > 0) {
+        val fit = minOf(containerWidth.toFloat() / video.overlayWidth, containerHeight.toFloat() / video.overlayHeight)
+        video.overlayWidth * fit to video.overlayHeight * fit
+    } else {
+        containerWidth.toFloat() to containerHeight.toFloat()
+    }
+    val slackX = (scale - 1f) * videoWidth / 2f
+    val slackY = (scale - 1f) * videoHeight / 2f
+    return Offset(offset.x.coerceIn(-slackX, slackX), offset.y.coerceIn(-slackY, slackY))
+}
+
+/** 화면에 비율을 유지해 맞춘 영상 영역 안의 탭인지. 표시 크기를 모르면 화면 전체를 영상으로 본다. */
+private fun isInsideFittedVideo(tap: Offset, containerWidth: Int, containerHeight: Int, video: RecordedVideo): Boolean {
+    if (video.overlayWidth <= 0 || video.overlayHeight <= 0 || containerWidth <= 0 || containerHeight <= 0) return true
+    val scale = minOf(containerWidth.toFloat() / video.overlayWidth, containerHeight.toFloat() / video.overlayHeight)
+    val width = video.overlayWidth * scale
+    val height = video.overlayHeight * scale
+    val left = (containerWidth - width) / 2f
+    val top = (containerHeight - height) / 2f
+    return tap.x in left..(left + width) && tap.y in top..(top + height)
 }
