@@ -39,6 +39,7 @@ extension HoldVC {
         default:
             break
         }
+        scheduleAutomaticRecordingStartIfEligible()
     }
 
     /// 카메라 프레임이 끊기는 동안 준비 완료와 바로 녹화 시작을 막는다. 보정 화면 버튼은 그대로 둔다.
@@ -150,10 +151,69 @@ extension HoldVC {
 
     /// 진행 중인 경계선 분석의 결과를 버린다.
     func cancelMatMeasurement() {
+        cancelAutomaticRecordingStart()
         matMeasurementRequestID &+= 1
         matBoundaryAnalysisTimeoutWorkItem?.cancel()
         matBoundaryAnalysisTimeoutWorkItem = nil
         matBoundaryAnalysisToken?.cancel()
         matBoundaryAnalysisToken = nil
+    }
+
+    // MARK: - 준비 완료 후 자동 녹화
+
+    private var isAutomaticRecordingStartEligible: Bool {
+        mode == .select && recState == .idle && !isBusy &&
+            isAutoClipDetectionEnabled && matLinePoints.count >= 2 &&
+            isCameraReady && isCameraStreamReady && !session.isInterrupted &&
+            UIApplication.shared.applicationState == .active &&
+            viewIfLoaded?.window != nil && presentedViewController == nil
+    }
+
+    func cancelAutomaticRecordingStart() {
+        // 취소된 DispatchWorkItem이 뒤늦게 실행되어도 새 예약을 건드리지 못하게 한다.
+        automaticRecordingStartGeneration &+= 1
+        automaticRecordingStartWorkItem?.cancel()
+        automaticRecordingStartWorkItem = nil
+        automaticRecordingWarningWorkItem?.cancel()
+        automaticRecordingWarningWorkItem = nil
+        if automaticRecordingWarningVisible, mode == .select, !isBusy {
+            selectHint.text = L("camera.selection_mat")
+        }
+        automaticRecordingWarningVisible = false
+    }
+
+    func scheduleAutomaticRecordingStartIfEligible() {
+        guard isAutomaticRecordingStartEligible else {
+            cancelAutomaticRecordingStart()
+            return
+        }
+        guard automaticRecordingStartWorkItem == nil else { return }
+
+        let generation = automaticRecordingStartGeneration
+        let warning = DispatchWorkItem { [weak self] in
+            guard let self, self.automaticRecordingStartGeneration == generation else { return }
+            guard self.isAutomaticRecordingStartEligible else {
+                self.cancelAutomaticRecordingStart()
+                return
+            }
+            self.automaticRecordingWarningWorkItem = nil
+            self.automaticRecordingWarningVisible = true
+            self.selectHint.text = L("camera.auto_recording_soon")
+        }
+        let start = DispatchWorkItem { [weak self] in
+            guard let self, self.automaticRecordingStartGeneration == generation else { return }
+            let eligible = self.isAutomaticRecordingStartEligible
+            self.cancelAutomaticRecordingStart()
+            guard eligible else { return }
+            // 수동 시작과 같은 경로에서 최신 보정 경계선과 기존 3초 카운트다운을 쓴다.
+            self.onRecordStart()
+        }
+        automaticRecordingWarningWorkItem = warning
+        automaticRecordingStartWorkItem = start
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + (Cfg.automaticRecordingStartDelay - Cfg.automaticRecordingWarningLead),
+            execute: warning
+        )
+        DispatchQueue.main.asyncAfter(deadline: .now() + Cfg.automaticRecordingStartDelay, execute: start)
     }
 }

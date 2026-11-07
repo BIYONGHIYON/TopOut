@@ -63,12 +63,17 @@ fun TopOutApp(viewModel: TopOutViewModel) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> viewModel.onAppForegrounded()
+                Lifecycle.Event.ON_RESUME -> viewModel.onAppResumed()
+                Lifecycle.Event.ON_PAUSE -> viewModel.onAppPaused()
                 Lifecycle.Event.ON_STOP -> viewModel.onAppBackgrounded()
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.onAppPaused()
+        }
     }
 
     LaunchedEffect(lockCaptureOrientation, activity) {

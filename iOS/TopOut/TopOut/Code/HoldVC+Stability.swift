@@ -9,6 +9,12 @@ extension HoldVC {
 
         center.addObserver(
             self,
+            selector: #selector(onAppWillResignActive),
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
             selector: #selector(onAppDidEnterBackground),
             name: UIApplication.didEnterBackgroundNotification,
             object: nil
@@ -39,7 +45,12 @@ extension HoldVC {
         )
     }
 
+    @objc private func onAppWillResignActive() {
+        cancelAutomaticRecordingStart()
+    }
+
     @objc private func onAppDidEnterBackground() {
+        cancelAutomaticRecordingStart()
         cancelPendingReadyFlow()
         interruptSelectionAnalysis()
         stopCamera()
@@ -64,6 +75,7 @@ extension HoldVC {
         if recState == .idle, mode == .camera || mode == .select {
             prepareAudioSessionForCameraUse()
             startCamera()
+            scheduleAutomaticRecordingStartIfEligible()
         }
     }
 
@@ -77,6 +89,8 @@ extension HoldVC {
 
         Task { @MainActor [weak self] in
             guard let self else { return }
+
+            self.cancelAutomaticRecordingStart()
 
             if self.recState == .idle, self.mode == .camera {
                 self.cancelPendingReadyFlow()
@@ -109,6 +123,7 @@ extension HoldVC {
                 self.refreshReadyButtonAfterSessionRecovery()
             } else if self.mode == .select, self.recState == .idle {
                 self.startCamera()
+                self.scheduleAutomaticRecordingStartIfEligible()
             }
         }
     }
@@ -116,6 +131,7 @@ extension HoldVC {
     @objc private func onCaptureSessionRuntimeError(_ notification: Notification) {
         Task { @MainActor [weak self] in
             guard let self else { return }
+            self.cancelAutomaticRecordingStart()
             if self.recState == .idle, self.mode == .camera {
                 self.cancelPendingReadyFlow()
                 self.stopCamera { [weak self] in

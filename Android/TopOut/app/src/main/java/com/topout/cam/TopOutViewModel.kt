@@ -73,6 +73,9 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private var mobileSamPreloadJob: Job? = null
     private var selectionAnalysisJob: Job? = null
     private var matBoundaryTimeoutJob: Job? = null
+    private var automaticRecordingStartJob: Job? = null
+    private var automaticRecordingWarningVisible = false
+    private var appResumed = false
     private var selectionRequestId = 0L
     private val memoryCallbacks = object : ComponentCallbacks2 {
         override fun onTrimMemory(level: Int) = handleMemoryPressure(level)
@@ -236,6 +239,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun bindCamera(owner: LifecycleOwner, previewView: PreviewView) {
+        cancelAutomaticRecordingStart()
         latestLifecycleOwner = WeakReference(owner)
         latestPreviewView = WeakReference(previewView)
         cameraBindingJob?.cancel()
@@ -304,6 +308,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 cameraEngine.setPreviewRenderingEnabled(
                     currentState.stage != CameraStage.RECORDING || currentState.livePreviewVisible
                 )
+                scheduleAutomaticRecordingStartIfEligible()
             }.onFailure { error ->
                 // 재연결에 따른 이전 작업 취소는 오류로 표시하지 않는다.
                 if (error is CancellationException) return@onFailure
@@ -448,6 +453,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun invalidateSelectionRequest() {
+        cancelAutomaticRecordingStart()
         matBoundaryTimeoutJob?.cancel()
         matBoundaryTimeoutJob = null
         selectionAnalysisJob?.cancel()
@@ -480,6 +486,56 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
                 isBusy = false,
                 statusText = tr("camera.selection_mat")
             )
+        }
+        scheduleAutomaticRecordingStartIfEligible()
+    }
+
+    /** 탑홀드는 결과 화면에서 고르므로 녹화 전에는 매트 경계만 준비되면 된다. */
+    private fun isAutomaticRecordingStartEligible(): Boolean {
+        val state = _uiState.value
+        return appResumed && appInForeground &&
+            state.stage == CameraStage.SELECT &&
+            state.recordingState == RecordingState.IDLE &&
+            state.settings.autoClipDetectionEnabled && state.matLine.size >= 2 &&
+            state.cameraReady && !state.isBusy && !state.lensTransition.inProgress &&
+            !state.settingsVisible && state.errorMessage == null
+    }
+
+    private fun restoreAutomaticRecordingGuidance() {
+        if (automaticRecordingWarningVisible) {
+            _uiState.update { state ->
+                if (state.stage == CameraStage.SELECT && !state.isBusy &&
+                    state.recordingState == RecordingState.IDLE
+                ) state.copy(statusText = tr("camera.selection_mat")) else state
+            }
+        }
+        automaticRecordingWarningVisible = false
+    }
+
+    private fun cancelAutomaticRecordingStart() {
+        automaticRecordingStartJob?.cancel()
+        automaticRecordingStartJob = null
+        restoreAutomaticRecordingGuidance()
+    }
+
+    private fun scheduleAutomaticRecordingStartIfEligible() {
+        if (!isAutomaticRecordingStartEligible()) {
+            cancelAutomaticRecordingStart()
+            return
+        }
+        if (automaticRecordingStartJob != null) return
+        automaticRecordingStartJob = viewModelScope.launch {
+            delay(TopOutConfig.AutomaticRecordingStartDelayMillis - TopOutConfig.AutomaticRecordingWarningLeadMillis)
+            if (!isAutomaticRecordingStartEligible()) {
+                cancelAutomaticRecordingStart()
+                return@launch
+            }
+            automaticRecordingWarningVisible = true
+            _uiState.update { it.copy(statusText = tr("camera.auto_recording_soon")) }
+            delay(TopOutConfig.AutomaticRecordingWarningLeadMillis)
+            automaticRecordingStartJob = null
+            restoreAutomaticRecordingGuidance()
+            if (isAutomaticRecordingStartEligible()) startRecording()
         }
     }
 
@@ -661,6 +717,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onAppBackgrounded() {
         appInForeground = false
+        onAppPaused()
         if (_uiState.value.recordingState in RecordingStates.Active) {
             stopRecording(RecordingStopNotice.Background)
         }
@@ -668,6 +725,16 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onAppForegrounded() {
         appInForeground = true
+    }
+
+    fun onAppResumed() {
+        appResumed = true
+        scheduleAutomaticRecordingStartIfEligible()
+    }
+
+    fun onAppPaused() {
+        appResumed = false
+        cancelAutomaticRecordingStart()
     }
 
     /** Stops or resumes CameraX's preview stream while recording and analysis continue. */
@@ -687,15 +754,24 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { settingsRepository.save(updatedSettings) }
     }
 
-    fun showSettings() = _uiState.update { it.copy(settingsVisible = true) }
-    fun hideSettings() = _uiState.update { it.copy(settingsVisible = false) }
+    fun showSettings() {
+        cancelAutomaticRecordingStart()
+        _uiState.update { it.copy(settingsVisible = true) }
+    }
+
+    fun hideSettings() {
+        _uiState.update { it.copy(settingsVisible = false) }
+        scheduleAutomaticRecordingStartIfEligible()
+    }
 
     /** Settings can change the process locale while this ViewModel survives Activity recreation. */
     fun refreshLocalizedCopy() {
         _uiState.update { state ->
             val localizedStatus = when (state.stage) {
                 CameraStage.PREVIEW -> if (state.isBusy) tr("camera.analyzing_mat") else previewGuidance(state.settings)
-                CameraStage.SELECT -> tr("camera.selection_mat")
+                CameraStage.SELECT -> tr(
+                    if (automaticRecordingWarningVisible) "camera.auto_recording_soon" else "camera.selection_mat"
+                )
                 CameraStage.RECORDING -> activeRecordingStatusText(state.settings)
                 CameraStage.REVIEW -> if (state.detectedRanges.isEmpty()) {
                     tr("review.manual_prompt")
@@ -809,7 +885,10 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun clearError() = _uiState.update { it.copy(errorMessage = null) }
+    fun clearError() {
+        _uiState.update { it.copy(errorMessage = null) }
+        scheduleAutomaticRecordingStartIfEligible()
+    }
 
     fun onLensTransitionFadeFinished(transitionId: Long, frame: Bitmap) {
         _uiState.update { state ->
@@ -1156,6 +1235,7 @@ class TopOutViewModel(application: Application) : AndroidViewModel(application) 
     private fun setError(message: String) = _uiState.update { it.copy(errorMessage = message) }
 
     override fun onCleared() {
+        cancelAutomaticRecordingStart()
         storageJob?.cancel()
         countdownJob?.cancel()
         cameraBindingJob?.cancel()

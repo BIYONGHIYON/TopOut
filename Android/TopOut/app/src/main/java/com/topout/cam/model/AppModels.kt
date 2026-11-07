@@ -320,6 +320,8 @@ object TopOutConfig {
     const val MotionCVRegionActiveThreshold = 0.02f
     const val MotionPixelDifference = 20
     const val RecordingCountdownSeconds = 3.0
+    const val AutomaticRecordingStartDelayMillis = 60_000L
+    const val AutomaticRecordingWarningLeadMillis = 5_000L
     const val MotionBaseDiffMargin = 0.025f
 
     const val AnalysisIntervalSeconds = 0.5

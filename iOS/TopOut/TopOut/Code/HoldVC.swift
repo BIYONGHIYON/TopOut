@@ -351,6 +351,10 @@ final class HoldVC: UIViewController {
 
     /// 준비 완료 경계선 측정 요청. 재촬영·백그라운드 전환으로 늦게 도착한 결과를 버린다.
     var matMeasurementRequestID = 0
+    var automaticRecordingStartWorkItem: DispatchWorkItem?
+    var automaticRecordingWarningWorkItem: DispatchWorkItem?
+    var automaticRecordingStartGeneration = 0
+    var automaticRecordingWarningVisible = false
     /// 준비 완료 프레임 캡처나 경계선 분석이 진행 중이면 true.
     var isBusy = false
     /// 촬영 흐름을 벗어나면 비동기 준비 완료 결과를 무효화한다.
@@ -496,9 +500,15 @@ final class HoldVC: UIViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        cancelAutomaticRecordingStart()
         // 결과 화면은 촬영 화면의 자동 잠금 방지 설정을 이어받지 않는다.
         setScreenAwake(false)
         stopCamera()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        scheduleAutomaticRecordingStartIfEligible()
     }
 
     override func didReceiveMemoryWarning() {
@@ -518,6 +528,8 @@ final class HoldVC: UIViewController {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        automaticRecordingStartWorkItem?.cancel()
+        automaticRecordingWarningWorkItem?.cancel()
         matBoundaryAnalysisTimeoutWorkItem?.cancel()
         matBoundaryAnalysisToken?.cancel()
         reviewTopHoldToken?.cancel()

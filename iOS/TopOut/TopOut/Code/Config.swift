@@ -38,6 +38,8 @@ enum Cfg {
     static let motionFrameWidth = 160
     static let motionPixelDiff: UInt8 = 20
     static let recordingCountdownSeconds: TimeInterval = 3.0
+    static let automaticRecordingStartDelay: TimeInterval = 60
+    static let automaticRecordingWarningLead: TimeInterval = 5
     // CV 탐색 영역: 매트 경계선 바로 위쪽부터 화면 높이의 40%
     static let motionCVRegionAboveMatHeightRatio: CGFloat = 0.40
     // 전체 탐색 영역에서 기준 노이즈를 제외한 변화 픽셀 비율

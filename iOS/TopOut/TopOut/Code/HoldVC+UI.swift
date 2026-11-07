@@ -111,6 +111,7 @@ extension HoldVC {
 
     // MARK: - 화면 상태
     func showCameraUI() {
+        cancelAutomaticRecordingStart()
         mode = recState == .buffering ? .recording : .camera
         let isRecording = recState == .buffering
         let showsLivePreview = isLivePreviewVisibleDuringRecording

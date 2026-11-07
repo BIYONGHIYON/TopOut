@@ -25,6 +25,7 @@
 - 현재 SAM 경계: iOS `Code/MobileSAMMatDetector.swift` 및 루트 README. 과거 페이지의 폭 40% 설명을 **현재 상단 직선 지지 비율 60%**로 정정했습니다. 모델 정확도 60%와 다른 값입니다.
 - Android 카메라: `camera/CameraEngine.kt`, `ui/components/LensZoomGestureController.kt`. 논리·물리 렌즈 분기, 핀치 중 정지 프레임 확대, 손을 뗄 때 재바인딩, 되돌리기 취소, STREAMING·줌 완료 확인, 전환·시도 ID와 이전 렌즈 복구를 확인했습니다.
 - 정밀 편집: iOS `Code/TrimRangeSlider.swift`. 최대 30배, 0.1초, 정밀 진입 35pt/s·0.14초 / 이탈 55pt/s는 iOS 구현 수치임을 명시했습니다.
+- 60초 자동 녹화: iOS `Code/HoldVC+MatLine.swift`, Android `TopOutViewModel.kt`. 매트 분석 완료부터 60초 뒤 현재 보정 경계선으로 기존 3초 카운트다운을 시작하고 마지막 5초에만 예고합니다. 탑홀드는 결과 화면에서 고르므로 대기 조건이 아니며, 수동 시작·재촬영·화면 이탈·앱 비활성화·카메라 중단 시 예약을 취소하고 보정 화면이 다시 준비되면 새로 기다립니다. v3.0에서 제거됐다는 문구를 삭제하고 현재 동작으로 복구했습니다.
 - 저장 검증·재촬영·타임아웃·언어: 현재 루트 및 플랫폼 README, v1.5~v3.0 노트. 댓글은 사용자 정정에 따라 **Android 출시 소식이 아닌 홍보 릴스**로 표기했습니다.
 - 현재 릴리스: iOS `project.pbxproj`의 3.0 / 23, Android `app/build.gradle.kts`의 3.0 / 23 / minSdk 26과 대조했습니다.
 
