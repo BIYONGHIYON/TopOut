@@ -518,6 +518,7 @@
 </div>
 <div class="feedback-content">
 <p>암장마다 색과 조명이 달라 규칙 기반 경계가 흔들렸습니다. 이미 홀드 선택에 사용하던 MobileSAM을 매트 분할에도 활용했습니다. 모델이 찾은 영역에 구조적 조건을 더해 경계 후보를 고릅니다.</p>
+<p>개선 후 직접 사용한 환경에서는 <strong>매트가 앵글 안에 잘 보이면 거의 100%에 가까운 정확도로 경계를 탐지</strong>하고 있습니다. 이는 실제 사용 경험에 따른 관찰이며, 별도의 정량 평가로 측정한 정확도는 아닙니다. 자동 탐지 결과는 필요할 때 직접 보정할 수 있습니다.</p>
 <section class="technical" aria-labelledby="sam-mat-title">
 <h4 id="sam-mat-title" class="technical-heading">MobileSAM 매트 탐지 상세 로직</h4>
 <div class="details-body">
@@ -560,11 +561,12 @@
 <h3>실패를 확인하고,<br>같은 앵글로 다시</h3>
 </div>
 <div class="feedback-content">
-<p>앱 사용자가 실패 영상을 보며 동작을 분석한 뒤 같은 앵글로 다시 시도할 때, 매트 경계를 또 찾아야 한다는 불편함이 있었습니다. 결과 화면의 <strong>‘다시 촬영’</strong>으로 구도·매트선·탑홀드·촬영 설정을 유지해 재진입하도록 연결했습니다.</p>
-<p>Android는 이전 리뷰 파일과 감지 구간을 정리한 뒤 카메라를 재생성하고, iOS는 미저장 클립 삭제를 확인한 뒤 기존 촬영 컨텍스트로 돌아갑니다. 확인에서 다음 도전까지 재설정하는 단계를 줄였습니다.</p>
-<p>v3.0에서는 결과 화면의 다시 촬영을 없애고 5초 이동 버튼을 넣었습니다. 결과 화면을 닫으면 카메라 화면으로 돌아가 같은 흐름으로 다시 준비합니다.</p>
+<p>처음에는 실패 영상을 확인한 뒤 같은 앵글로 바로 다시 시도할 수 있도록, 결과 화면에 <strong>‘다시 촬영’</strong> 버튼을 두고 기존 촬영 설정을 유지해 돌아가는 흐름을 만들었습니다.</p>
+<p>하지만 실제 사용을 관찰하니 <strong>다시 촬영 버튼을 누르는 과정에서 거치한 카메라의 앵글이 자주 바뀌었습니다.</strong> 같은 구도를 유지하려던 의도와 달리 다시 조정해야 하는 상황이 생겼고, 해당 버튼의 활용도가 낮다고 판단했습니다.</p>
+<p>v3.0에서는 결과 화면의 다시 촬영 버튼을 없애고 <strong>5초 전·후 이동 버튼</strong>을 넣었습니다. 결과 화면에서는 실패한 동작을 빠르게 되짚는 데 집중하고, 새 촬영은 화면을 닫고 카메라 화면으로 돌아가 준비하도록 흐름을 정리했습니다.</p>
 <figure class="single-phone">
 <img src="assets/after-examine.webp" alt="리뷰 화면에서 다시 촬영으로 돌아가기 전 미저장 클립 삭제를 확인하는 화면" loading="lazy">
+<figcaption>초기 버전의 다시 촬영 흐름. v3.0에서는 결과 화면의 해당 버튼을 제거했습니다.</figcaption>
 </figure>
 </div>
 </article>
@@ -654,6 +656,17 @@
 </div>
 <div class="small-principle">사용자가 한 번 놓친 조작을,<br>제품이 한 번 더 챙길 수 있도록</div>
 </div>
+</div>
+</article>
+<article class="self-card" id="recording-mat-editing">
+<div class="editing-overview">
+<div class="editing-copy">
+<span class="eyebrow">04 / EDIT WHILE RECORDING</span>
+<h3>녹화를 멈추지 않고,<br>매트 경계를 다시 맞추기</h3>
+<p>직접 촬영하면서 처음 설정한 매트 경계를 녹화 도중 수정하고 싶은 경우가 몇 번 있었습니다. 기존에는 촬영 전에만 경계를 보정할 수 있어, 작은 수정에도 녹화를 멈추고 다시 준비해야 했습니다.</p>
+<p>이 제한을 해제하는 데 큰 구현 부담이 없고, 사용자의 조작을 막아둘 이유도 없다고 판단했습니다. <strong>녹화 중에도 매트 경계를 수정할 수 있도록</strong> 바꿔, 촬영을 이어가면서 필요한 보정을 할 수 있게 했습니다.</p>
+</div>
+<div class="small-principle">촬영은 이어가고,<br>경계는 필요할 때 수정하도록</div>
 </div>
 </article>
 </div>
