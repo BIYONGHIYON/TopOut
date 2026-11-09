@@ -1018,6 +1018,15 @@ td:last-child {
   margin:auto;
   border-radius:10px;
 }
+.single-phone figcaption {
+  margin-top:16px;
+  font-family:inherit;
+  font-size:11px;
+  font-weight:400;
+  line-height:1.7;
+  color:var(--muted);
+  text-align:center;
+}
 .verification-path {
   display:grid;
   grid-template-columns:1fr 1fr;
