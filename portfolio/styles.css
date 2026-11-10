@@ -2069,3 +2069,52 @@ a:hover.text-link,.footer-bottom a:hover {
   text-align: center;
   color: var(--muted);
 }
+
+/* 사용자 후기 (인스타그램 스토리) */
+.review-block {
+  padding-block: 40px 10px;
+}
+.review-intro {
+  max-width: 640px;
+  margin: 0 0 28px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.8;
+}
+.review-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  max-width: 900px;
+}
+.review-shot {
+  margin: 0;
+}
+.review-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+.review-shot figcaption {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+@media (max-width: 600px) {
+  .review-grid {
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    gap: 12px;
+    padding-bottom: 6px;
+  }
+  .review-shot {
+    scroll-snap-align: start;
+  }
+}

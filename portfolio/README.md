@@ -39,6 +39,7 @@
 
 - `assets/TopOutInstagram.mp4`: 사용자가 제공한 `3D0EA2FD-00BF-4D6E-B322-C9F54EABDD05.mov`의 웹용 MP4 사본. 원본은 변경하지 않았습니다. 길이 약 56.9초, 원본 1080×1920, 웹용 medium quality preset(320×568)으로 변환해 약 4.5MB로 줄였습니다.
 - `assets/reel-poster.jpg`: 같은 영상의 약 20% 지점에서 추출한 포스터.
+- `assets/review-story.jpg`, `assets/review-climb.jpg`, `assets/review-editor.jpg`: 출시 후 피드백 절의 FROM CLIMBERS 후기에 사용. 사용자가 제공한 인스타그램 스토리 캡처 1장과 스토리 영상 2개(MOV)에서 만들었습니다. 영상은 한 장면만 추출하고(완등 장면 21.9초, 결과 화면 29.3초), 스토리 상단의 계정 이름·프로필 사진은 단색으로 가리고, 인물은 가우시안 블러로 흐리게 처리한 뒤 720px 폭 이하 JPEG로 저장했습니다. 원본 파일은 변경하지 않았습니다.
 - 기존 앱 스크린샷과 피드백 이미지는 유지·재사용했습니다. 화면은 당시 제품 사례이며, 홍보영상 UI와 현재 릴리스의 UI가 일부 다를 수 있습니다.
 - 개발 과정 04번의 매트 경계 설명에는 `assets/after-sam.webp`와 `assets/after-sam-edit.webp`를 나란히 배치해, 오른쪽 점을 움직이기 전·후의 경계를 비교합니다.
 
